@@ -1,6 +1,6 @@
 # Structs
 
-Structs are user-defined composite types that group named fields together. T structs support field access, mutation, nested composition, self-referencing pointers, and methods via `extend` blocks.
+Structs are user-defined composite types that group named fields together. Lux structs support field access, mutation, nested composition, self-referencing pointers, and methods via `extend` blocks.
 
 ---
 

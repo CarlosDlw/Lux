@@ -727,13 +727,13 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
 
     // Create an unsaved file with the #include directive
     CXUnsavedFile unsavedFile;
-    unsavedFile.Filename = "tollvm_include.c";
+    unsavedFile.Filename = "lux_include.c";
     unsavedFile.Contents = headerContent.c_str();
     unsavedFile.Length   = headerContent.size();
 
     CXTranslationUnit tu = clang_parseTranslationUnit(
         index,
-        "tollvm_include.c",
+        "lux_include.c",
         argv.data(),
         static_cast<int>(argv.size()),
         &unsavedFile,
@@ -754,7 +754,7 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
         CXDiagnostic diag = clang_getDiagnostic(tu, i);
         if (clang_getDiagnosticSeverity(diag) >= CXDiagnostic_Error) {
             CXString msg = clang_getDiagnosticSpelling(diag);
-            std::cerr << "tollvm: C header error: " << clang_getCString(msg) << "\n";
+            std::cerr << "lux: C header error: " << clang_getCString(msg) << "\n";
             clang_disposeString(msg);
             hasFatal = true;
         }

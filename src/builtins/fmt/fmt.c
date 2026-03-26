@@ -7,8 +7,8 @@
 #include <inttypes.h>
 
 /* ── helper ──────────────────────────────────────────────────────────── */
-static tollvm_fmt_str_result make_result(const char* src, size_t len) {
-    tollvm_fmt_str_result res = {NULL, 0};
+static lux_fmt_str_result make_result(const char* src, size_t len) {
+    lux_fmt_str_result res = {NULL, 0};
     if (len == 0) { res.ptr = ""; return res; }
     char* buf = (char*)malloc(len);
     if (!buf) return res;
@@ -19,76 +19,76 @@ static tollvm_fmt_str_result make_result(const char* src, size_t len) {
 }
 
 /* ── lpad ─────────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_lpad(const char* s, size_t s_len,
+lux_fmt_str_result lux_lpad(const char* s, size_t s_len,
                                    size_t width, uint8_t fill) {
     if (s_len >= width) return make_result(s, s_len);
     size_t pad = width - s_len;
     char* buf = (char*)malloc(width);
-    if (!buf) { tollvm_fmt_str_result r = {NULL, 0}; return r; }
+    if (!buf) { lux_fmt_str_result r = {NULL, 0}; return r; }
     memset(buf, fill, pad);
     memcpy(buf + pad, s, s_len);
-    tollvm_fmt_str_result res;
+    lux_fmt_str_result res;
     res.ptr = buf;
     res.len = width;
     return res;
 }
 
 /* ── rpad ─────────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_rpad(const char* s, size_t s_len,
+lux_fmt_str_result lux_rpad(const char* s, size_t s_len,
                                    size_t width, uint8_t fill) {
     if (s_len >= width) return make_result(s, s_len);
     size_t pad = width - s_len;
     char* buf = (char*)malloc(width);
-    if (!buf) { tollvm_fmt_str_result r = {NULL, 0}; return r; }
+    if (!buf) { lux_fmt_str_result r = {NULL, 0}; return r; }
     memcpy(buf, s, s_len);
     memset(buf + s_len, fill, pad);
-    tollvm_fmt_str_result res;
+    lux_fmt_str_result res;
     res.ptr = buf;
     res.len = width;
     return res;
 }
 
 /* ── center ───────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_center(const char* s, size_t s_len,
+lux_fmt_str_result lux_center(const char* s, size_t s_len,
                                      size_t width, uint8_t fill) {
     if (s_len >= width) return make_result(s, s_len);
     size_t total_pad = width - s_len;
     size_t left_pad = total_pad / 2;
     size_t right_pad = total_pad - left_pad;
     char* buf = (char*)malloc(width);
-    if (!buf) { tollvm_fmt_str_result r = {NULL, 0}; return r; }
+    if (!buf) { lux_fmt_str_result r = {NULL, 0}; return r; }
     memset(buf, fill, left_pad);
     memcpy(buf + left_pad, s, s_len);
     memset(buf + left_pad + s_len, fill, right_pad);
-    tollvm_fmt_str_result res;
+    lux_fmt_str_result res;
     res.ptr = buf;
     res.len = width;
     return res;
 }
 
 /* ── hex ──────────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_fmtHex(uint64_t val) {
+lux_fmt_str_result lux_fmtHex(uint64_t val) {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "0x%" PRIx64, val);
     return make_result(tmp, (size_t)n);
 }
 
 /* ── hexUpper ─────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_fmtHexUpper(uint64_t val) {
+lux_fmt_str_result lux_fmtHexUpper(uint64_t val) {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "0x%" PRIX64, val);
     return make_result(tmp, (size_t)n);
 }
 
 /* ── oct ──────────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_fmtOct(uint64_t val) {
+lux_fmt_str_result lux_fmtOct(uint64_t val) {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "0o%" PRIo64, val);
     return make_result(tmp, (size_t)n);
 }
 
 /* ── bin ──────────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_fmtBin(uint64_t val) {
+lux_fmt_str_result lux_fmtBin(uint64_t val) {
     if (val == 0) return make_result("0b0", 3);
 
     char tmp[67]; /* "0b" + 64 bits */
@@ -106,7 +106,7 @@ tollvm_fmt_str_result tollvm_fmtBin(uint64_t val) {
 }
 
 /* ── fixed ────────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_fixed(double val, uint32_t decimals) {
+lux_fmt_str_result lux_fixed(double val, uint32_t decimals) {
     char tmp[64];
     int n = snprintf(tmp, sizeof(tmp), "%.*f", (int)decimals, val);
     if (n < 0) n = 0;
@@ -114,7 +114,7 @@ tollvm_fmt_str_result tollvm_fixed(double val, uint32_t decimals) {
 }
 
 /* ── scientific ───────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_scientific(double val) {
+lux_fmt_str_result lux_scientific(double val) {
     char tmp[64];
     int n = snprintf(tmp, sizeof(tmp), "%e", val);
     if (n < 0) n = 0;
@@ -122,7 +122,7 @@ tollvm_fmt_str_result tollvm_scientific(double val) {
 }
 
 /* ── humanBytes ───────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_humanBytes(uint64_t bytes) {
+lux_fmt_str_result lux_humanBytes(uint64_t bytes) {
     static const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
     char tmp[64];
     int n;
@@ -148,7 +148,7 @@ tollvm_fmt_str_result tollvm_humanBytes(uint64_t bytes) {
 }
 
 /* ── commas ───────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_commas(int64_t val) {
+lux_fmt_str_result lux_commas(int64_t val) {
     char tmp[32];
     int n;
     int negative = 0;
@@ -186,7 +186,7 @@ tollvm_fmt_str_result tollvm_commas(int64_t val) {
 }
 
 /* ── percent ──────────────────────────────────────────────────────────── */
-tollvm_fmt_str_result tollvm_percent(double val) {
+lux_fmt_str_result lux_percent(double val) {
     double pct = val * 100.0;
     char tmp[64];
     int n;

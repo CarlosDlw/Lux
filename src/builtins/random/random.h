@@ -1,33 +1,33 @@
-#ifndef TOLLVM_RANDOM_H
-#define TOLLVM_RANDOM_H
+#ifndef LUX_RANDOM_H
+#define LUX_RANDOM_H
 
 #include <stdint.h>
 
 // seed(uint64)
-void tollvm_seed(uint64_t s);
+void lux_seed(uint64_t s);
 
 // seedTime()
-void tollvm_seedTime(void);
+void lux_seedTime(void);
 
 // randInt() -> int64
-int64_t tollvm_randInt(void);
+int64_t lux_randInt(void);
 
 // randIntRange(int64, int64) -> int64
-int64_t tollvm_randIntRange(int64_t min, int64_t max);
+int64_t lux_randIntRange(int64_t min, int64_t max);
 
 // randUint() -> uint64
-uint64_t tollvm_randUint(void);
+uint64_t lux_randUint(void);
 
 // randFloat() -> float64
-double tollvm_randFloat(void);
+double lux_randFloat(void);
 
 // randFloatRange(float64, float64) -> float64
-double tollvm_randFloatRange(double min, double max);
+double lux_randFloatRange(double min, double max);
 
 // randBool() -> bool
-int32_t tollvm_randBool(void);
+int32_t lux_randBool(void);
 
 // randChar() -> char
-uint8_t tollvm_randChar(void);
+uint8_t lux_randChar(void);
 
-#endif // TOLLVM_RANDOM_H
+#endif // LUX_RANDOM_H

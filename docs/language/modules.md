@@ -56,10 +56,10 @@ use std::collections::{ Vec, Map, Set };
 
 ## Importing from User Modules
 
-User-defined functions can be imported from other `.tm` files using the namespace name:
+User-defined functions can be imported from other `.lx` files using the namespace name:
 
 ```tm
-// math.tm
+// math.lx
 namespace Math;
 
 int32 add(int32 a, int32 b) {
@@ -72,7 +72,7 @@ int32 multiply(int32 a, int32 b) {
 ```
 
 ```tm
-// main.tm
+// main.lx
 namespace Main;
 
 use Math::add;

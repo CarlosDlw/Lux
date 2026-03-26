@@ -1,6 +1,6 @@
-# The T Language
+# The Lux Language
 
-T is a compiled systems programming language that targets LLVM IR. It combines the performance and control of C with modern syntax, a rich standard library, and native C interoperability.
+Lux is a compiled systems programming language that targets LLVM IR. It combines the performance and control of C with modern syntax, a rich standard library, and native C interoperability.
 
 ```t
 use std::log::println;
@@ -15,10 +15,10 @@ int32 main() {
 
 ## Getting Started
 
-Learn how to install, configure, and write your first T program.
+Learn how to install, configure, and write your first Lux program.
 
 - [Installation](getting-started/installation.md) — Build the compiler from source
-- [Hello World](getting-started/hello-world.md) — Your first T program, step by step
+- [Hello World](getting-started/hello-world.md) — Your first Lux program, step by step
 - [Editor Setup](getting-started/editor-setup.md) — Syntax highlighting and tooling (planned)
 - [CLI Usage](getting-started/cli-usage.md) — Compiler flags, options, and output modes
 
@@ -80,7 +80,7 @@ The complete guide to T's syntax and semantics, from basics to advanced features
 
 ## Standard Library
 
-T's standard library provides modules for I/O, math, strings, file system, networking, and more.
+Lux's standard library provides modules for I/O, math, strings, file system, networking, and more.
 
 - [Overview](stdlib/overview.md) — How the stdlib is organized and how to import
 
@@ -150,7 +150,7 @@ T's standard library provides modules for I/O, math, strings, file system, netwo
 
 ## C Interoperability (FFI)
 
-T has first-class support for calling C libraries and linking with native code.
+Lux has first-class support for calling C libraries and linking with native code.
 
 - [Overview](ffi/overview.md) — How FFI works in T
 - [Calling C Functions](ffi/calling-c.md) — `extern` declarations and `#include` directives

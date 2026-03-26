@@ -16,8 +16,8 @@ static char* make_cstr(const char* s, size_t len) {
 }
 
 /* ── helper: build result from buffer + length ───────────────────────── */
-static tollvm_regex_str_result make_result(const char* src, size_t len) {
-    tollvm_regex_str_result res = {NULL, 0};
+static lux_regex_str_result make_result(const char* src, size_t len) {
+    lux_regex_str_result res = {NULL, 0};
     if (len == 0) { res.ptr = ""; return res; }
     char* buf = (char*)malloc(len);
     if (!buf) return res;
@@ -28,7 +28,7 @@ static tollvm_regex_str_result make_result(const char* src, size_t len) {
 }
 
 /* ── match ────────────────────────────────────────────────────────────── */
-int32_t tollvm_regexMatch(const char* text, size_t text_len,
+int32_t lux_regexMatch(const char* text, size_t text_len,
                            const char* pat, size_t pat_len) {
     char* ctext = make_cstr(text, text_len);
     char* cpat = make_cstr(pat, pat_len);
@@ -46,9 +46,9 @@ int32_t tollvm_regexMatch(const char* text, size_t text_len,
 }
 
 /* ── find ─────────────────────────────────────────────────────────────── */
-tollvm_regex_str_result tollvm_regexFind(const char* text, size_t text_len,
+lux_regex_str_result lux_regexFind(const char* text, size_t text_len,
                                           const char* pat, size_t pat_len) {
-    tollvm_regex_str_result empty = {NULL, 0};
+    lux_regex_str_result empty = {NULL, 0};
     empty.ptr = "";
 
     char* ctext = make_cstr(text, text_len);
@@ -67,14 +67,14 @@ tollvm_regex_str_result tollvm_regexFind(const char* text, size_t text_len,
     }
 
     size_t mlen = (size_t)(match.rm_eo - match.rm_so);
-    tollvm_regex_str_result res = make_result(ctext + match.rm_so, mlen);
+    lux_regex_str_result res = make_result(ctext + match.rm_so, mlen);
     regfree(&re);
     free(ctext);
     return res;
 }
 
 /* ── findIndex ────────────────────────────────────────────────────────── */
-int64_t tollvm_regexFindIndex(const char* text, size_t text_len,
+int64_t lux_regexFindIndex(const char* text, size_t text_len,
                                const char* pat, size_t pat_len) {
     char* ctext = make_cstr(text, text_len);
     char* cpat = make_cstr(pat, pat_len);
@@ -99,12 +99,12 @@ int64_t tollvm_regexFindIndex(const char* text, size_t text_len,
 }
 
 /* ── helper: regex replace (all or first) ─────────────────────────────── */
-static tollvm_regex_str_result regex_replace_impl(
+static lux_regex_str_result regex_replace_impl(
         const char* text, size_t text_len,
         const char* pat, size_t pat_len,
         const char* rep, size_t rep_len,
         int all) {
-    tollvm_regex_str_result empty = {NULL, 0};
+    lux_regex_str_result empty = {NULL, 0};
 
     char* ctext = make_cstr(text, text_len);
     char* cpat = make_cstr(pat, pat_len);
@@ -180,28 +180,28 @@ static tollvm_regex_str_result regex_replace_impl(
     regfree(&re);
     free(ctext);
 
-    tollvm_regex_str_result res;
+    lux_regex_str_result res;
     res.ptr = buf;
     res.len = pos;
     return res;
 }
 
 /* ── regexReplace ─────────────────────────────────────────────────────── */
-tollvm_regex_str_result tollvm_regexReplace(const char* text, size_t text_len,
+lux_regex_str_result lux_regexReplace(const char* text, size_t text_len,
                                              const char* pat, size_t pat_len,
                                              const char* rep, size_t rep_len) {
     return regex_replace_impl(text, text_len, pat, pat_len, rep, rep_len, 1);
 }
 
 /* ── regexReplaceFirst ────────────────────────────────────────────────── */
-tollvm_regex_str_result tollvm_regexReplaceFirst(const char* text, size_t text_len,
+lux_regex_str_result lux_regexReplaceFirst(const char* text, size_t text_len,
                                                   const char* pat, size_t pat_len,
                                                   const char* rep, size_t rep_len) {
     return regex_replace_impl(text, text_len, pat, pat_len, rep, rep_len, 0);
 }
 
 /* ── isValid ──────────────────────────────────────────────────────────── */
-int32_t tollvm_regexIsValid(const char* pat, size_t pat_len) {
+int32_t lux_regexIsValid(const char* pat, size_t pat_len) {
     char* cpat = make_cstr(pat, pat_len);
     if (!cpat) return 0;
 
@@ -218,7 +218,7 @@ int32_t tollvm_regexIsValid(const char* pat, size_t pat_len) {
 
 /* ── Vec-returning regex functions ────────────────────────────── */
 
-void tollvm_regexFindAll(tollvm_regex_vec_header* out,
+void lux_regexFindAll(lux_regex_vec_header* out,
                          const char* text, size_t text_len,
                          const char* pat, size_t pat_len) {
     typedef struct { const char* ptr; size_t len; } str_elem;
@@ -271,7 +271,7 @@ void tollvm_regexFindAll(tollvm_regex_vec_header* out,
     out->cap = cap;
 }
 
-void tollvm_regexSplit(tollvm_regex_vec_header* out,
+void lux_regexSplit(lux_regex_vec_header* out,
                        const char* text, size_t text_len,
                        const char* pat, size_t pat_len) {
     typedef struct { const char* ptr; size_t len; } str_elem;

@@ -1,6 +1,6 @@
 # Keywords
 
-T has 35 reserved keywords and 20 type keywords. All keywords are lowercase.
+Lux has 35 reserved keywords and 20 type keywords. All keywords are lowercase.
 
 ---
 

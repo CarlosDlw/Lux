@@ -9,15 +9,15 @@ ParseResult Parser::parse(const std::string& filePath) {
 
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        std::cerr << "tollvm: cannot open file '" << filePath << "'\n";
+        std::cerr << "lux: cannot open file '" << filePath << "'\n";
         result.hasErrors = true;
         return result;
     }
 
     result.input  = std::make_unique<antlr4::ANTLRInputStream>(file);
-    result.lexer  = std::make_unique<ToLLVMLexer>(result.input.get());
+    result.lexer  = std::make_unique<LuxLexer>(result.input.get());
     result.tokens = std::make_unique<antlr4::CommonTokenStream>(result.lexer.get());
-    result.parser = std::make_unique<ToLLVMParser>(result.tokens.get());
+    result.parser = std::make_unique<LuxParser>(result.tokens.get());
 
     // Replace ANTLR's default stderr output with our formatted diagnostics
     static DiagnosticErrorListener errorListener;

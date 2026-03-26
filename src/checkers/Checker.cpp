@@ -1,5 +1,5 @@
 #include "checkers/Checker.h"
-#include "generated/ToLLVMLexer.h"
+#include "generated/LuxLexer.h"
 #include "ffi/CBindings.h"
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -21,7 +21,7 @@ void Checker::error(antlr4::ParserRuleContext* ctx, const std::string& msg) {
 //  Main entry point
 // ═══════════════════════════════════════════════════════════════════════
 
-bool Checker::check(ToLLVMParser::ProgramContext* tree) {
+bool Checker::check(LuxParser::ProgramContext* tree) {
     if (!tree) {
         errors_.push_back("empty program");
         return false;
@@ -114,19 +114,19 @@ bool Checker::check(ToLLVMParser::ProgramContext* tree) {
             currentNamespace_, currentFile_);
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Struct) {
-                auto* decl = static_cast<ToLLVMParser::StructDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
                 checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
-                auto* decl = static_cast<ToLLVMParser::UnionDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
                 checkUnionDecl(decl);
             } else if (sym->kind == ExportedSymbol::Enum) {
-                auto* decl = static_cast<ToLLVMParser::EnumDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
                 checkEnumDecl(decl);
             } else if (sym->kind == ExportedSymbol::TypeAlias) {
-                auto* decl = static_cast<ToLLVMParser::TypeAliasDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
                 checkTypeAliasDecl(decl);
             } else if (sym->kind == ExportedSymbol::Function) {
-                auto* decl = static_cast<ToLLVMParser::FunctionDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
                 registerFunctionSignature(decl);
             }
         }
@@ -136,19 +136,19 @@ bool Checker::check(ToLLVMParser::ProgramContext* tree) {
             auto* sym = nsRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Struct) {
-                auto* decl = static_cast<ToLLVMParser::StructDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
                 checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
-                auto* decl = static_cast<ToLLVMParser::UnionDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
                 checkUnionDecl(decl);
             } else if (sym->kind == ExportedSymbol::Enum) {
-                auto* decl = static_cast<ToLLVMParser::EnumDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
                 checkEnumDecl(decl);
             } else if (sym->kind == ExportedSymbol::TypeAlias) {
-                auto* decl = static_cast<ToLLVMParser::TypeAliasDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
                 checkTypeAliasDecl(decl);
             } else if (sym->kind == ExportedSymbol::Function) {
-                auto* decl = static_cast<ToLLVMParser::FunctionDeclContext*>(sym->decl);
+                auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
                 registerFunctionSignature(decl);
             }
         }
@@ -204,7 +204,7 @@ bool Checker::check(ToLLVMParser::ProgramContext* tree) {
 //  Type resolution helpers
 // ═══════════════════════════════════════════════════════════════════════
 
-const TypeInfo* Checker::resolveTypeSpec(ToLLVMParser::TypeSpecContext* ctx,
+const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
                                          unsigned& arrayDims) {
     arrayDims = 0;
     auto* cur = ctx;
@@ -391,7 +391,7 @@ const TypeInfo* Checker::makeFunctionType(const TypeInfo* returnType,
     return raw;
 }
 
-std::string Checker::resolveBaseTypeName(ToLLVMParser::TypeSpecContext* ctx) {
+std::string Checker::resolveBaseTypeName(LuxParser::TypeSpecContext* ctx) {
     while (!ctx->typeSpec().empty())
         ctx = ctx->typeSpec(0);
     auto text = ctx->getText();
@@ -484,34 +484,34 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
 //  Expression type resolution
 // ═══════════════════════════════════════════════════════════════════════
 
-const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) {
+const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     if (!expr) return nullptr;
 
     // ── Literals ──────────────────────────────────────────────────────
-    if (dynamic_cast<ToLLVMParser::IntLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr))
         return typeRegistry_.lookup("int32");
 
-    if (dynamic_cast<ToLLVMParser::FloatLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::FloatLitExprContext*>(expr))
         return typeRegistry_.lookup("float64");
 
-    if (dynamic_cast<ToLLVMParser::BoolLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::BoolLitExprContext*>(expr))
         return typeRegistry_.lookup("bool");
 
-    if (dynamic_cast<ToLLVMParser::CharLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::CharLitExprContext*>(expr))
         return typeRegistry_.lookup("char");
 
-    if (dynamic_cast<ToLLVMParser::StrLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::StrLitExprContext*>(expr))
         return typeRegistry_.lookup("string");
 
     // C string literal: c"hello" → *char (null-terminated)
-    if (dynamic_cast<ToLLVMParser::CStrLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::CStrLitExprContext*>(expr))
         return getPointerType(typeRegistry_.lookup("char"));
 
-    if (dynamic_cast<ToLLVMParser::NullLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::NullLitExprContext*>(expr))
         return nullptr; // null is compatible with any pointer
 
     // ── Identifier ───────────────────────────────────────────────────
-    if (auto* id = dynamic_cast<ToLLVMParser::IdentExprContext*>(expr)) {
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
         auto name = id->IDENTIFIER()->getText();
         auto it = locals_.find(name);
         if (it != locals_.end())
@@ -553,11 +553,11 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Parenthesized ────────────────────────────────────────────────
-    if (auto* p = dynamic_cast<ToLLVMParser::ParenExprContext*>(expr))
+    if (auto* p = dynamic_cast<LuxParser::ParenExprContext*>(expr))
         return resolveExprType(p->expression());
 
     // ── Unary negation ───────────────────────────────────────────────
-    if (auto* neg = dynamic_cast<ToLLVMParser::NegExprContext*>(expr)) {
+    if (auto* neg = dynamic_cast<LuxParser::NegExprContext*>(expr)) {
         auto* operand = resolveExprType(neg->expression());
         if (operand && !isNumeric(operand))
             error(expr, "unary '-' requires numeric operand, got '" +
@@ -566,13 +566,13 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Logical NOT ──────────────────────────────────────────────────
-    if (auto* lnot = dynamic_cast<ToLLVMParser::LogicalNotExprContext*>(expr)) {
+    if (auto* lnot = dynamic_cast<LuxParser::LogicalNotExprContext*>(expr)) {
         resolveExprType(lnot->expression());
         return typeRegistry_.lookup("bool");
     }
 
     // ── Bitwise NOT ──────────────────────────────────────────────────
-    if (auto* bnot = dynamic_cast<ToLLVMParser::BitNotExprContext*>(expr)) {
+    if (auto* bnot = dynamic_cast<LuxParser::BitNotExprContext*>(expr)) {
         auto* operand = resolveExprType(bnot->expression());
         if (operand && !isInteger(operand))
             error(expr, "operator '~' requires integer operand, got '" +
@@ -581,7 +581,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Multiplicative: *, /, % ──────────────────────────────────────
-    if (auto* mul = dynamic_cast<ToLLVMParser::MulExprContext*>(expr)) {
+    if (auto* mul = dynamic_cast<LuxParser::MulExprContext*>(expr)) {
         auto exprs = mul->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -609,7 +609,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Additive: +, - ──────────────────────────────────────────────
-    if (auto* add = dynamic_cast<ToLLVMParser::AddSubExprContext*>(expr)) {
+    if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(expr)) {
         auto exprs = add->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -642,7 +642,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Shift: <<, >> ───────────────────────────────────────────────
-    if (auto* shift = dynamic_cast<ToLLVMParser::ShiftExprContext*>(expr)) {
+    if (auto* shift = dynamic_cast<LuxParser::ShiftExprContext*>(expr)) {
         auto exprs = shift->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -658,7 +658,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Relational: <, >, <=, >= ────────────────────────────────────
-    if (auto* rel = dynamic_cast<ToLLVMParser::RelExprContext*>(expr)) {
+    if (auto* rel = dynamic_cast<LuxParser::RelExprContext*>(expr)) {
         auto exprs = rel->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -674,7 +674,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Equality: ==, != ────────────────────────────────────────────
-    if (auto* eq = dynamic_cast<ToLLVMParser::EqExprContext*>(expr)) {
+    if (auto* eq = dynamic_cast<LuxParser::EqExprContext*>(expr)) {
         auto exprs = eq->expression();
         resolveExprType(exprs[0]);
         resolveExprType(exprs[1]);
@@ -682,7 +682,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Bitwise AND/XOR/OR ──────────────────────────────────────────
-    if (auto* ba = dynamic_cast<ToLLVMParser::BitAndExprContext*>(expr)) {
+    if (auto* ba = dynamic_cast<LuxParser::BitAndExprContext*>(expr)) {
         auto exprs = ba->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -696,7 +696,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
         return lhs ? lhs : rhs;
     }
 
-    if (auto* bx = dynamic_cast<ToLLVMParser::BitXorExprContext*>(expr)) {
+    if (auto* bx = dynamic_cast<LuxParser::BitXorExprContext*>(expr)) {
         auto exprs = bx->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -710,7 +710,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
         return lhs ? lhs : rhs;
     }
 
-    if (auto* bo = dynamic_cast<ToLLVMParser::BitOrExprContext*>(expr)) {
+    if (auto* bo = dynamic_cast<LuxParser::BitOrExprContext*>(expr)) {
         auto exprs = bo->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -725,14 +725,14 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Logical AND/OR ──────────────────────────────────────────────
-    if (auto* la = dynamic_cast<ToLLVMParser::LogicalAndExprContext*>(expr)) {
+    if (auto* la = dynamic_cast<LuxParser::LogicalAndExprContext*>(expr)) {
         auto exprs = la->expression();
         resolveExprType(exprs[0]);
         resolveExprType(exprs[1]);
         return typeRegistry_.lookup("bool");
     }
 
-    if (auto* lo = dynamic_cast<ToLLVMParser::LogicalOrExprContext*>(expr)) {
+    if (auto* lo = dynamic_cast<LuxParser::LogicalOrExprContext*>(expr)) {
         auto exprs = lo->expression();
         resolveExprType(exprs[0]);
         resolveExprType(exprs[1]);
@@ -740,53 +740,53 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Pre-increment/decrement ─────────────────────────────────────
-    if (auto* pi = dynamic_cast<ToLLVMParser::PreIncrExprContext*>(expr)) {
+    if (auto* pi = dynamic_cast<LuxParser::PreIncrExprContext*>(expr)) {
         auto* inner = pi->expression();
         auto* type = resolveExprType(inner);
         if (type && !isInteger(type))
             error(expr, "operator '++' requires integer operand, got '" +
                              type->name + "'");
-        if (!dynamic_cast<ToLLVMParser::IdentExprContext*>(inner))
+        if (!dynamic_cast<LuxParser::IdentExprContext*>(inner))
             error(expr, "operator '++' requires a variable (lvalue)");
         return type;
     }
 
-    if (auto* pd = dynamic_cast<ToLLVMParser::PreDecrExprContext*>(expr)) {
+    if (auto* pd = dynamic_cast<LuxParser::PreDecrExprContext*>(expr)) {
         auto* inner = pd->expression();
         auto* type = resolveExprType(inner);
         if (type && !isInteger(type))
             error(expr, "operator '--' requires integer operand, got '" +
                              type->name + "'");
-        if (!dynamic_cast<ToLLVMParser::IdentExprContext*>(inner))
+        if (!dynamic_cast<LuxParser::IdentExprContext*>(inner))
             error(expr, "operator '--' requires a variable (lvalue)");
         return type;
     }
 
     // ── Post-increment/decrement ────────────────────────────────────
-    if (auto* pi = dynamic_cast<ToLLVMParser::PostIncrExprContext*>(expr)) {
+    if (auto* pi = dynamic_cast<LuxParser::PostIncrExprContext*>(expr)) {
         auto* inner = pi->expression();
         auto* type = resolveExprType(inner);
         if (type && !isInteger(type))
             error(expr, "operator '++' requires integer operand, got '" +
                              type->name + "'");
-        if (!dynamic_cast<ToLLVMParser::IdentExprContext*>(inner))
+        if (!dynamic_cast<LuxParser::IdentExprContext*>(inner))
             error(expr, "operator '++' requires a variable (lvalue)");
         return type;
     }
 
-    if (auto* pd = dynamic_cast<ToLLVMParser::PostDecrExprContext*>(expr)) {
+    if (auto* pd = dynamic_cast<LuxParser::PostDecrExprContext*>(expr)) {
         auto* inner = pd->expression();
         auto* type = resolveExprType(inner);
         if (type && !isInteger(type))
             error(expr, "operator '--' requires integer operand, got '" +
                              type->name + "'");
-        if (!dynamic_cast<ToLLVMParser::IdentExprContext*>(inner))
+        if (!dynamic_cast<LuxParser::IdentExprContext*>(inner))
             error(expr, "operator '--' requires a variable (lvalue)");
         return type;
     }
 
     // ── Ternary: cond ? trueExpr : falseExpr ────────────────────────
-    if (auto* tern = dynamic_cast<ToLLVMParser::TernaryExprContext*>(expr)) {
+    if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr)) {
         auto exprs = tern->expression();
         resolveExprType(exprs[0]); // condition
         auto* trueType = resolveExprType(exprs[1]);
@@ -798,7 +798,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Is: expr is type ────────────────────────────────────────────
-    if (auto* isE = dynamic_cast<ToLLVMParser::IsExprContext*>(expr)) {
+    if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(expr)) {
         resolveExprType(isE->expression());
         unsigned dims = 0;
         resolveTypeSpec(isE->typeSpec(), dims);
@@ -806,7 +806,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Null coalescing: expr ?? default ────────────────────────────
-    if (auto* nc = dynamic_cast<ToLLVMParser::NullCoalExprContext*>(expr)) {
+    if (auto* nc = dynamic_cast<LuxParser::NullCoalExprContext*>(expr)) {
         auto exprs = nc->expression();
         auto* lhsType = resolveExprType(exprs[0]);
         auto* rhsType = resolveExprType(exprs[1]);
@@ -822,7 +822,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Arrow access: expr->field ───────────────────────────────────
-    if (auto* aa = dynamic_cast<ToLLVMParser::ArrowAccessExprContext*>(expr)) {
+    if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
         auto* baseType = resolveExprType(aa->expression());
         auto fieldName = aa->IDENTIFIER()->getText();
 
@@ -849,7 +849,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Range: expr..expr ───────────────────────────────────────────
-    if (auto* rng = dynamic_cast<ToLLVMParser::RangeExprContext*>(expr)) {
+    if (auto* rng = dynamic_cast<LuxParser::RangeExprContext*>(expr)) {
         auto exprs = rng->expression();
         auto* startType = resolveExprType(exprs[0]);
         auto* endType   = resolveExprType(exprs[1]);
@@ -863,7 +863,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Range inclusive: expr..=expr ─────────────────────────────────
-    if (auto* rng = dynamic_cast<ToLLVMParser::RangeInclExprContext*>(expr)) {
+    if (auto* rng = dynamic_cast<LuxParser::RangeInclExprContext*>(expr)) {
         auto exprs = rng->expression();
         auto* startType = resolveExprType(exprs[0]);
         auto* endType   = resolveExprType(exprs[1]);
@@ -877,12 +877,12 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Spread: ...expr ─────────────────────────────────────────────
-    if (auto* sp = dynamic_cast<ToLLVMParser::SpreadExprContext*>(expr)) {
+    if (auto* sp = dynamic_cast<LuxParser::SpreadExprContext*>(expr)) {
         return resolveExprType(sp->expression());
     }
 
     // ── Cast: expr as type ──────────────────────────────────────────
-    if (auto* cast = dynamic_cast<ToLLVMParser::CastExprContext*>(expr)) {
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr)) {
         auto* srcType = resolveExprType(cast->expression());
         unsigned dims = 0;
         auto* dstType = resolveTypeSpec(cast->typeSpec(), dims);
@@ -942,7 +942,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Sizeof: sizeof(type) ────────────────────────────────────────
-    if (auto* sz = dynamic_cast<ToLLVMParser::SizeofExprContext*>(expr)) {
+    if (auto* sz = dynamic_cast<LuxParser::SizeofExprContext*>(expr)) {
         unsigned dims = 0;
         auto* ti = resolveTypeSpec(sz->typeSpec(), dims);
         if (!ti) error(expr, "sizeof: unknown type");
@@ -950,13 +950,13 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Typeof: typeof(expr) ────────────────────────────────────────
-    if (auto* to = dynamic_cast<ToLLVMParser::TypeofExprContext*>(expr)) {
+    if (auto* to = dynamic_cast<LuxParser::TypeofExprContext*>(expr)) {
         resolveExprType(to->expression());
         return typeRegistry_.lookup("string");
     }
 
     // ── Method call: expr.method(args) ─────────────────────────────
-    if (auto* mc = dynamic_cast<ToLLVMParser::MethodCallExprContext*>(expr)) {
+    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
         auto* receiverType = resolveExprType(mc->expression());
         auto methodName = mc->IDENTIFIER()->getText();
 
@@ -1125,13 +1125,13 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Function call: expr(args) ───────────────────────────────────
-    if (auto* call = dynamic_cast<ToLLVMParser::FnCallExprContext*>(expr)) {
+    if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
         auto* callee = call->expression();
         auto* calleeType = resolveExprType(callee);
 
         // Detect callee name for polymorphic builtin detection
         std::string calleeName;
-        if (auto* ident = dynamic_cast<ToLLVMParser::IdentExprContext*>(callee))
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(callee))
             calleeName = ident->IDENTIFIER()->getText();
 
         std::vector<const TypeInfo*> argTypes;
@@ -1236,13 +1236,13 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Field access: expr.field ─────────────────────────────────────
-    if (auto* fa = dynamic_cast<ToLLVMParser::FieldAccessExprContext*>(expr)) {
+    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
         auto* baseType = resolveExprType(fa->expression());
         auto fieldName = fa->IDENTIFIER()->getText();
 
         // .len on array/variadic params → int64
         if (fieldName == "len") {
-            if (auto* ident = dynamic_cast<ToLLVMParser::IdentExprContext*>(fa->expression())) {
+            if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(fa->expression())) {
                 auto it = locals_.find(ident->IDENTIFIER()->getText());
                 if (it != locals_.end() && it->second.arrayDims > 0)
                     return typeRegistry_.lookup("int64");
@@ -1261,7 +1261,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Index: expr[index] ──────────────────────────────────────────
-    if (auto* idx = dynamic_cast<ToLLVMParser::IndexExprContext*>(expr)) {
+    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
         auto exprs = idx->expression();
         auto* baseType = resolveExprType(exprs[0]);
         auto* indexType = resolveExprType(exprs[1]);
@@ -1288,7 +1288,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Struct / Union literal: Name { field: expr, ... } ────────────
-    if (auto* sl = dynamic_cast<ToLLVMParser::StructLitExprContext*>(expr)) {
+    if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(expr)) {
         auto ids = sl->IDENTIFIER();
         if (ids.empty()) return nullptr;
 
@@ -1348,7 +1348,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Static method call: Struct::method(args) ─────────────────────
-    if (auto* smc = dynamic_cast<ToLLVMParser::StaticMethodCallExprContext*>(expr)) {
+    if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
         auto structName = ids[0]->getText();
         auto methodName = ids[1]->getText();
@@ -1391,7 +1391,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Enum access: Enum::Variant ──────────────────────────────────
-    if (auto* ea = dynamic_cast<ToLLVMParser::EnumAccessExprContext*>(expr)) {
+    if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
         auto ids = ea->IDENTIFIER();
         auto enumName = ids[0]->getText();
         auto variant = ids[1]->getText();
@@ -1417,7 +1417,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Address-of: &var ────────────────────────────────────────────
-    if (auto* addr = dynamic_cast<ToLLVMParser::AddrOfExprContext*>(expr)) {
+    if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
         auto varName = addr->IDENTIFIER()->getText();
         auto it = locals_.find(varName);
         if (it == locals_.end()) {
@@ -1428,7 +1428,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Dereference: *expr ──────────────────────────────────────────
-    if (auto* deref = dynamic_cast<ToLLVMParser::DerefExprContext*>(expr)) {
+    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr)) {
         auto* operand = resolveExprType(deref->expression());
         if (operand && operand->kind != TypeKind::Pointer) {
             error(expr, "cannot dereference non-pointer type '" +
@@ -1441,7 +1441,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── Array literal: [expr, expr, ...] ────────────────────────────
-    if (auto* arr = dynamic_cast<ToLLVMParser::ArrayLitExprContext*>(expr)) {
+    if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
         auto elements = arr->expression();
         if (elements.empty()) return nullptr;
 
@@ -1457,7 +1457,7 @@ const TypeInfo* Checker::resolveExprType(ToLLVMParser::ExpressionContext* expr) 
     }
 
     // ── List comprehension: [expr | for type x in iterable if cond] ─
-    if (auto* lc = dynamic_cast<ToLLVMParser::ListCompExprContext*>(expr)) {
+    if (auto* lc = dynamic_cast<LuxParser::ListCompExprContext*>(expr)) {
         // Register the loop variable temporarily
         unsigned varDims = 0;
         auto* varType = resolveTypeSpec(lc->typeSpec(), varDims);
@@ -1545,9 +1545,9 @@ bool Checker::isKnownType(const std::string& name) const {
     return false;
 }
 
-void Checker::checkUseDecls(ToLLVMParser::ProgramContext* tree) {
+void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
     for (auto* useDecl : tree->useDecl()) {
-        if (auto* item = dynamic_cast<ToLLVMParser::UseItemContext*>(useDecl)) {
+        if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
             std::string path;
             for (auto* id : item->modulePath()->IDENTIFIER()) {
                 if (!path.empty()) path += "::";
@@ -1568,7 +1568,7 @@ void Checker::checkUseDecls(ToLLVMParser::ProgramContext* tree) {
             } else {
                 error(item, "unknown module or namespace '" + path + "'");
             }
-        } else if (auto* grp = dynamic_cast<ToLLVMParser::UseGroupContext*>(useDecl)) {
+        } else if (auto* grp = dynamic_cast<LuxParser::UseGroupContext*>(useDecl)) {
             std::string path;
             for (auto* id : grp->modulePath()->IDENTIFIER()) {
                 if (!path.empty()) path += "::";
@@ -1597,7 +1597,7 @@ void Checker::checkUseDecls(ToLLVMParser::ProgramContext* tree) {
     }
 }
 
-void Checker::checkTypeAliasDecl(ToLLVMParser::TypeAliasDeclContext* decl) {
+void Checker::checkTypeAliasDecl(LuxParser::TypeAliasDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
     if (typeRegistry_.lookup(name)) {
@@ -1655,7 +1655,7 @@ void Checker::checkTypeAliasDecl(ToLLVMParser::TypeAliasDeclContext* decl) {
     }
 }
 
-void Checker::checkStructDecl(ToLLVMParser::StructDeclContext* decl) {
+void Checker::checkStructDecl(LuxParser::StructDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
     if (typeRegistry_.lookup(name)) {
@@ -1693,7 +1693,7 @@ void Checker::checkStructDecl(ToLLVMParser::StructDeclContext* decl) {
     typeRegistry_.registerType(std::move(ti));
 }
 
-void Checker::checkUnionDecl(ToLLVMParser::UnionDeclContext* decl) {
+void Checker::checkUnionDecl(LuxParser::UnionDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
     if (typeRegistry_.lookup(name)) {
@@ -1727,7 +1727,7 @@ void Checker::checkUnionDecl(ToLLVMParser::UnionDeclContext* decl) {
     typeRegistry_.registerType(std::move(ti));
 }
 
-void Checker::checkEnumDecl(ToLLVMParser::EnumDeclContext* decl) {
+void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
     auto identifiers = decl->IDENTIFIER();
     auto name = identifiers[0]->getText();
 
@@ -1757,7 +1757,7 @@ void Checker::checkEnumDecl(ToLLVMParser::EnumDeclContext* decl) {
     typeRegistry_.registerType(std::move(ti));
 }
 
-void Checker::checkExtendDecl(ToLLVMParser::ExtendDeclContext* decl) {
+void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
     auto structName = decl->IDENTIFIER()->getText();
     auto* structTI = typeRegistry_.lookup(structName);
     if (!structTI) {
@@ -1782,7 +1782,7 @@ void Checker::checkExtendDecl(ToLLVMParser::ExtendDeclContext* decl) {
         info.isStatic = (method->AMPERSAND() == nullptr);
 
         // Static methods use paramList, instance methods use direct param()
-        std::vector<ToLLVMParser::ParamContext*> params;
+        std::vector<LuxParser::ParamContext*> params;
         if (info.isStatic) {
             if (auto* pl = method->paramList())
                 params = pl->param();
@@ -1801,7 +1801,7 @@ void Checker::checkExtendDecl(ToLLVMParser::ExtendDeclContext* decl) {
     }
 }
 
-void Checker::registerFunctionSignature(ToLLVMParser::FunctionDeclContext* func) {
+void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
     auto funcName = func->IDENTIFIER()->getText();
 
     unsigned retDims = 0;
@@ -1837,7 +1837,7 @@ void Checker::registerFunctionSignature(ToLLVMParser::FunctionDeclContext* func)
 //  Function body check
 // ═══════════════════════════════════════════════════════════════════════
 
-void Checker::checkFunction(ToLLVMParser::FunctionDeclContext* func) {
+void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
     unsigned retDims = 0;
     auto* retType = resolveTypeSpec(func->typeSpec(), retDims);
     if (!retType) return;
@@ -1866,7 +1866,7 @@ void Checker::checkFunction(ToLLVMParser::FunctionDeclContext* func) {
     checkBlock(func->block(), retType);
 }
 
-void Checker::checkBlock(ToLLVMParser::BlockContext* block,
+void Checker::checkBlock(LuxParser::BlockContext* block,
                          const TypeInfo* retType) {
     for (auto* stmt : block->statement()) {
         if (auto* varDecl = stmt->varDeclStmt()) {
@@ -1894,9 +1894,9 @@ void Checker::checkBlock(ToLLVMParser::BlockContext* block,
         } else if (auto* ifS = stmt->ifStmt()) {
             checkIfStmt(ifS, retType);
         } else if (auto* forS = stmt->forStmt()) {
-            if (auto* forIn = dynamic_cast<ToLLVMParser::ForInStmtContext*>(forS))
+            if (auto* forIn = dynamic_cast<LuxParser::ForInStmtContext*>(forS))
                 checkForInStmt(forIn, retType);
-            else if (auto* forC = dynamic_cast<ToLLVMParser::ForClassicStmtContext*>(forS))
+            else if (auto* forC = dynamic_cast<LuxParser::ForClassicStmtContext*>(forS))
                 checkForClassicStmt(forC, retType);
         } else if (stmt->loopStmt()) {
             loopDepth_++;
@@ -1932,7 +1932,7 @@ void Checker::checkBlock(ToLLVMParser::BlockContext* block,
     }
 }
 
-void Checker::checkSwitchStmt(ToLLVMParser::SwitchStmtContext* stmt,
+void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
                               const TypeInfo* retType) {
     auto* exprType = resolveExprType(stmt->expression());
     if (exprType && !isInteger(exprType) && exprType->name != "char") {
@@ -1950,7 +1950,7 @@ void Checker::checkSwitchStmt(ToLLVMParser::SwitchStmtContext* stmt,
     }
 }
 
-void Checker::checkIfStmt(ToLLVMParser::IfStmtContext* stmt,
+void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
                            const TypeInfo* retType) {
     // Check the if condition
     resolveExprType(stmt->expression());
@@ -1970,7 +1970,7 @@ void Checker::checkIfStmt(ToLLVMParser::IfStmtContext* stmt,
     }
 }
 
-void Checker::checkForInStmt(ToLLVMParser::ForInStmtContext* stmt,
+void Checker::checkForInStmt(LuxParser::ForInStmtContext* stmt,
                               const TypeInfo* retType) {
     unsigned dims = 0;
     auto* iterType = resolveTypeSpec(stmt->typeSpec(), dims);
@@ -1989,7 +1989,7 @@ void Checker::checkForInStmt(ToLLVMParser::ForInStmtContext* stmt,
     locals_.erase(iterName);
 }
 
-void Checker::checkForClassicStmt(ToLLVMParser::ForClassicStmtContext* stmt,
+void Checker::checkForClassicStmt(LuxParser::ForClassicStmtContext* stmt,
                                    const TypeInfo* retType) {
     unsigned dims = 0;
     auto* varType = resolveTypeSpec(stmt->typeSpec(), dims);
@@ -2024,7 +2024,7 @@ void Checker::checkForClassicStmt(ToLLVMParser::ForClassicStmtContext* stmt,
 //  Statement checks
 // ═══════════════════════════════════════════════════════════════════════
 
-void Checker::checkVarDeclStmt(ToLLVMParser::VarDeclStmtContext* stmt) {
+void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
 
     if (locals_.count(name)) {
@@ -2047,9 +2047,9 @@ void Checker::checkVarDeclStmt(ToLLVMParser::VarDeclStmtContext* stmt) {
 
     // Allow array literal → vec conversion
     if (typeInfo->kind == TypeKind::Extended &&
-        dynamic_cast<ToLLVMParser::ArrayLitExprContext*>(stmt->expression())) {
+        dynamic_cast<LuxParser::ArrayLitExprContext*>(stmt->expression())) {
         // Array literal initializing an extended type — validate element types
-        auto* arrExpr = dynamic_cast<ToLLVMParser::ArrayLitExprContext*>(
+        auto* arrExpr = dynamic_cast<LuxParser::ArrayLitExprContext*>(
             stmt->expression());
         auto elems = arrExpr->expression();
         for (auto* e : elems) {
@@ -2070,7 +2070,7 @@ void Checker::checkVarDeclStmt(ToLLVMParser::VarDeclStmtContext* stmt) {
     locals_[name] = {typeInfo, arrayDims};
 }
 
-void Checker::checkAssignStmt(ToLLVMParser::AssignStmtContext* stmt) {
+void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
     auto it = locals_.find(name);
 
@@ -2122,7 +2122,7 @@ void Checker::checkAssignStmt(ToLLVMParser::AssignStmtContext* stmt) {
     }
 }
 
-void Checker::checkCompoundAssignStmt(ToLLVMParser::CompoundAssignStmtContext* stmt) {
+void Checker::checkCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
     auto it = locals_.find(name);
 
@@ -2154,7 +2154,7 @@ void Checker::checkCompoundAssignStmt(ToLLVMParser::CompoundAssignStmtContext* s
                          "' requires integer operand, got '" + rhsType->name + "'");
 }
 
-void Checker::checkFieldAssignStmt(ToLLVMParser::FieldAssignStmtContext* stmt) {
+void Checker::checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt) {
     auto identifiers = stmt->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
@@ -2198,7 +2198,7 @@ void Checker::checkFieldAssignStmt(ToLLVMParser::FieldAssignStmtContext* stmt) {
     }
 }
 
-void Checker::checkDerefAssignStmt(ToLLVMParser::DerefAssignStmtContext* stmt) {
+void Checker::checkDerefAssignStmt(LuxParser::DerefAssignStmtContext* stmt) {
     if (stmt->IDENTIFIER()) {
         // *ptr = value;
         auto varName = stmt->IDENTIFIER()->getText();
@@ -2296,7 +2296,7 @@ void Checker::registerGlobalBuiltins() {
 //  FFI: extern function declarations
 // ═══════════════════════════════════════════════════════════════════════
 
-void Checker::checkExternDecl(ToLLVMParser::ExternDeclContext* decl) {
+void Checker::checkExternDecl(LuxParser::ExternDeclContext* decl) {
     auto funcName = decl->IDENTIFIER()->getText();
 
     unsigned retDims = 0;
@@ -2320,7 +2320,7 @@ void Checker::checkExternDecl(ToLLVMParser::ExternDeclContext* decl) {
     globalBuiltins_.insert(funcName);
 }
 
-void Checker::checkCallStmt(ToLLVMParser::CallStmtContext* stmt) {
+void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
 
     if (!isKnownFunction(name)) {
@@ -2413,11 +2413,11 @@ void Checker::checkCallStmt(ToLLVMParser::CallStmtContext* stmt) {
     }
 }
 
-void Checker::checkExprStmt(ToLLVMParser::ExprStmtContext* stmt) {
+void Checker::checkExprStmt(LuxParser::ExprStmtContext* stmt) {
     resolveExprType(stmt->expression());
 }
 
-void Checker::checkReturnStmt(ToLLVMParser::ReturnStmtContext* stmt,
+void Checker::checkReturnStmt(LuxParser::ReturnStmtContext* stmt,
                                const TypeInfo* expectedType) {
     auto* expr = stmt->expression();
 
@@ -2437,13 +2437,13 @@ void Checker::checkReturnStmt(ToLLVMParser::ReturnStmtContext* stmt,
     }
 }
 
-unsigned Checker::resolveExprArrayDims(ToLLVMParser::ExpressionContext* expr) {
-    if (auto* id = dynamic_cast<ToLLVMParser::IdentExprContext*>(expr)) {
+unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
         auto it = locals_.find(id->IDENTIFIER()->getText());
         if (it != locals_.end())
             return it->second.arrayDims;
     }
-    if (auto* idx = dynamic_cast<ToLLVMParser::IndexExprContext*>(expr)) {
+    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
         unsigned baseDims = resolveExprArrayDims(idx->expression(0));
         return baseDims > 0 ? baseDims - 1 : 0;
     }

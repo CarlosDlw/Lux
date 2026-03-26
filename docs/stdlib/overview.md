@@ -1,6 +1,6 @@
 # Standard Library Overview
 
-T's standard library provides 23 modules covering I/O, math, strings, file system, networking, cryptography, and more. All modules are imported with the `use` keyword.
+Lux's standard library provides 23 modules covering I/O, math, strings, file system, networking, cryptography, and more. All modules are imported with the `use` keyword.
 
 ---
 

@@ -1,8 +1,8 @@
 
-// Generated from /home/carlos/projects/cpp/tollvm/grammar/ToLLVMLexer.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/projects/cpp/tollvm/grammar/LuxLexer.g4 by ANTLR 4.13.2
 
 
-#include "ToLLVMLexer.h"
+#include "LuxLexer.h"
 
 
 using namespace antlr4;
@@ -13,8 +13,8 @@ using namespace antlr4;
 
 namespace {
 
-struct ToLLVMLexerStaticData final {
-  ToLLVMLexerStaticData(std::vector<std::string> ruleNames,
+struct LuxLexerStaticData final {
+  LuxLexerStaticData(std::vector<std::string> ruleNames,
                           std::vector<std::string> channelNames,
                           std::vector<std::string> modeNames,
                           std::vector<std::string> literalNames,
@@ -24,10 +24,10 @@ struct ToLLVMLexerStaticData final {
         symbolicNames(std::move(symbolicNames)),
         vocabulary(this->literalNames, this->symbolicNames) {}
 
-  ToLLVMLexerStaticData(const ToLLVMLexerStaticData&) = delete;
-  ToLLVMLexerStaticData(ToLLVMLexerStaticData&&) = delete;
-  ToLLVMLexerStaticData& operator=(const ToLLVMLexerStaticData&) = delete;
-  ToLLVMLexerStaticData& operator=(ToLLVMLexerStaticData&&) = delete;
+  LuxLexerStaticData(const LuxLexerStaticData&) = delete;
+  LuxLexerStaticData(LuxLexerStaticData&&) = delete;
+  LuxLexerStaticData& operator=(const LuxLexerStaticData&) = delete;
+  LuxLexerStaticData& operator=(LuxLexerStaticData&&) = delete;
 
   std::vector<antlr4::dfa::DFA> decisionToDFA;
   antlr4::atn::PredictionContextCache sharedContextCache;
@@ -41,21 +41,21 @@ struct ToLLVMLexerStaticData final {
   std::unique_ptr<antlr4::atn::ATN> atn;
 };
 
-::antlr4::internal::OnceFlag tollvmlexerLexerOnceFlag;
+::antlr4::internal::OnceFlag luxlexerLexerOnceFlag;
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
 static thread_local
 #endif
-std::unique_ptr<ToLLVMLexerStaticData> tollvmlexerLexerStaticData = nullptr;
+std::unique_ptr<LuxLexerStaticData> luxlexerLexerStaticData = nullptr;
 
-void tollvmlexerLexerInitialize() {
+void luxlexerLexerInitialize() {
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
-  if (tollvmlexerLexerStaticData != nullptr) {
+  if (luxlexerLexerStaticData != nullptr) {
     return;
   }
 #else
-  assert(tollvmlexerLexerStaticData == nullptr);
+  assert(luxlexerLexerStaticData == nullptr);
 #endif
-  auto staticData = std::make_unique<ToLLVMLexerStaticData>(
+  auto staticData = std::make_unique<LuxLexerStaticData>(
     std::vector<std::string>{
       "NAMESPACE", "USE", "RET", "STRUCT", "UNION", "ENUM", "NULL_LIT", 
       "FN", "TYPE", "AS", "IS", "SIZEOF", "TYPEOF", "IF", "ELSE", "FOR", 
@@ -442,55 +442,55 @@ void tollvmlexerLexerInitialize() {
   for (size_t i = 0; i < count; i++) { 
     staticData->decisionToDFA.emplace_back(staticData->atn->getDecisionState(i), i);
   }
-  tollvmlexerLexerStaticData = std::move(staticData);
+  luxlexerLexerStaticData = std::move(staticData);
 }
 
 }
 
-ToLLVMLexer::ToLLVMLexer(CharStream *input) : Lexer(input) {
-  ToLLVMLexer::initialize();
-  _interpreter = new atn::LexerATNSimulator(this, *tollvmlexerLexerStaticData->atn, tollvmlexerLexerStaticData->decisionToDFA, tollvmlexerLexerStaticData->sharedContextCache);
+LuxLexer::LuxLexer(CharStream *input) : Lexer(input) {
+  LuxLexer::initialize();
+  _interpreter = new atn::LexerATNSimulator(this, *luxlexerLexerStaticData->atn, luxlexerLexerStaticData->decisionToDFA, luxlexerLexerStaticData->sharedContextCache);
 }
 
-ToLLVMLexer::~ToLLVMLexer() {
+LuxLexer::~LuxLexer() {
   delete _interpreter;
 }
 
-std::string ToLLVMLexer::getGrammarFileName() const {
-  return "ToLLVMLexer.g4";
+std::string LuxLexer::getGrammarFileName() const {
+  return "LuxLexer.g4";
 }
 
-const std::vector<std::string>& ToLLVMLexer::getRuleNames() const {
-  return tollvmlexerLexerStaticData->ruleNames;
+const std::vector<std::string>& LuxLexer::getRuleNames() const {
+  return luxlexerLexerStaticData->ruleNames;
 }
 
-const std::vector<std::string>& ToLLVMLexer::getChannelNames() const {
-  return tollvmlexerLexerStaticData->channelNames;
+const std::vector<std::string>& LuxLexer::getChannelNames() const {
+  return luxlexerLexerStaticData->channelNames;
 }
 
-const std::vector<std::string>& ToLLVMLexer::getModeNames() const {
-  return tollvmlexerLexerStaticData->modeNames;
+const std::vector<std::string>& LuxLexer::getModeNames() const {
+  return luxlexerLexerStaticData->modeNames;
 }
 
-const dfa::Vocabulary& ToLLVMLexer::getVocabulary() const {
-  return tollvmlexerLexerStaticData->vocabulary;
+const dfa::Vocabulary& LuxLexer::getVocabulary() const {
+  return luxlexerLexerStaticData->vocabulary;
 }
 
-antlr4::atn::SerializedATNView ToLLVMLexer::getSerializedATN() const {
-  return tollvmlexerLexerStaticData->serializedATN;
+antlr4::atn::SerializedATNView LuxLexer::getSerializedATN() const {
+  return luxlexerLexerStaticData->serializedATN;
 }
 
-const atn::ATN& ToLLVMLexer::getATN() const {
-  return *tollvmlexerLexerStaticData->atn;
+const atn::ATN& LuxLexer::getATN() const {
+  return *luxlexerLexerStaticData->atn;
 }
 
 
 
 
-void ToLLVMLexer::initialize() {
+void LuxLexer::initialize() {
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
-  tollvmlexerLexerInitialize();
+  luxlexerLexerInitialize();
 #else
-  ::antlr4::internal::call_once(tollvmlexerLexerOnceFlag, tollvmlexerLexerInitialize);
+  ::antlr4::internal::call_once(luxlexerLexerOnceFlag, luxlexerLexerInitialize);
 #endif
 }

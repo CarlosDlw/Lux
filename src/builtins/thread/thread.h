@@ -1,5 +1,5 @@
-#ifndef TOLLVM_THREAD_H
-#define TOLLVM_THREAD_H
+#ifndef LUX_THREAD_H
+#define LUX_THREAD_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -9,35 +9,35 @@ extern "C" {
 #endif
 
 /* ── Task ──────────────────────────────────────────────────────────────── */
-typedef struct tollvm_Task tollvm_Task;
+typedef struct lux_Task lux_Task;
 
 /* Create a task that runs `fn(arg)` on a new thread.
    `fn` must return a heap-allocated result pointer (or NULL for void). */
-tollvm_Task* tollvm_taskCreate(void* (*fn)(void*), void* arg);
+lux_Task* lux_taskCreate(void* (*fn)(void*), void* arg);
 
 /* Block until the task finishes, return the result pointer.
    The caller owns the returned pointer and must free() it. */
-void* tollvm_taskAwait(tollvm_Task* task);
+void* lux_taskAwait(lux_Task* task);
 
 /* Free the task handle (call after await). */
-void tollvm_taskFree(tollvm_Task* task);
+void lux_taskFree(lux_Task* task);
 
 /* ── Mutex ─────────────────────────────────────────────────────────────── */
-typedef struct tollvm_Mutex tollvm_Mutex;
+typedef struct lux_Mutex lux_Mutex;
 
-tollvm_Mutex* tollvm_mutexCreate(void);
-void          tollvm_mutexLock(tollvm_Mutex* m);
-void          tollvm_mutexUnlock(tollvm_Mutex* m);
-int32_t       tollvm_mutexTryLock(tollvm_Mutex* m);
-void          tollvm_mutexFree(tollvm_Mutex* m);
+lux_Mutex* lux_mutexCreate(void);
+void          lux_mutexLock(lux_Mutex* m);
+void          lux_mutexUnlock(lux_Mutex* m);
+int32_t       lux_mutexTryLock(lux_Mutex* m);
+void          lux_mutexFree(lux_Mutex* m);
 
 /* ── Utilities ─────────────────────────────────────────────────────────── */
-uint32_t tollvm_cpuCount(void);
-uint64_t tollvm_threadId(void);
-void     tollvm_yield(void);
+uint32_t lux_cpuCount(void);
+uint64_t lux_threadId(void);
+void     lux_yield(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* TOLLVM_THREAD_H */
+#endif /* LUX_THREAD_H */

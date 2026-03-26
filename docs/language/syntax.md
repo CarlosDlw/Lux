@@ -4,7 +4,7 @@ This page covers the general syntax rules of T: how statements are structured, h
 
 ## Statements and Semicolons
 
-Every statement in T ends with a semicolon:
+Every statement in Lux ends with a semicolon:
 
 ```t
 int32 x = 10;
@@ -58,11 +58,11 @@ float64 _temp = 98.6;
 bool isReady = true;
 ```
 
-T is case-sensitive: `count`, `Count`, and `COUNT` are three different identifiers.
+Lux is case-sensitive: `count`, `Count`, and `COUNT` are three different identifiers.
 
 ## Namespaces
 
-Every `.tm` file must begin with a namespace declaration:
+Every `.lx` file must begin with a namespace declaration:
 
 ```t
 namespace MyModule;
@@ -95,7 +95,7 @@ Include directives are processed before compilation and make C functions, struct
 
 ## Type-First Declarations
 
-All declarations in T place the type before the name:
+All declarations in Lux place the type before the name:
 
 ```t
 int32 age = 25;                               // variable

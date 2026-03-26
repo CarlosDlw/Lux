@@ -1,5 +1,5 @@
-#ifndef TOLLVM_COMPRESS_H
-#define TOLLVM_COMPRESS_H
+#ifndef LUX_COMPRESS_H
+#define LUX_COMPRESS_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -11,16 +11,16 @@ extern "C" {
 typedef struct {
     const char* ptr;
     size_t      len;
-} tollvm_compress_str_result;
+} lux_compress_str_result;
 
-tollvm_compress_str_result tollvm_gzipCompress(const char* s, size_t slen);
-tollvm_compress_str_result tollvm_gzipDecompress(const char* s, size_t slen);
-tollvm_compress_str_result tollvm_deflate(const char* s, size_t slen);
-tollvm_compress_str_result tollvm_inflate(const char* s, size_t slen);
-tollvm_compress_str_result tollvm_compressLevel(const char* s, size_t slen, int32_t level);
+lux_compress_str_result lux_gzipCompress(const char* s, size_t slen);
+lux_compress_str_result lux_gzipDecompress(const char* s, size_t slen);
+lux_compress_str_result lux_deflate(const char* s, size_t slen);
+lux_compress_str_result lux_inflate(const char* s, size_t slen);
+lux_compress_str_result lux_compressLevel(const char* s, size_t slen, int32_t level);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* TOLLVM_COMPRESS_H */
+#endif /* LUX_COMPRESS_H */

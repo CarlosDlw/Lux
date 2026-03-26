@@ -60,7 +60,7 @@ int32 main() {
 }
 ```
 
-The `...` in an extern declaration is different from T's own variadic syntax (`int32 ...values`). C variadic arguments are not type-checked by the compiler — the types must match the format string.
+The `...` in an extern declaration is different from Lux's own variadic syntax (`int32 ...values`). C variadic arguments are not type-checked by the compiler — the types must match the format string.
 
 ---
 
@@ -145,17 +145,17 @@ When you `#include "header.h"`, the compiler automatically looks for a matching 
 1. Compiles the `.c` file to an object file using the system C compiler
 2. Links the resulting object file into the final executable
 
-This means you don't need a separate build step for your C code. Just place the `.h` and `.c` files next to your `.tm` file:
+This means you don't need a separate build step for your C code. Just place the `.h` and `.c` files next to your `.lx` file:
 
 ```
 my_project/
-├── main.tm          # your T code
+├── main.lx          # your Lux code
 ├── mymath.h         # C header
 └── mymath.c         # C implementation (auto-compiled)
 ```
 
 ```bash
-tollvm main.tm ./main   # compiles mymath.c automatically
+lux main.lx ./main   # compiles mymath.c automatically
 ./main
 ```
 
@@ -182,7 +182,7 @@ When the compiler parses a C header, it extracts and makes available:
 
 ### Functions
 
-All function declarations become callable. The compiler maps C types to T types automatically:
+All function declarations become callable. The compiler maps C types to Lux types automatically:
 
 ```c
 // In C header:
@@ -192,7 +192,7 @@ void* malloc(size_t size);
 ```
 
 ```tm
-// In T code (no extern needed):
+// In Lux code (no extern needed):
 int32 sum = add(10, 20);       // int → int32
 float64 s = sqrt(144.0);       // double → float64
 *void p = malloc(64 as usize); // size_t → usize, void* → *void
@@ -214,7 +214,7 @@ int point_sum(Point p);
 ```
 
 ```tm
-// In T code:
+// In Lux code:
 Point p = make_point(10, 20);
 printf(c"x=%d y=%d\n", p.x, p.y);
 
@@ -237,7 +237,7 @@ const char* color_name(Color c);
 ```
 
 ```tm
-// In T code:
+// In Lux code:
 int32 r = COLOR_RED;     // 0
 int32 g = COLOR_GREEN;   // 1
 int32 b = COLOR_BLUE;    // 2
@@ -258,7 +258,7 @@ Numeric `#define` constants become integer constants:
 ```
 
 ```tm
-// In T code:
+// In Lux code:
 int32 pi = PI_APPROX;     // 314159
 int32 max = MAX_ITEMS;     // 100
 ```

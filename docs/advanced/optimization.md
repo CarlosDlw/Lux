@@ -1,6 +1,6 @@
 # Optimization
 
-The T compiler uses LLVM's PassBuilder infrastructure to optimize generated IR before emitting machine code. Four optimization levels are available, from no optimization (default) to aggressive inlining and vectorization.
+The Lux compiler uses LLVM's PassBuilder infrastructure to optimize generated IR before emitting machine code. Four optimization levels are available, from no optimization (default) to aggressive inlining and vectorization.
 
 ---
 
@@ -17,16 +17,16 @@ The T compiler uses LLVM's PassBuilder infrastructure to optimize generated IR b
 
 ```bash
 # No optimization (default)
-tollvm main.tm ./main
+lux main.lx ./main
 
 # O1 — good for development
-tollvm main.tm ./main -o1
+lux main.lx ./main -o1
 
 # O2 — balanced, recommended for production-like testing
-tollvm main.tm ./main -o2
+lux main.lx ./main -o2
 
 # O3 — maximum performance, use for release builds
-tollvm main.tm ./main -o3
+lux main.lx ./main -o3
 ```
 
 ---
@@ -277,7 +277,7 @@ To see the LLVM IR that the compiler produces (before and after optimization), c
 
 ```bash
 # Prints IR to stdout (unoptimized)
-tollvm main.tm
+lux main.lx
 
 # To see optimized IR, you'd need to add optimization flags
 # Currently, IR stdout mode always shows unoptimized IR

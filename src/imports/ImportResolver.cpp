@@ -121,11 +121,11 @@ void ImportResolver::addImport(const std::string& modulePath,
     // Validate against known modules
     auto it = knownModules_.find(modulePath);
     if (it == knownModules_.end()) {
-        std::cerr << "tollvm: unknown module '" << modulePath << "'\n";
+        std::cerr << "lux: unknown module '" << modulePath << "'\n";
         return;
     }
     if (it->second.find(symbol) == it->second.end()) {
-        std::cerr << "tollvm: module '" << modulePath
+        std::cerr << "lux: module '" << modulePath
                   << "' does not export '" << symbol << "'\n";
         return;
     }
@@ -144,6 +144,6 @@ std::string ImportResolver::resolve(const std::string& symbol,
     if (!isImported(symbol)) return "";
 
     // Map symbol + type suffix → C function name
-    // Convention: tollvm_<symbol>_<typeSuffix>
-    return "tollvm_" + symbol + "_" + typeSuffix;
+    // Convention: lux_<symbol>_<typeSuffix>
+    return "lux_" + symbol + "_" + typeSuffix;
 }

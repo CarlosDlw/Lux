@@ -1,6 +1,6 @@
 # Installation
 
-This page covers how to build the T compiler (`tollvm`) from source on Linux.
+This page covers how to build the Lux compiler (`lux`) from source on Linux.
 
 ## Prerequisites
 
@@ -47,8 +47,8 @@ sudo dnf install cmake llvm-devel clang-devel antlr4-cpp-runtime-devel zlib-deve
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/tollvm.git
-cd tollvm
+git clone https://github.com/yourusername/lux.git
+cd lux
 ```
 
 ### 2. Build with Make (Recommended)
@@ -74,16 +74,16 @@ cmake --build . --parallel $(nproc)
 
 ### 4. Verify the Build
 
-After a successful build, the compiler binary is located at `build/tollvm`:
+After a successful build, the compiler binary is located at `build/lux`:
 
 ```bash
-./build/tollvm version
+./build/lux version
 ```
 
 Expected output:
 
 ```
-tollvm v0.1.0
+lux v0.1.0
 ```
 
 ## Makefile Targets
@@ -94,7 +94,7 @@ tollvm v0.1.0
 | `make configure` | Run CMake configuration only |
 | `make rebuild` | Clean and recompile everything from scratch |
 | `make clean` | Remove the `build/` directory |
-| `make run FILE=path.tm` | Build and run a `.tm` file |
+| `make run FILE=path.lx` | Build and run a `.lx` file |
 | `make help` | List all available targets |
 
 ## Troubleshooting
@@ -131,5 +131,5 @@ cmake -B build -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm ..
 
 ## See Also
 
-- [Hello World](hello-world.md) — Write and run your first T program
+- [Hello World](hello-world.md) — Write and run your first Lux program
 - [CLI Usage](cli-usage.md) — Compiler flags and options

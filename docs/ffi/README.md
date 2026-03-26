@@ -1,7 +1,7 @@
 # FFI — Foreign Function Interface
 
-TollVM provides native C interoperability through a zero-cost FFI system.
-C functions can be called directly from TM code with no wrappers, thunks,
+Lux provides native C interoperability through a zero-cost FFI system.
+C functions can be called directly from LuxM code with no wrappers, thunks,
 or runtime overhead — the generated machine code is identical to what a
 C compiler would produce.
 
@@ -78,7 +78,7 @@ printf(c"Value: %d\n", 42);
 *char msg = c"Static C string";
 ```
 
-### Differences from TM strings
+### Differences from LuxM strings
 
 | Feature | TM `string` | C `c"..."` |
 |---------|-------------|------------|
@@ -154,7 +154,7 @@ Allocates a new null-terminated C string from a TM string. The caller
 must `free()` the returned pointer when done.
 
 ```tm
-string name = "TollVM";
+string name = "Lux";
 *char cname = cstr(name);
 puts(cname);
 free(cname as *void);
@@ -200,7 +200,7 @@ readable when working with C strings.
 cstring greeting = c"Hello!";
 puts(greeting);
 
-cstring name = cstr("TollVM");
+cstring name = cstr("Lux");
 puts(name);
 free(name as *void);
 ```
@@ -455,7 +455,7 @@ you need access to structs, enums, or many functions from a C library.
 When you use `#include "header.h"` with a local header, the compiler
 automatically looks for a matching `.c` source file in the same
 directory. If found, it compiles the C source into an object file
-inside `.tmbuild/` and links it into the final binary — no manual
+inside `.luxbuild/` and links it into the final binary — no manual
 compilation step required.
 
 ```tm
@@ -497,21 +497,21 @@ int multiply(int a, int b) {
 }
 ```
 
-Running `tollvm main.tm ./main` will:
+Running `lux main.lx ./main` will:
 
 1. Parse `mymath.h` via libclang to extract `add`, `multiply`, and `PI_APPROX`
 2. Find `mymath.c` in the same directory as `mymath.h`
-3. Compile `mymath.c` → `.tmbuild/c__mymath.o` using the system C compiler
+3. Compile `mymath.c` → `.luxbuild/c__mymath.o` using the system C compiler
 4. Link `c__mymath.o` together with the TM object file into the final binary
 
 ### Build directory layout
 
 ```
 project/
-├── main.tm
+├── main.lx
 ├── mymath.h
 ├── mymath.c
-└── .tmbuild/
+└── .luxbuild/
     ├── MyNamespace__main.o    # compiled TM code
     └── c__mymath.o            # auto-compiled C code
 ```
@@ -523,7 +523,7 @@ project/
 | Header resolution | `#include "mymath.h"` → libclang parses with `-I<source dir>` |
 | Source discovery | Replaces `.h` → `.c` and checks if the file exists |
 | Compilation | Invokes `cc`, `clang`, or `gcc` (first available) |
-| Deduplication | Each `.c` file is compiled only once, even if included from multiple `.tm` files |
+| Deduplication | Each `.c` file is compiled only once, even if included from multiple `.lx` files |
 | Linking | Compiled `.o` files are appended to the linker command automatically |
 
 ### Notes
@@ -822,7 +822,7 @@ and uses 2-register passing, same as `Pair64`.
 ## Enum type compatibility
 
 C enum types are fully supported as function parameter and return types.
-When a C function uses an enum type (e.g. `Color`), TollVM maps it to
+When a C function uses an enum type (e.g. `Color`), Lux maps it to
 the underlying integer type (typically `uint32` on most platforms) and
 allows implicit conversion between enum constants and integer variables.
 
@@ -869,7 +869,7 @@ int32 main() {
 ## CLI linker flags
 
 When linking against external C libraries, use the following flags on
-the `tollvm` command line:
+the `lux` command line:
 
 | Flag | Description | Example |
 |------|-------------|---------|
@@ -881,13 +881,13 @@ the `tollvm` command line:
 
 ```bash
 # Link against SDL2 installed in a custom location
-tollvm main.tm ./game -lSDL2 -L/opt/sdl2/lib
+lux main.lx ./game -lSDL2 -L/opt/sdl2/lib
 
 # Link against multiple libraries
-tollvm main.tm ./app -lcurl -lssl -lcrypto
+lux main.lx ./app -lcurl -lssl -lcrypto
 
 # Default libraries (-lm, -lz, -lpthread) are always linked automatically
-tollvm main.tm ./main
+lux main.lx ./main
 ```
 
 ### Notes
@@ -970,5 +970,5 @@ LLVM IR:      call i32 @puts(ptr @.cstr.0)
 x86-64 asm:   callq puts@PLT
 ```
 
-No wrappers. No thunks. No indirection. Calling a C function from TM
+No wrappers. No thunks. No indirection. Calling a C function from LuxM
 is exactly as fast as calling it from C.

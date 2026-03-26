@@ -1,4 +1,4 @@
-# TOLLVM Types
+# Lux Types
 
 ## Signed Integers
 - int1, int8, int16, int32, int64, int128, intinf, isize | default: int32

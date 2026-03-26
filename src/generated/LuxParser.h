@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/projects/cpp/tollvm/grammar/ToLLVMParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/projects/cpp/tollvm/grammar/LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -9,7 +9,7 @@
 
 
 
-class  ToLLVMParser : public antlr4::Parser {
+class  LuxParser : public antlr4::Parser {
 public:
   enum {
     NAMESPACE = 1, USE = 2, RET = 3, STRUCT = 4, UNION = 5, ENUM = 6, NULL_LIT = 7, 
@@ -54,11 +54,11 @@ public:
     RuleExpression = 52, RuleTypeSpec = 53, RuleFnTypeSpec = 54, RulePrimitiveType = 55
   };
 
-  explicit ToLLVMParser(antlr4::TokenStream *input);
+  explicit LuxParser(antlr4::TokenStream *input);
 
-  ToLLVMParser(antlr4::TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options);
+  LuxParser(antlr4::TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options);
 
-  ~ToLLVMParser() override;
+  ~LuxParser() override;
 
   std::string getGrammarFileName() const override;
 

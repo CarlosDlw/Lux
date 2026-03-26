@@ -1,5 +1,5 @@
-#ifndef TOLLVM_SET_H
-#define TOLLVM_SET_H
+#ifndef LUX_SET_H
+#define LUX_SET_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -15,7 +15,7 @@
 typedef struct {
     const char* ptr;
     size_t      len;
-} tollvm_set_string;
+} lux_set_string;
 
 typedef struct {
     uint8_t*  states;     // 0=empty, 1=occupied, 2=tombstone
@@ -24,54 +24,54 @@ typedef struct {
     size_t    len;        // active entries
     size_t    cap;        // total slots
     size_t    key_size;   // bytes per key
-} tollvm_set_header;
+} lux_set_header;
 
-// Vec out-parameter (mirrors tollvm_vec_header layout)
+// Vec out-parameter (mirrors lux_vec_header layout)
 typedef struct {
     void*  ptr;
     size_t len;
     size_t cap;
-} tollvm_set_vec_out;
+} lux_set_vec_out;
 
 // ── Macro-generated declarations ─────────────────────────────────────────
 
 // For integer element types: ET = C type, ES = suffix
-#define TOLLVM_SET_DECL_INT(ET, ES)                                          \
-void   tollvm_set_init_##ES(tollvm_set_header* s);                           \
-void   tollvm_set_free_##ES(tollvm_set_header* s);                           \
-size_t tollvm_set_len_##ES(const tollvm_set_header* s);                      \
-int    tollvm_set_isEmpty_##ES(const tollvm_set_header* s);                  \
-int    tollvm_set_add_##ES(tollvm_set_header* s, ET elem);                   \
-int    tollvm_set_has_##ES(tollvm_set_header* s, ET elem);                   \
-int    tollvm_set_remove_##ES(tollvm_set_header* s, ET elem);                \
-void   tollvm_set_clear_##ES(tollvm_set_header* s);                          \
-void   tollvm_set_values_##ES(tollvm_set_header* s, tollvm_set_vec_out* out);
+#define LUX_SET_DECL_INT(ET, ES)                                          \
+void   lux_set_init_##ES(lux_set_header* s);                           \
+void   lux_set_free_##ES(lux_set_header* s);                           \
+size_t lux_set_len_##ES(const lux_set_header* s);                      \
+int    lux_set_isEmpty_##ES(const lux_set_header* s);                  \
+int    lux_set_add_##ES(lux_set_header* s, ET elem);                   \
+int    lux_set_has_##ES(lux_set_header* s, ET elem);                   \
+int    lux_set_remove_##ES(lux_set_header* s, ET elem);                \
+void   lux_set_clear_##ES(lux_set_header* s);                          \
+void   lux_set_values_##ES(lux_set_header* s, lux_set_vec_out* out);
 
 // For string element type
-#define TOLLVM_SET_DECL_STR()                                                \
-void   tollvm_set_init_str(tollvm_set_header* s);                            \
-void   tollvm_set_free_str(tollvm_set_header* s);                            \
-size_t tollvm_set_len_str(const tollvm_set_header* s);                       \
-int    tollvm_set_isEmpty_str(const tollvm_set_header* s);                   \
-int    tollvm_set_add_str(tollvm_set_header* s, tollvm_set_string elem);     \
-int    tollvm_set_has_str(tollvm_set_header* s, tollvm_set_string elem);     \
-int    tollvm_set_remove_str(tollvm_set_header* s, tollvm_set_string elem);  \
-void   tollvm_set_clear_str(tollvm_set_header* s);                           \
-void   tollvm_set_values_str(tollvm_set_header* s, tollvm_set_vec_out* out);
+#define LUX_SET_DECL_STR()                                                \
+void   lux_set_init_str(lux_set_header* s);                            \
+void   lux_set_free_str(lux_set_header* s);                            \
+size_t lux_set_len_str(const lux_set_header* s);                       \
+int    lux_set_isEmpty_str(const lux_set_header* s);                   \
+int    lux_set_add_str(lux_set_header* s, lux_set_string elem);     \
+int    lux_set_has_str(lux_set_header* s, lux_set_string elem);     \
+int    lux_set_remove_str(lux_set_header* s, lux_set_string elem);  \
+void   lux_set_clear_str(lux_set_header* s);                           \
+void   lux_set_values_str(lux_set_header* s, lux_set_vec_out* out);
 
 // ── Instantiate declarations ─────────────────────────────────────────────
 
 // Integer element types
-TOLLVM_SET_DECL_INT(int8_t,   i8)
-TOLLVM_SET_DECL_INT(int16_t,  i16)
-TOLLVM_SET_DECL_INT(int32_t,  i32)
-TOLLVM_SET_DECL_INT(int64_t,  i64)
-TOLLVM_SET_DECL_INT(uint8_t,  u8)
-TOLLVM_SET_DECL_INT(uint16_t, u16)
-TOLLVM_SET_DECL_INT(uint32_t, u32)
-TOLLVM_SET_DECL_INT(uint64_t, u64)
+LUX_SET_DECL_INT(int8_t,   i8)
+LUX_SET_DECL_INT(int16_t,  i16)
+LUX_SET_DECL_INT(int32_t,  i32)
+LUX_SET_DECL_INT(int64_t,  i64)
+LUX_SET_DECL_INT(uint8_t,  u8)
+LUX_SET_DECL_INT(uint16_t, u16)
+LUX_SET_DECL_INT(uint32_t, u32)
+LUX_SET_DECL_INT(uint64_t, u64)
 
 // String element type
-TOLLVM_SET_DECL_STR()
+LUX_SET_DECL_STR()
 
-#endif // TOLLVM_SET_H
+#endif // LUX_SET_H

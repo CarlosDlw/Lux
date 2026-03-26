@@ -1,6 +1,6 @@
 # Variables
 
-This page covers variable declaration, initialization, scope, and reassignment in T.
+This page covers variable declaration, initialization, scope, and reassignment in Lux.
 
 ## Declaration
 
@@ -199,7 +199,7 @@ int32 main() {
 
 ## Multiple Declarations
 
-Each variable declaration is a separate statement. T does not support declaring multiple variables on one line:
+Each variable declaration is a separate statement. Lux does not support declaring multiple variables on one line:
 
 ```t
 // each on its own line

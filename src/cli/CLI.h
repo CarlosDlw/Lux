@@ -46,6 +46,6 @@ private:
     // Multi-file pipeline helpers
     std::string getProjectRoot() const;
     std::string ensureBuildDir(const std::string& projectRoot) const;
-    static std::string extractNamespace(ToLLVMParser::ProgramContext* tree);
+    static std::string extractNamespace(LuxParser::ProgramContext* tree);
     static std::string makeObjectName(const SourceUnit& unit);
 };

@@ -1,6 +1,6 @@
-# ─── tollvm Makefile ──────────────────────────────────────────────────────────
+# ─── lux Makefile ──────────────────────────────────────────────────────────
 BUILD_DIR  := build
-BINARY     := $(BUILD_DIR)/tollvm
+BINARY     := $(BUILD_DIR)/lux
 NPROC      := $(shell nproc)
 
 .PHONY: all build configure clean rebuild run help
@@ -38,7 +38,7 @@ endif
 ## help  — lista os targets disponíveis
 help:
 	@echo ""
-	@echo "  tollvm — Makefile targets"
+	@echo "  lux — Makefile targets"
 	@echo ""
 	@grep -E '^##' Makefile | sed 's/## /  make /g'
 	@echo ""

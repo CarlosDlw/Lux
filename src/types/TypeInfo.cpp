@@ -65,33 +65,33 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
             return llvm::PointerType::getUnqual(ctx);
         }
         if (extendedKind == "Map") {
-            auto* existing = llvm::StructType::getTypeByName(ctx, "tollvm_map_header");
+            auto* existing = llvm::StructType::getTypeByName(ctx, "lux_map_header");
             if (existing) return existing;
             auto* ptrTy   = llvm::PointerType::getUnqual(ctx);
             auto* usizeTy = dl.getIntPtrType(ctx);
             return llvm::StructType::create(ctx, {
                 ptrTy, ptrTy, ptrTy, ptrTy,
                 usizeTy, usizeTy, usizeTy, usizeTy
-            }, "tollvm_map_header");
+            }, "lux_map_header");
         }
         if (extendedKind == "Set") {
-            auto* existing = llvm::StructType::getTypeByName(ctx, "tollvm_set_header");
+            auto* existing = llvm::StructType::getTypeByName(ctx, "lux_set_header");
             if (existing) return existing;
             auto* ptrTy   = llvm::PointerType::getUnqual(ctx);
             auto* usizeTy = dl.getIntPtrType(ctx);
             return llvm::StructType::create(ctx, {
                 ptrTy, ptrTy, ptrTy,
                 usizeTy, usizeTy, usizeTy
-            }, "tollvm_set_header");
+            }, "lux_set_header");
         }
         // All Vec<T> variants share the same LLVM struct: { ptr, usize, usize }
-        auto* existing = llvm::StructType::getTypeByName(ctx, "tollvm_vec_header");
+        auto* existing = llvm::StructType::getTypeByName(ctx, "lux_vec_header");
         if (existing) return existing;
         return llvm::StructType::create(ctx, {
             llvm::PointerType::getUnqual(ctx),
             dl.getIntPtrType(ctx),
             dl.getIntPtrType(ctx)
-        }, "tollvm_vec_header");
+        }, "lux_vec_header");
     }
     }
 

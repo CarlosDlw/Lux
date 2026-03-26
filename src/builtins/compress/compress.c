@@ -5,11 +5,11 @@
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
 
-static tollvm_compress_str_result make_result(const char* p, size_t n) {
-    return (tollvm_compress_str_result){ p, n };
+static lux_compress_str_result make_result(const char* p, size_t n) {
+    return (lux_compress_str_result){ p, n };
 }
 
-static tollvm_compress_str_result empty_result(void) {
+static lux_compress_str_result empty_result(void) {
     char* p = (char*)malloc(1);
     p[0] = '\0';
     return make_result(p, 0);
@@ -17,7 +17,7 @@ static tollvm_compress_str_result empty_result(void) {
 
 /* ── gzip compress ──────────────────────────────────────────────────────── */
 
-tollvm_compress_str_result tollvm_gzipCompress(const char* s, size_t slen) {
+lux_compress_str_result lux_gzipCompress(const char* s, size_t slen) {
     if (slen == 0) return empty_result();
 
     z_stream zs;
@@ -50,7 +50,7 @@ tollvm_compress_str_result tollvm_gzipCompress(const char* s, size_t slen) {
 
 /* ── gzip decompress ────────────────────────────────────────────────────── */
 
-tollvm_compress_str_result tollvm_gzipDecompress(const char* s, size_t slen) {
+lux_compress_str_result lux_gzipDecompress(const char* s, size_t slen) {
     if (slen == 0) return empty_result();
 
     z_stream zs;
@@ -93,7 +93,7 @@ tollvm_compress_str_result tollvm_gzipDecompress(const char* s, size_t slen) {
 
 /* ── raw deflate ────────────────────────────────────────────────────────── */
 
-tollvm_compress_str_result tollvm_deflate(const char* s, size_t slen) {
+lux_compress_str_result lux_deflate(const char* s, size_t slen) {
     if (slen == 0) return empty_result();
 
     z_stream zs;
@@ -126,7 +126,7 @@ tollvm_compress_str_result tollvm_deflate(const char* s, size_t slen) {
 
 /* ── raw inflate ────────────────────────────────────────────────────────── */
 
-tollvm_compress_str_result tollvm_inflate(const char* s, size_t slen) {
+lux_compress_str_result lux_inflate(const char* s, size_t slen) {
     if (slen == 0) return empty_result();
 
     z_stream zs;
@@ -169,7 +169,7 @@ tollvm_compress_str_result tollvm_inflate(const char* s, size_t slen) {
 
 /* ── compress with level ────────────────────────────────────────────────── */
 
-tollvm_compress_str_result tollvm_compressLevel(const char* s, size_t slen, int32_t level) {
+lux_compress_str_result lux_compressLevel(const char* s, size_t slen, int32_t level) {
     if (slen == 0) return empty_result();
 
     if (level < 1) level = 1;

@@ -68,8 +68,8 @@ bool CLI::parse(int argc, char* argv[]) {
         } else if (arg[0] != '-') {
             options_.outputFile = arg;
         } else {
-            std::cerr << "tollvm: unknown flag '" << arg << "'\n";
-            std::cerr << "Run 'tollvm help' for usage.\n";
+            std::cerr << "lux: unknown flag '" << arg << "'\n";
+            std::cerr << "Run 'lux help' for usage.\n";
             return false;
         }
     }
@@ -80,26 +80,26 @@ bool CLI::parse(int argc, char* argv[]) {
 
 void CLI::printHelp() const {
     std::cout
-        << "tollvm - ToLLVM Compiler  v0.1.0\n\n"
+        << "lux - Lux Compiler  v0.1.0\n\n"
         << "Usage:\n"
-        << "  tollvm <file.tm>              Compile and print LLVM IR to stdout\n"
-        << "  tollvm <file.tm> <output>     Compile and emit native binary\n"
-        << "  tollvm <file.tm> <output> -oN Compile with optimization level N (1, 2, or 3)\n"
-        << "  tollvm helpc <lib> [symbol]   C library reference helper\n"
-        << "  tollvm help                   Show this help message\n"
-        << "  tollvm version                Show compiler version\n\n"
+        << "  lux <file.lx>              Compile and print LLVM IR to stdout\n"
+        << "  lux <file.lx> <output>     Compile and emit native binary\n"
+        << "  lux <file.lx> <output> -oN Compile with optimization level N (1, 2, or 3)\n"
+        << "  lux helpc <lib> [symbol]   C library reference helper\n"
+        << "  lux help                   Show this help message\n"
+        << "  lux version                Show compiler version\n\n"
         << "Linker flags:\n"
         << "  -lname       Link against library 'name' (e.g. -lSDL2)\n"
         << "  -Lpath       Add 'path' to the library search path\n"
         << "  -Ipath       Add 'path' to the include search path (reserved)\n\n"
         << "Examples:\n"
-        << "  tollvm main.tm\n"
-        << "  tollvm main.tm ./main\n"
-        << "  tollvm main.tm ./main -o2\n";
+        << "  lux main.lx\n"
+        << "  lux main.lx ./main\n"
+        << "  lux main.lx ./main -o2\n";
 }
 
 void CLI::printVersion() const {
-    std::cout << "tollvm v0.1.0\n";
+    std::cout << "lux v0.1.0\n";
 }
 
 int CLI::run() {
@@ -131,12 +131,12 @@ std::string CLI::getProjectRoot() const {
 }
 
 std::string CLI::ensureBuildDir(const std::string& projectRoot) const {
-    auto buildDir = projectRoot + "/.tmbuild";
+    auto buildDir = projectRoot + "/.luxbuild";
     fs::create_directories(buildDir);
     return buildDir;
 }
 
-std::string CLI::extractNamespace(ToLLVMParser::ProgramContext* tree) {
+std::string CLI::extractNamespace(LuxParser::ProgramContext* tree) {
     if (auto* nsDecl = tree->namespaceDecl()) {
         return nsDecl->IDENTIFIER()->getText();
     }
@@ -159,11 +159,11 @@ int CLI::compile() {
     auto buildDir    = ensureBuildDir(projectRoot);
 
     // ═════════════════════════════════════════════════════════════════════
-    // STEP 2: SCAN ALL .tm FILES IN THE PROJECT
+    // STEP 2: SCAN ALL .lx FILES IN THE PROJECT
     // ═════════════════════════════════════════════════════════════════════
     auto allFiles = ProjectScanner::scan(projectRoot);
     if (allFiles.empty()) {
-        std::cerr << "tollvm: no .tm files found in '" << projectRoot << "'\n";
+        std::cerr << "lux: no .lx files found in '" << projectRoot << "'\n";
         return 1;
     }
 
@@ -179,14 +179,14 @@ int CLI::compile() {
         unit.parseResult = Parser::parse(filePath);
 
         if (unit.parseResult.hasErrors) {
-            std::cerr << "tollvm: parse errors in '" << filePath << "'\n";
+            std::cerr << "lux: parse errors in '" << filePath << "'\n";
             anyParseError = true;
             continue;
         }
 
         unit.namespaceName = extractNamespace(unit.parseResult.tree);
         if (unit.namespaceName.empty()) {
-            std::cerr << "tollvm: file '" << filePath
+            std::cerr << "lux: file '" << filePath
                       << "' is missing a 'namespace' declaration\n";
             anyParseError = true;
             continue;
@@ -210,7 +210,7 @@ int CLI::compile() {
     auto dupErrors = registry.validate();
     if (!dupErrors.empty()) {
         for (auto& err : dupErrors) {
-            std::cerr << "tollvm: " << err << "\n";
+            std::cerr << "lux: " << err << "\n";
         }
         return 1;
     }
@@ -231,25 +231,25 @@ int CLI::compile() {
                 if (incl->INCLUDE_SYS()) {
                     auto header = CHeaderResolver::extractSystemHeader(text);
                     if (header.empty()) {
-                        std::cerr << "tollvm: invalid system include in '"
+                        std::cerr << "lux: invalid system include in '"
                                   << unit.filePath << "'\n";
                         continue;
                     }
                     if (!resolver.resolveSystemHeader(header)) {
-                        std::cerr << "tollvm: cannot find header '<" << header
+                        std::cerr << "lux: cannot find header '<" << header
                                   << ">'. Check '-I' include paths\n";
                         return 1;
                     }
                 } else if (incl->INCLUDE_LOCAL()) {
                     auto header = CHeaderResolver::extractLocalHeader(text);
                     if (header.empty()) {
-                        std::cerr << "tollvm: invalid local include in '"
+                        std::cerr << "lux: invalid local include in '"
                                   << unit.filePath << "'\n";
                         continue;
                     }
                     auto basePath = fs::path(unit.filePath).parent_path().string();
                     if (!resolver.resolveLocalHeader(header, basePath)) {
-                        std::cerr << "tollvm: cannot find header '\"" << header
+                        std::cerr << "lux: cannot find header '\"" << header
                                   << "\"'. Check '-I' include paths\n";
                         return 1;
                     }
@@ -279,7 +279,7 @@ int CLI::compile() {
             if (lf == flag) { alreadyProvided = true; break; }
         }
         if (!alreadyProvided) {
-            std::cerr << "tollvm: auto-linking '" << flag
+            std::cerr << "lux: auto-linking '" << flag
                       << "' (required by <" << header << ">)\n";
             options_.linkerFlags.push_back(flag);
         }
@@ -304,7 +304,7 @@ int CLI::compile() {
         }
 
         if (!CodeGen::compileCSource(cSrc, objPath, cIncFlags)) {
-            std::cerr << "tollvm: failed to compile C source '"
+            std::cerr << "lux: failed to compile C source '"
                       << cSrc << "'\n";
             return 1;
         }
@@ -321,7 +321,7 @@ int CLI::compile() {
         checker.setCBindings(&cBindings);
         if (!checker.check(unit.parseResult.tree)) {
             for (auto& err : checker.errors()) {
-                std::cerr << "tollvm: " << unit.filePath << ": " << err << "\n";
+                std::cerr << "lux: " << unit.filePath << ": " << err << "\n";
             }
             anyCheckError = true;
         }
@@ -340,7 +340,7 @@ int CLI::compile() {
         irGen.setCBindings(&cBindings);
         auto irModule = irGen.generate(unit.parseResult.tree, unit.filePath);
         if (!irModule) {
-            std::cerr << "tollvm: IR generation failed for '"
+            std::cerr << "lux: IR generation failed for '"
                       << unit.filePath << "'\n";
             anyIRError = true;
             continue;
@@ -361,11 +361,11 @@ int CLI::compile() {
             Optimizer::optimize(*irModule, level);
         }
 
-        // Emit object file to .tmbuild/
+        // Emit object file to .luxbuild/
         auto objName = makeObjectName(unit);
         auto objPath = buildDir + "/" + objName + ".o";
         if (!CodeGen::emitObjectFile(irModule->module(), objPath)) {
-            std::cerr << "tollvm: failed to emit object for '"
+            std::cerr << "lux: failed to emit object for '"
                       << unit.filePath << "'\n";
             anyIRError = true;
             continue;
@@ -385,11 +385,11 @@ int CLI::compile() {
     // ═════════════════════════════════════════════════════════════════════
     if (!CodeGen::linkObjectFiles(objectFiles, options_.outputFile,
                                     options_.linkerFlags, options_.libPaths)) {
-        std::cerr << "tollvm: failed to link binary '"
+        std::cerr << "lux: failed to link binary '"
                   << options_.outputFile << "'\n";
         return 1;
     }
 
-    std::cout << "tollvm: binary written to '" << options_.outputFile << "'\n";
+    std::cout << "lux: binary written to '" << options_.outputFile << "'\n";
     return 0;
 }

@@ -16,7 +16,7 @@ static void fail_abort(const char* type, const char* detail) {
 
 /* ── assertEqual ────────────────────────────────────────────────── */
 
-void tollvm_assertEqualI64(int64_t a, int64_t b) {
+void lux_assertEqualI64(int64_t a, int64_t b) {
     if (a != b) {
         char buf[128];
         snprintf(buf, sizeof(buf),
@@ -25,7 +25,7 @@ void tollvm_assertEqualI64(int64_t a, int64_t b) {
     }
 }
 
-void tollvm_assertEqualF64(double a, double b) {
+void lux_assertEqualF64(double a, double b) {
     if (a != b) {
         char buf[128];
         snprintf(buf, sizeof(buf), "expected %g, got %g", b, a);
@@ -33,7 +33,7 @@ void tollvm_assertEqualF64(double a, double b) {
     }
 }
 
-void tollvm_assertEqualStr(const char* a, size_t alen,
+void lux_assertEqualStr(const char* a, size_t alen,
                            const char* b, size_t blen) {
     if (alen != blen || memcmp(a, b, alen) != 0) {
         char buf[512];
@@ -44,7 +44,7 @@ void tollvm_assertEqualStr(const char* a, size_t alen,
     }
 }
 
-void tollvm_assertEqualBool(int32_t a, int32_t b) {
+void lux_assertEqualBool(int32_t a, int32_t b) {
     if ((!a) != (!b)) {
         char buf[64];
         snprintf(buf, sizeof(buf), "expected %s, got %s",
@@ -53,7 +53,7 @@ void tollvm_assertEqualBool(int32_t a, int32_t b) {
     }
 }
 
-void tollvm_assertEqualChar(int8_t a, int8_t b) {
+void lux_assertEqualChar(int8_t a, int8_t b) {
     if (a != b) {
         char buf[64];
         snprintf(buf, sizeof(buf), "expected '%c' (%d), got '%c' (%d)",
@@ -64,7 +64,7 @@ void tollvm_assertEqualChar(int8_t a, int8_t b) {
 
 /* ── assertNotEqual ─────────────────────────────────────────────── */
 
-void tollvm_assertNotEqualI64(int64_t a, int64_t b) {
+void lux_assertNotEqualI64(int64_t a, int64_t b) {
     if (a == b) {
         char buf[128];
         snprintf(buf, sizeof(buf),
@@ -73,7 +73,7 @@ void tollvm_assertNotEqualI64(int64_t a, int64_t b) {
     }
 }
 
-void tollvm_assertNotEqualF64(double a, double b) {
+void lux_assertNotEqualF64(double a, double b) {
     if (a == b) {
         char buf[128];
         snprintf(buf, sizeof(buf), "values should differ, both are %g", a);
@@ -81,7 +81,7 @@ void tollvm_assertNotEqualF64(double a, double b) {
     }
 }
 
-void tollvm_assertNotEqualStr(const char* a, size_t alen,
+void lux_assertNotEqualStr(const char* a, size_t alen,
                               const char* b, size_t blen) {
     if (alen == blen && memcmp(a, b, alen) == 0) {
         char buf[512];
@@ -91,7 +91,7 @@ void tollvm_assertNotEqualStr(const char* a, size_t alen,
     }
 }
 
-void tollvm_assertNotEqualBool(int32_t a, int32_t b) {
+void lux_assertNotEqualBool(int32_t a, int32_t b) {
     if ((!a) == (!b)) {
         char buf[64];
         snprintf(buf, sizeof(buf), "values should differ, both are %s",
@@ -100,7 +100,7 @@ void tollvm_assertNotEqualBool(int32_t a, int32_t b) {
     }
 }
 
-void tollvm_assertNotEqualChar(int8_t a, int8_t b) {
+void lux_assertNotEqualChar(int8_t a, int8_t b) {
     if (a == b) {
         char buf[64];
         snprintf(buf, sizeof(buf),
@@ -112,17 +112,17 @@ void tollvm_assertNotEqualChar(int8_t a, int8_t b) {
 
 /* ── assertTrue / assertFalse ───────────────────────────────────── */
 
-void tollvm_assertTrue(int32_t cond) {
+void lux_assertTrue(int32_t cond) {
     if (!cond) fail_abort("assertTrue", "expected true, got false");
 }
 
-void tollvm_assertFalse(int32_t cond) {
+void lux_assertFalse(int32_t cond) {
     if (cond) fail_abort("assertFalse", "expected false, got true");
 }
 
 /* ── assertGreater ──────────────────────────────────────────────── */
 
-void tollvm_assertGreaterI64(int64_t a, int64_t b) {
+void lux_assertGreaterI64(int64_t a, int64_t b) {
     if (!(a > b)) {
         char buf[128];
         snprintf(buf, sizeof(buf),
@@ -131,7 +131,7 @@ void tollvm_assertGreaterI64(int64_t a, int64_t b) {
     }
 }
 
-void tollvm_assertGreaterF64(double a, double b) {
+void lux_assertGreaterF64(double a, double b) {
     if (!(a > b)) {
         char buf[128];
         snprintf(buf, sizeof(buf), "expected %g > %g", a, b);
@@ -141,7 +141,7 @@ void tollvm_assertGreaterF64(double a, double b) {
 
 /* ── assertLess ─────────────────────────────────────────────────── */
 
-void tollvm_assertLessI64(int64_t a, int64_t b) {
+void lux_assertLessI64(int64_t a, int64_t b) {
     if (!(a < b)) {
         char buf[128];
         snprintf(buf, sizeof(buf),
@@ -150,7 +150,7 @@ void tollvm_assertLessI64(int64_t a, int64_t b) {
     }
 }
 
-void tollvm_assertLessF64(double a, double b) {
+void lux_assertLessF64(double a, double b) {
     if (!(a < b)) {
         char buf[128];
         snprintf(buf, sizeof(buf), "expected %g < %g", a, b);
@@ -160,7 +160,7 @@ void tollvm_assertLessF64(double a, double b) {
 
 /* ── assertGreaterEq ────────────────────────────────────────────── */
 
-void tollvm_assertGreaterEqI64(int64_t a, int64_t b) {
+void lux_assertGreaterEqI64(int64_t a, int64_t b) {
     if (!(a >= b)) {
         char buf[128];
         snprintf(buf, sizeof(buf),
@@ -169,7 +169,7 @@ void tollvm_assertGreaterEqI64(int64_t a, int64_t b) {
     }
 }
 
-void tollvm_assertGreaterEqF64(double a, double b) {
+void lux_assertGreaterEqF64(double a, double b) {
     if (!(a >= b)) {
         char buf[128];
         snprintf(buf, sizeof(buf), "expected %g >= %g", a, b);
@@ -179,7 +179,7 @@ void tollvm_assertGreaterEqF64(double a, double b) {
 
 /* ── assertLessEq ───────────────────────────────────────────────── */
 
-void tollvm_assertLessEqI64(int64_t a, int64_t b) {
+void lux_assertLessEqI64(int64_t a, int64_t b) {
     if (!(a <= b)) {
         char buf[128];
         snprintf(buf, sizeof(buf),
@@ -188,7 +188,7 @@ void tollvm_assertLessEqI64(int64_t a, int64_t b) {
     }
 }
 
-void tollvm_assertLessEqF64(double a, double b) {
+void lux_assertLessEqF64(double a, double b) {
     if (!(a <= b)) {
         char buf[128];
         snprintf(buf, sizeof(buf), "expected %g <= %g", a, b);
@@ -198,7 +198,7 @@ void tollvm_assertLessEqF64(double a, double b) {
 
 /* ── assertStringContains ───────────────────────────────────────── */
 
-void tollvm_assertStringContains(const char* s, size_t slen,
+void lux_assertStringContains(const char* s, size_t slen,
                                  const char* sub, size_t sublen) {
     if (sublen == 0) return; /* empty substring always contained */
     if (sublen > slen) {
@@ -222,7 +222,7 @@ void tollvm_assertStringContains(const char* s, size_t slen,
 
 /* ── assertNear ─────────────────────────────────────────────────── */
 
-void tollvm_assertNear(double a, double b, double epsilon) {
+void lux_assertNear(double a, double b, double epsilon) {
     if (fabs(a - b) > epsilon) {
         char buf[128];
         snprintf(buf, sizeof(buf),
@@ -234,19 +234,19 @@ void tollvm_assertNear(double a, double b, double epsilon) {
 
 /* ── Utilities ──────────────────────────────────────────────────── */
 
-void tollvm_testFail(const char* msg, size_t msglen) {
+void lux_testFail(const char* msg, size_t msglen) {
     char buf[512];
     snprintf(buf, sizeof(buf), "%.*s", (int)(msglen > 500 ? 500 : msglen), msg);
     fail_abort("fail", buf);
 }
 
-void tollvm_testSkip(const char* msg, size_t msglen) {
+void lux_testSkip(const char* msg, size_t msglen) {
     fprintf(stderr, "\033[33mSKIP\033[0m: %.*s\n",
             (int)(msglen > 500 ? 500 : msglen), msg);
     exit(0);
 }
 
-void tollvm_testLog(const char* msg, size_t msglen) {
+void lux_testLog(const char* msg, size_t msglen) {
     fprintf(stderr, "\033[36mLOG\033[0m: %.*s\n",
             (int)(msglen > 500 ? 500 : msglen), msg);
 }

@@ -4,7 +4,7 @@
 #include <vector>
 #include <unordered_map>
 
-#include "generated/ToLLVMParser.h"
+#include "generated/LuxParser.h"
 
 // Describes a single exported top-level symbol within a namespace.
 struct ExportedSymbol {
@@ -27,7 +27,7 @@ public:
     // Register all top-level declarations from a parsed file.
     void registerFile(const std::string& namespaceName,
                       const std::string& filePath,
-                      ToLLVMParser::ProgramContext* tree);
+                      LuxParser::ProgramContext* tree);
 
     // Validate the registry: check for duplicate symbols within namespaces.
     // Returns a list of human-readable error messages (empty = OK).

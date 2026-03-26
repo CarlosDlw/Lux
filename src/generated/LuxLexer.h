@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/projects/cpp/tollvm/grammar/ToLLVMLexer.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/projects/cpp/tollvm/grammar/LuxLexer.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -9,7 +9,7 @@
 
 
 
-class  ToLLVMLexer : public antlr4::Lexer {
+class  LuxLexer : public antlr4::Lexer {
 public:
   enum {
     NAMESPACE = 1, USE = 2, RET = 3, STRUCT = 4, UNION = 5, ENUM = 6, NULL_LIT = 7, 
@@ -36,9 +36,9 @@ public:
     BLOCK_COMMENT = 122
   };
 
-  explicit ToLLVMLexer(antlr4::CharStream *input);
+  explicit LuxLexer(antlr4::CharStream *input);
 
-  ~ToLLVMLexer() override;
+  ~LuxLexer() override;
 
 
   std::string getGrammarFileName() const override;

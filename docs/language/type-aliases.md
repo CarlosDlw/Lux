@@ -70,7 +70,7 @@ This is used for C string interop:
 cstring greeting = c"Hello!";
 puts(greeting);
 
-cstring converted = cstr("from T string");
+cstring converted = cstr("from Lux string");
 puts(converted);
 free(converted as *void);
 ```

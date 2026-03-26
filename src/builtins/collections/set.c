@@ -42,7 +42,7 @@ static int eq_8(const void* a, const void* b) { return *(const uint64_t*)a == *(
 
 // String hash/eq — FNV-1a
 static uint64_t hash_str(const void* key) {
-    const tollvm_set_string* s = (const tollvm_set_string*)key;
+    const lux_set_string* s = (const lux_set_string*)key;
     uint64_t h = 14695981039346656037ULL;
     for (size_t i = 0; i < s->len; i++) {
         h ^= (uint8_t)s->ptr[i];
@@ -52,15 +52,15 @@ static uint64_t hash_str(const void* key) {
 }
 
 static int eq_str(const void* a, const void* b) {
-    const tollvm_set_string* sa = (const tollvm_set_string*)a;
-    const tollvm_set_string* sb = (const tollvm_set_string*)b;
+    const lux_set_string* sa = (const lux_set_string*)a;
+    const lux_set_string* sb = (const lux_set_string*)b;
     return sa->len == sb->len &&
            (sa->len == 0 || memcmp(sa->ptr, sb->ptr, sa->len) == 0);
 }
 
 // ── Core operations ──────────────────────────────────────────────────────
 
-static void set_core_init(tollvm_set_header* s, size_t key_size) {
+static void set_core_init(lux_set_header* s, size_t key_size) {
     s->states   = (uint8_t*)calloc(SET_INITIAL_CAP, 1);
     s->keys     = calloc(SET_INITIAL_CAP, key_size);
     s->hashes   = (uint64_t*)calloc(SET_INITIAL_CAP, sizeof(uint64_t));
@@ -69,7 +69,7 @@ static void set_core_init(tollvm_set_header* s, size_t key_size) {
     s->key_size = key_size;
 }
 
-static void set_core_free(tollvm_set_header* s) {
+static void set_core_free(lux_set_header* s) {
     free(s->states);
     free(s->keys);
     free(s->hashes);
@@ -80,17 +80,17 @@ static void set_core_free(tollvm_set_header* s) {
     s->cap    = 0;
 }
 
-static void set_core_clear(tollvm_set_header* s) {
+static void set_core_clear(lux_set_header* s) {
     memset(s->states, 0, s->cap);
     s->len = 0;
 }
 
-static inline void* set_key_at(tollvm_set_header* s, size_t idx) {
+static inline void* set_key_at(lux_set_header* s, size_t idx) {
     return (uint8_t*)s->keys + idx * s->key_size;
 }
 
 // Find slot for a key. Sets *found = 1 if key exists, else 0.
-static size_t set_core_find(tollvm_set_header* s, const void* key,
+static size_t set_core_find(lux_set_header* s, const void* key,
                             uint64_t hash, set_eq_fn eq, int* found) {
     size_t mask = s->cap - 1;
     size_t idx  = (size_t)(hash & mask);
@@ -120,7 +120,7 @@ static size_t set_core_find(tollvm_set_header* s, const void* key,
     return (first_tombstone != SIZE_MAX) ? first_tombstone : 0;
 }
 
-static void set_core_grow(tollvm_set_header* s, set_hash_fn hash_fn, set_eq_fn eq) {
+static void set_core_grow(lux_set_header* s, set_hash_fn hash_fn, set_eq_fn eq) {
     size_t old_cap = s->cap;
     uint8_t*  old_states = s->states;
     void*     old_keys   = s->keys;
@@ -153,7 +153,7 @@ static void set_core_grow(tollvm_set_header* s, set_hash_fn hash_fn, set_eq_fn e
 }
 
 // Add element. Returns 1 if element was new, 0 if already existed.
-static int set_core_add(tollvm_set_header* s, const void* key,
+static int set_core_add(lux_set_header* s, const void* key,
                         set_hash_fn hash_fn, set_eq_fn eq) {
     if ((s->len + 1) * SET_LOAD_FACTOR_DEN > s->cap * SET_LOAD_FACTOR_NUM)
         set_core_grow(s, hash_fn, eq);
@@ -172,7 +172,7 @@ static int set_core_add(tollvm_set_header* s, const void* key,
     return 1;  // new element
 }
 
-static int set_core_has(tollvm_set_header* s, const void* key,
+static int set_core_has(lux_set_header* s, const void* key,
                         set_hash_fn hash_fn, set_eq_fn eq) {
     if (s->len == 0) return 0;
     uint64_t h = hash_fn(key);
@@ -182,7 +182,7 @@ static int set_core_has(tollvm_set_header* s, const void* key,
 }
 
 // Remove element. Returns 1 if existed, 0 if not found.
-static int set_core_remove(tollvm_set_header* s, const void* key,
+static int set_core_remove(lux_set_header* s, const void* key,
                            set_hash_fn hash_fn, set_eq_fn eq) {
     if (s->len == 0) return 0;
     uint64_t h = hash_fn(key);
@@ -202,33 +202,33 @@ static int set_core_remove(tollvm_set_header* s, const void* key,
 
 // ── Integer element types ────────────────────────────────────────────────
 
-#define TOLLVM_SET_IMPL_INT(ET, ES, HASH_FN, EQ_FN)                         \
-void tollvm_set_init_##ES(tollvm_set_header* s) {                            \
+#define LUX_SET_IMPL_INT(ET, ES, HASH_FN, EQ_FN)                         \
+void lux_set_init_##ES(lux_set_header* s) {                            \
     set_core_init(s, sizeof(ET));                                            \
 }                                                                            \
-void tollvm_set_free_##ES(tollvm_set_header* s) {                            \
+void lux_set_free_##ES(lux_set_header* s) {                            \
     set_core_free(s);                                                        \
 }                                                                            \
-size_t tollvm_set_len_##ES(const tollvm_set_header* s) {                     \
+size_t lux_set_len_##ES(const lux_set_header* s) {                     \
     return s->len;                                                           \
 }                                                                            \
-int tollvm_set_isEmpty_##ES(const tollvm_set_header* s) {                    \
+int lux_set_isEmpty_##ES(const lux_set_header* s) {                    \
     return s->len == 0;                                                      \
 }                                                                            \
-int tollvm_set_add_##ES(tollvm_set_header* s, ET elem) {                     \
+int lux_set_add_##ES(lux_set_header* s, ET elem) {                     \
     return set_core_add(s, &elem, HASH_FN, EQ_FN);                          \
 }                                                                            \
-int tollvm_set_has_##ES(tollvm_set_header* s, ET elem) {                     \
+int lux_set_has_##ES(lux_set_header* s, ET elem) {                     \
     return set_core_has(s, &elem, HASH_FN, EQ_FN);                          \
 }                                                                            \
-int tollvm_set_remove_##ES(tollvm_set_header* s, ET elem) {                  \
+int lux_set_remove_##ES(lux_set_header* s, ET elem) {                  \
     return set_core_remove(s, &elem, HASH_FN, EQ_FN);                       \
 }                                                                            \
-void tollvm_set_clear_##ES(tollvm_set_header* s) {                           \
+void lux_set_clear_##ES(lux_set_header* s) {                           \
     set_core_clear(s);                                                       \
 }                                                                            \
-void tollvm_set_values_##ES(tollvm_set_header* s,                            \
-                             tollvm_set_vec_out* out) {                     \
+void lux_set_values_##ES(lux_set_header* s,                            \
+                             lux_set_vec_out* out) {                     \
     ET* arr = (ET*)malloc(s->len * sizeof(ET));                              \
     size_t n = 0;                                                            \
     for (size_t i = 0; i < s->cap; i++) {                                    \
@@ -239,56 +239,56 @@ void tollvm_set_values_##ES(tollvm_set_header* s,                            \
 }
 
 // Instantiate integer types
-TOLLVM_SET_IMPL_INT(int8_t,   i8,  hash_1, eq_1)
-TOLLVM_SET_IMPL_INT(uint8_t,  u8,  hash_1, eq_1)
-TOLLVM_SET_IMPL_INT(int16_t,  i16, hash_2, eq_2)
-TOLLVM_SET_IMPL_INT(uint16_t, u16, hash_2, eq_2)
-TOLLVM_SET_IMPL_INT(int32_t,  i32, hash_4, eq_4)
-TOLLVM_SET_IMPL_INT(uint32_t, u32, hash_4, eq_4)
-TOLLVM_SET_IMPL_INT(int64_t,  i64, hash_8, eq_8)
-TOLLVM_SET_IMPL_INT(uint64_t, u64, hash_8, eq_8)
+LUX_SET_IMPL_INT(int8_t,   i8,  hash_1, eq_1)
+LUX_SET_IMPL_INT(uint8_t,  u8,  hash_1, eq_1)
+LUX_SET_IMPL_INT(int16_t,  i16, hash_2, eq_2)
+LUX_SET_IMPL_INT(uint16_t, u16, hash_2, eq_2)
+LUX_SET_IMPL_INT(int32_t,  i32, hash_4, eq_4)
+LUX_SET_IMPL_INT(uint32_t, u32, hash_4, eq_4)
+LUX_SET_IMPL_INT(int64_t,  i64, hash_8, eq_8)
+LUX_SET_IMPL_INT(uint64_t, u64, hash_8, eq_8)
 
 // ── String element type ──────────────────────────────────────────────────
 
-void tollvm_set_init_str(tollvm_set_header* s) {
-    set_core_init(s, sizeof(tollvm_set_string));
+void lux_set_init_str(lux_set_header* s) {
+    set_core_init(s, sizeof(lux_set_string));
 }
 
-void tollvm_set_free_str(tollvm_set_header* s) {
+void lux_set_free_str(lux_set_header* s) {
     set_core_free(s);
 }
 
-size_t tollvm_set_len_str(const tollvm_set_header* s) {
+size_t lux_set_len_str(const lux_set_header* s) {
     return s->len;
 }
 
-int tollvm_set_isEmpty_str(const tollvm_set_header* s) {
+int lux_set_isEmpty_str(const lux_set_header* s) {
     return s->len == 0;
 }
 
-int tollvm_set_add_str(tollvm_set_header* s, tollvm_set_string elem) {
+int lux_set_add_str(lux_set_header* s, lux_set_string elem) {
     return set_core_add(s, &elem, hash_str, eq_str);
 }
 
-int tollvm_set_has_str(tollvm_set_header* s, tollvm_set_string elem) {
+int lux_set_has_str(lux_set_header* s, lux_set_string elem) {
     return set_core_has(s, &elem, hash_str, eq_str);
 }
 
-int tollvm_set_remove_str(tollvm_set_header* s, tollvm_set_string elem) {
+int lux_set_remove_str(lux_set_header* s, lux_set_string elem) {
     return set_core_remove(s, &elem, hash_str, eq_str);
 }
 
-void tollvm_set_clear_str(tollvm_set_header* s) {
+void lux_set_clear_str(lux_set_header* s) {
     set_core_clear(s);
 }
 
-void tollvm_set_values_str(tollvm_set_header* s, tollvm_set_vec_out* out) {
-    tollvm_set_string* arr =
-        (tollvm_set_string*)malloc(s->len * sizeof(tollvm_set_string));
+void lux_set_values_str(lux_set_header* s, lux_set_vec_out* out) {
+    lux_set_string* arr =
+        (lux_set_string*)malloc(s->len * sizeof(lux_set_string));
     size_t n = 0;
     for (size_t i = 0; i < s->cap; i++) {
         if (s->states[i] == SET_STATE_OCCUPIED)
-            arr[n++] = *(tollvm_set_string*)
+            arr[n++] = *(lux_set_string*)
                 ((uint8_t*)s->keys + i * s->key_size);
     }
     out->ptr = arr; out->len = n; out->cap = n;

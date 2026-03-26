@@ -50,9 +50,9 @@ int32 main() {
     puts(c"[PASS] free works");
 
     // Step 4: cstr / fromCStr / fromCStrLen builtins
-    string name = "TollVM";
+    string name = "Lux";
     *char cname = cstr(name);
-    int32 cmp = strcmp(cname, c"TollVM");
+    int32 cmp = strcmp(cname, c"Lux");
     assert(cmp == 0);
     puts(c"[PASS] cstr() converts string to *char");
     free(cname as *void);

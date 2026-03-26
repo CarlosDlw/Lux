@@ -27,7 +27,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     // Vec<T> — Dynamic growable array
     //
     // LLVM layout: { T* ptr, usize len, usize cap }
-    // C prefix: tollvm_vec
+    // C prefix: lux_vec
     // Module: std::collections::vec
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -39,7 +39,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
         { "len", "usize" },
         { "cap", "usize" },
     };
-    vec.cPrefix = "tollvm_vec";
+    vec.cPrefix = "lux_vec";
 
     // ── Capacity / size ──────────────────────────────────────────────────
     vec.methods.push_back({ "len",      {TypeKind::Extended}, {}, "usize",
@@ -142,7 +142,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     //
     // LLVM layout: { ptr states, ptr keys, ptr values, ptr hashes,
     //                usize len, usize cap, usize key_size, usize val_size }
-    // C prefix: tollvm_map
+    // C prefix: lux_map
     // Module: std::collections::Map
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -159,7 +159,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
         { "key_size", "usize" },
         { "val_size", "usize" },
     };
-    map.cPrefix = "tollvm_map";
+    map.cPrefix = "lux_map";
 
     // ── Size / query ─────────────────────────────────────────────────────
     map.methods.push_back({ "len",     {TypeKind::Extended}, {}, "usize",
@@ -200,7 +200,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     //
     // LLVM layout: { ptr states, ptr keys, ptr hashes,
     //                usize len, usize cap, usize key_size }
-    // C prefix: tollvm_set
+    // C prefix: lux_set
     // Module: std::collections::Set
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -215,7 +215,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
         { "cap",      "usize" },
         { "key_size", "usize" },
     };
-    set.cPrefix = "tollvm_set";
+    set.cPrefix = "lux_set";
 
     // ── Size / query ─────────────────────────────────────────────────────
     set.methods.push_back({ "len",     {TypeKind::Extended}, {}, "usize",
@@ -247,7 +247,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     // Task<T> — Async task handle (opaque pointer wrapping pthread)
     //
     // LLVM layout: { ptr handle } (opaque — managed by C runtime)
-    // C prefix: tollvm_task
+    // C prefix: lux_task
     // Module: std::thread
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -257,7 +257,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     task.layout       = {
         { "handle", "ptr" },
     };
-    task.cPrefix = "tollvm_task";
+    task.cPrefix = "lux_task";
 
     registerType(std::move(task));
 }

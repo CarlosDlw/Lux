@@ -70,7 +70,7 @@ if x == 1 {
 
 ## For Loops
 
-T has two forms of `for` loops: C-style and for-in.
+Lux has two forms of `for` loops: C-style and for-in.
 
 ### C-Style For Loop
 
@@ -384,7 +384,7 @@ int32 main() {
 // Output:
 // before throw
 // something went wrong
-// TryCatchDemo.tm
+// TryCatchDemo.lx
 // 7
 // 9
 // finally block

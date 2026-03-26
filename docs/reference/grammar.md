@@ -1,6 +1,6 @@
 # Grammar Reference
 
-This page summarizes the formal grammar of the T language, derived from the ANTLR4 grammar files (`ToLLVMLexer.g4` and `ToLLVMParser.g4`).
+This page summarizes the formal grammar of the Lux language, derived from the ANTLR4 grammar files (`LuxLexer.g4` and `LuxParser.g4`).
 
 ---
 

@@ -5,7 +5,7 @@
 #include <string>
 
 // Silences the default ANTLR error output and reformats syntax errors
-// to match the tollvm diagnostic style:  tollvm: <line>:<col>: <message>
+// to match the lux diagnostic style:  lux: <line>:<col>: <message>
 class DiagnosticErrorListener : public antlr4::BaseErrorListener {
 public:
     void syntaxError(antlr4::Recognizer* /*recognizer*/,
@@ -15,7 +15,7 @@ public:
                      std::exception_ptr /*e*/) override {
 
         std::string clean = simplify(msg, offendingSymbol);
-        std::cerr << "tollvm: " << line << ":" << charPositionInLine
+        std::cerr << "lux: " << line << ":" << charPositionInLine
                   << ": " << clean << "\n";
     }
 

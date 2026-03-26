@@ -8,42 +8,42 @@
 // vec<T> runtime — macro-generated monomorphized implementations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-#define TOLLVM_VEC_INITIAL_CAP 8
-#define TOLLVM_VEC_GROWTH_FACTOR 2
+#define LUX_VEC_INITIAL_CAP 8
+#define LUX_VEC_GROWTH_FACTOR 2
 
-#define TOLLVM_VEC_IMPL(T, SUFFIX)                                              \
+#define LUX_VEC_IMPL(T, SUFFIX)                                              \
                                                                                 \
 /* ── Typed data pointer helper ─────────────────────────────────────────── */  \
-static inline T* vec_data_##SUFFIX(tollvm_vec_header* v) {                      \
+static inline T* vec_data_##SUFFIX(lux_vec_header* v) {                      \
     return (T*)v->ptr;                                                          \
 }                                                                               \
-static inline const T* vec_cdata_##SUFFIX(const tollvm_vec_header* v) {         \
+static inline const T* vec_cdata_##SUFFIX(const lux_vec_header* v) {         \
     return (const T*)v->ptr;                                                    \
 }                                                                               \
                                                                                 \
 /* ── Ensure capacity ───────────────────────────────────────────────────── */  \
-static void vec_grow_##SUFFIX(tollvm_vec_header* v, size_t needed) {            \
+static void vec_grow_##SUFFIX(lux_vec_header* v, size_t needed) {            \
     if (needed <= v->cap) return;                                               \
-    size_t newCap = v->cap ? v->cap : TOLLVM_VEC_INITIAL_CAP;                   \
-    while (newCap < needed) newCap *= TOLLVM_VEC_GROWTH_FACTOR;                 \
+    size_t newCap = v->cap ? v->cap : LUX_VEC_INITIAL_CAP;                   \
+    while (newCap < needed) newCap *= LUX_VEC_GROWTH_FACTOR;                 \
     v->ptr = realloc(v->ptr, newCap * sizeof(T));                               \
     v->cap = newCap;                                                            \
 }                                                                               \
                                                                                 \
 /* ── Creation / destruction ────────────────────────────────────────────── */  \
-void tollvm_vec_init_##SUFFIX(tollvm_vec_header* v) {                           \
+void lux_vec_init_##SUFFIX(lux_vec_header* v) {                           \
     v->ptr = NULL;                                                              \
     v->len = 0;                                                                 \
     v->cap = 0;                                                                 \
 }                                                                               \
                                                                                 \
-void tollvm_vec_init_cap_##SUFFIX(tollvm_vec_header* v, size_t cap) {           \
+void lux_vec_init_cap_##SUFFIX(lux_vec_header* v, size_t cap) {           \
     v->ptr = malloc(cap * sizeof(T));                                           \
     v->len = 0;                                                                 \
     v->cap = cap;                                                               \
 }                                                                               \
                                                                                 \
-void tollvm_vec_free_##SUFFIX(tollvm_vec_header* v) {                           \
+void lux_vec_free_##SUFFIX(lux_vec_header* v) {                           \
     free(v->ptr);                                                               \
     v->ptr = NULL;                                                              \
     v->len = 0;                                                                 \
@@ -51,47 +51,47 @@ void tollvm_vec_free_##SUFFIX(tollvm_vec_header* v) {                           
 }                                                                               \
                                                                                 \
 /* ── Size / capacity ───────────────────────────────────────────────────── */  \
-size_t tollvm_vec_len_##SUFFIX(const tollvm_vec_header* v) {                    \
+size_t lux_vec_len_##SUFFIX(const lux_vec_header* v) {                    \
     return v->len;                                                              \
 }                                                                               \
                                                                                 \
-size_t tollvm_vec_capacity_##SUFFIX(const tollvm_vec_header* v) {               \
+size_t lux_vec_capacity_##SUFFIX(const lux_vec_header* v) {               \
     return v->cap;                                                              \
 }                                                                               \
                                                                                 \
-int tollvm_vec_isEmpty_##SUFFIX(const tollvm_vec_header* v) {                   \
+int lux_vec_isEmpty_##SUFFIX(const lux_vec_header* v) {                   \
     return v->len == 0;                                                         \
 }                                                                               \
                                                                                 \
 /* ── Element access ────────────────────────────────────────────────────── */  \
-T tollvm_vec_at_##SUFFIX(const tollvm_vec_header* v, size_t idx) {              \
+T lux_vec_at_##SUFFIX(const lux_vec_header* v, size_t idx) {              \
     if (idx >= v->len) {                                                        \
-        fprintf(stderr, "tollvm: vec index out of bounds: %zu >= %zu\n",        \
+        fprintf(stderr, "lux: vec index out of bounds: %zu >= %zu\n",        \
                 idx, v->len);                                                   \
         exit(1);                                                                \
     }                                                                           \
     return vec_cdata_##SUFFIX(v)[idx];                                          \
 }                                                                               \
                                                                                 \
-T tollvm_vec_first_##SUFFIX(const tollvm_vec_header* v) {                       \
+T lux_vec_first_##SUFFIX(const lux_vec_header* v) {                       \
     if (v->len == 0) {                                                          \
-        fprintf(stderr, "tollvm: vec.first() on empty vec\n");                  \
+        fprintf(stderr, "lux: vec.first() on empty vec\n");                  \
         exit(1);                                                                \
     }                                                                           \
     return vec_cdata_##SUFFIX(v)[0];                                            \
 }                                                                               \
                                                                                 \
-T tollvm_vec_last_##SUFFIX(const tollvm_vec_header* v) {                        \
+T lux_vec_last_##SUFFIX(const lux_vec_header* v) {                        \
     if (v->len == 0) {                                                          \
-        fprintf(stderr, "tollvm: vec.last() on empty vec\n");                   \
+        fprintf(stderr, "lux: vec.last() on empty vec\n");                   \
         exit(1);                                                                \
     }                                                                           \
     return vec_cdata_##SUFFIX(v)[v->len - 1];                                   \
 }                                                                               \
                                                                                 \
-void tollvm_vec_set_##SUFFIX(tollvm_vec_header* v, size_t idx, T val) {       \
+void lux_vec_set_##SUFFIX(lux_vec_header* v, size_t idx, T val) {       \
     if (idx >= v->len) {                                                        \
-        fprintf(stderr, "tollvm: vec index out of bounds: %zu >= %zu\n",        \
+        fprintf(stderr, "lux: vec index out of bounds: %zu >= %zu\n",        \
                 idx, v->len);                                                   \
         exit(1);                                                                \
     }                                                                           \
@@ -99,22 +99,22 @@ void tollvm_vec_set_##SUFFIX(tollvm_vec_header* v, size_t idx, T val) {       \
 }                                                                               \
                                                                                 \
 /* ── Mutation ──────────────────────────────────────────────────────────── */  \
-void tollvm_vec_push_##SUFFIX(tollvm_vec_header* v, T val) {                    \
+void lux_vec_push_##SUFFIX(lux_vec_header* v, T val) {                    \
     vec_grow_##SUFFIX(v, v->len + 1);                                           \
     vec_data_##SUFFIX(v)[v->len++] = val;                                       \
 }                                                                               \
                                                                                 \
-T tollvm_vec_pop_##SUFFIX(tollvm_vec_header* v) {                               \
+T lux_vec_pop_##SUFFIX(lux_vec_header* v) {                               \
     if (v->len == 0) {                                                          \
-        fprintf(stderr, "tollvm: vec.pop() on empty vec\n");                    \
+        fprintf(stderr, "lux: vec.pop() on empty vec\n");                    \
         exit(1);                                                                \
     }                                                                           \
     return vec_data_##SUFFIX(v)[--v->len];                                      \
 }                                                                               \
                                                                                 \
-void tollvm_vec_insert_##SUFFIX(tollvm_vec_header* v, size_t idx, T val) {      \
+void lux_vec_insert_##SUFFIX(lux_vec_header* v, size_t idx, T val) {      \
     if (idx > v->len) {                                                         \
-        fprintf(stderr, "tollvm: vec.insert() index out of bounds\n");          \
+        fprintf(stderr, "lux: vec.insert() index out of bounds\n");          \
         exit(1);                                                                \
     }                                                                           \
     vec_grow_##SUFFIX(v, v->len + 1);                                           \
@@ -124,9 +124,9 @@ void tollvm_vec_insert_##SUFFIX(tollvm_vec_header* v, size_t idx, T val) {      
     v->len++;                                                                   \
 }                                                                               \
                                                                                 \
-T tollvm_vec_removeAt_##SUFFIX(tollvm_vec_header* v, size_t idx) {              \
+T lux_vec_removeAt_##SUFFIX(lux_vec_header* v, size_t idx) {              \
     if (idx >= v->len) {                                                        \
-        fprintf(stderr, "tollvm: vec.removeAt() index out of bounds\n");        \
+        fprintf(stderr, "lux: vec.removeAt() index out of bounds\n");        \
         exit(1);                                                                \
     }                                                                           \
     T* d = vec_data_##SUFFIX(v);                                                \
@@ -136,9 +136,9 @@ T tollvm_vec_removeAt_##SUFFIX(tollvm_vec_header* v, size_t idx) {              
     return val;                                                                 \
 }                                                                               \
                                                                                 \
-T tollvm_vec_removeSwap_##SUFFIX(tollvm_vec_header* v, size_t idx) {            \
+T lux_vec_removeSwap_##SUFFIX(lux_vec_header* v, size_t idx) {            \
     if (idx >= v->len) {                                                        \
-        fprintf(stderr, "tollvm: vec.removeSwap() index out of bounds\n");      \
+        fprintf(stderr, "lux: vec.removeSwap() index out of bounds\n");      \
         exit(1);                                                                \
     }                                                                           \
     T* d = vec_data_##SUFFIX(v);                                                \
@@ -148,18 +148,18 @@ T tollvm_vec_removeSwap_##SUFFIX(tollvm_vec_header* v, size_t idx) {            
     return val;                                                                 \
 }                                                                               \
                                                                                 \
-void tollvm_vec_clear_##SUFFIX(tollvm_vec_header* v) {                          \
+void lux_vec_clear_##SUFFIX(lux_vec_header* v) {                          \
     v->len = 0;                                                                 \
 }                                                                               \
                                                                                 \
-void tollvm_vec_fill_##SUFFIX(tollvm_vec_header* v, T val) {                    \
+void lux_vec_fill_##SUFFIX(lux_vec_header* v, T val) {                    \
     T* d = vec_data_##SUFFIX(v);                                                \
     for (size_t i = 0; i < v->len; i++) d[i] = val;                            \
 }                                                                               \
                                                                                 \
-void tollvm_vec_swap_##SUFFIX(tollvm_vec_header* v, size_t i, size_t j) {       \
+void lux_vec_swap_##SUFFIX(lux_vec_header* v, size_t i, size_t j) {       \
     if (i >= v->len || j >= v->len) {                                           \
-        fprintf(stderr, "tollvm: vec.swap() index out of bounds\n");            \
+        fprintf(stderr, "lux: vec.swap() index out of bounds\n");            \
         exit(1);                                                                \
     }                                                                           \
     T* d = vec_data_##SUFFIX(v);                                                \
@@ -167,11 +167,11 @@ void tollvm_vec_swap_##SUFFIX(tollvm_vec_header* v, size_t i, size_t j) {       
 }                                                                               \
                                                                                 \
 /* ── Memory management ─────────────────────────────────────────────────── */  \
-void tollvm_vec_reserve_##SUFFIX(tollvm_vec_header* v, size_t cap) {            \
+void lux_vec_reserve_##SUFFIX(lux_vec_header* v, size_t cap) {            \
     vec_grow_##SUFFIX(v, cap);                                                  \
 }                                                                               \
                                                                                 \
-void tollvm_vec_shrink_##SUFFIX(tollvm_vec_header* v) {                         \
+void lux_vec_shrink_##SUFFIX(lux_vec_header* v) {                         \
     if (v->len == 0) {                                                          \
         free(v->ptr);                                                           \
         v->ptr = NULL;                                                          \
@@ -182,40 +182,40 @@ void tollvm_vec_shrink_##SUFFIX(tollvm_vec_header* v) {                         
     }                                                                           \
 }                                                                               \
                                                                                 \
-void tollvm_vec_resize_##SUFFIX(tollvm_vec_header* v, size_t len, T fill) {     \
+void lux_vec_resize_##SUFFIX(lux_vec_header* v, size_t len, T fill) {     \
     vec_grow_##SUFFIX(v, len);                                                  \
     T* d = vec_data_##SUFFIX(v);                                                \
     for (size_t i = v->len; i < len; i++) d[i] = fill;                         \
     v->len = len;                                                               \
 }                                                                               \
                                                                                 \
-void tollvm_vec_truncate_##SUFFIX(tollvm_vec_header* v, size_t len) {           \
+void lux_vec_truncate_##SUFFIX(lux_vec_header* v, size_t len) {           \
     if (len < v->len) v->len = len;                                             \
 }                                                                               \
                                                                                 \
 /* ── Search ────────────────────────────────────────────────────────────── */  \
-int tollvm_vec_contains_##SUFFIX(const tollvm_vec_header* v, T val) {           \
+int lux_vec_contains_##SUFFIX(const lux_vec_header* v, T val) {           \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     for (size_t i = 0; i < v->len; i++)                                         \
         if (d[i] == val) return 1;                                              \
     return 0;                                                                   \
 }                                                                               \
                                                                                 \
-long long tollvm_vec_indexOf_##SUFFIX(const tollvm_vec_header* v, T val) {      \
+long long lux_vec_indexOf_##SUFFIX(const lux_vec_header* v, T val) {      \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     for (size_t i = 0; i < v->len; i++)                                         \
         if (d[i] == val) return (long long)i;                                   \
     return -1;                                                                  \
 }                                                                               \
                                                                                 \
-long long tollvm_vec_lastIndexOf_##SUFFIX(const tollvm_vec_header* v, T val) {  \
+long long lux_vec_lastIndexOf_##SUFFIX(const lux_vec_header* v, T val) {  \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     for (size_t i = v->len; i > 0; i--)                                         \
         if (d[i - 1] == val) return (long long)(i - 1);                         \
     return -1;                                                                  \
 }                                                                               \
                                                                                 \
-size_t tollvm_vec_count_##SUFFIX(const tollvm_vec_header* v, T val) {           \
+size_t lux_vec_count_##SUFFIX(const lux_vec_header* v, T val) {           \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     size_t c = 0;                                                               \
     for (size_t i = 0; i < v->len; i++)                                         \
@@ -224,7 +224,7 @@ size_t tollvm_vec_count_##SUFFIX(const tollvm_vec_header* v, T val) {           
 }                                                                               \
                                                                                 \
 /* ── Reorder ───────────────────────────────────────────────────────────── */  \
-void tollvm_vec_reverse_##SUFFIX(tollvm_vec_header* v) {                        \
+void lux_vec_reverse_##SUFFIX(lux_vec_header* v) {                        \
     T* d = vec_data_##SUFFIX(v);                                                \
     for (size_t i = 0, j = v->len - 1; i < j; i++, j--) {                      \
         T tmp = d[i]; d[i] = d[j]; d[j] = tmp;                                 \
@@ -232,8 +232,8 @@ void tollvm_vec_reverse_##SUFFIX(tollvm_vec_header* v) {                        
 }                                                                               \
                                                                                 \
 /* ── Comparison ────────────────────────────────────────────────────────── */  \
-int tollvm_vec_equals_##SUFFIX(const tollvm_vec_header* a,                      \
-                               const tollvm_vec_header* b) {                    \
+int lux_vec_equals_##SUFFIX(const lux_vec_header* a,                      \
+                               const lux_vec_header* b) {                    \
     if (a->len != b->len) return 0;                                             \
     const T* da = vec_cdata_##SUFFIX(a);                                        \
     const T* db = (const T*)b->ptr;                                             \
@@ -242,7 +242,7 @@ int tollvm_vec_equals_##SUFFIX(const tollvm_vec_header* a,                      
     return 1;                                                                   \
 }                                                                               \
                                                                                 \
-int tollvm_vec_isSorted_##SUFFIX(const tollvm_vec_header* v) {                  \
+int lux_vec_isSorted_##SUFFIX(const lux_vec_header* v) {                  \
     if (v->len <= 1) return 1;                                                  \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     for (size_t i = 1; i < v->len; i++)                                         \
@@ -259,17 +259,17 @@ static int vec_cmp_desc_##SUFFIX(const void* a, const void* b) {                
     T va = *(const T*)a, vb = *(const T*)b;                                     \
     return (vb > va) - (vb < va);                                               \
 }                                                                               \
-void tollvm_vec_sort_##SUFFIX(tollvm_vec_header* v) {                           \
+void lux_vec_sort_##SUFFIX(lux_vec_header* v) {                           \
     if (v->len > 1)                                                             \
         qsort(v->ptr, v->len, sizeof(T), vec_cmp_asc_##SUFFIX);                \
 }                                                                               \
-void tollvm_vec_sortDesc_##SUFFIX(tollvm_vec_header* v) {                       \
+void lux_vec_sortDesc_##SUFFIX(lux_vec_header* v) {                       \
     if (v->len > 1)                                                             \
         qsort(v->ptr, v->len, sizeof(T), vec_cmp_desc_##SUFFIX);               \
 }                                                                               \
                                                                                 \
 /* ── Rotate ────────────────────────────────────────────────────────────── */  \
-void tollvm_vec_rotate_##SUFFIX(tollvm_vec_header* v, int32_t steps) {          \
+void lux_vec_rotate_##SUFFIX(lux_vec_header* v, int32_t steps) {          \
     if (v->len <= 1) return;                                                    \
     int64_t n = (int64_t)v->len;                                                \
     int64_t s = ((int64_t)steps % n + n) % n;                                   \
@@ -285,35 +285,35 @@ void tollvm_vec_rotate_##SUFFIX(tollvm_vec_header* v, int32_t steps) {          
 }                                                                               \
                                                                                 \
 /* ── Aggregation ───────────────────────────────────────────────────────── */  \
-T tollvm_vec_sum_##SUFFIX(const tollvm_vec_header* v) {                         \
+T lux_vec_sum_##SUFFIX(const lux_vec_header* v) {                         \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     T acc = 0;                                                                  \
     for (size_t i = 0; i < v->len; i++) acc += d[i];                            \
     return acc;                                                                 \
 }                                                                               \
-T tollvm_vec_product_##SUFFIX(const tollvm_vec_header* v) {                     \
+T lux_vec_product_##SUFFIX(const lux_vec_header* v) {                     \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     T acc = 1;                                                                  \
     for (size_t i = 0; i < v->len; i++) acc *= d[i];                            \
     return acc;                                                                 \
 }                                                                               \
-T tollvm_vec_min_##SUFFIX(const tollvm_vec_header* v) {                         \
+T lux_vec_min_##SUFFIX(const lux_vec_header* v) {                         \
     if (v->len == 0) {                                                          \
-        fprintf(stderr, "tollvm: vec.min() on empty vec\n"); exit(1); }         \
+        fprintf(stderr, "lux: vec.min() on empty vec\n"); exit(1); }         \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     T m = d[0];                                                                 \
     for (size_t i = 1; i < v->len; i++) if (d[i] < m) m = d[i];               \
     return m;                                                                   \
 }                                                                               \
-T tollvm_vec_max_##SUFFIX(const tollvm_vec_header* v) {                         \
+T lux_vec_max_##SUFFIX(const lux_vec_header* v) {                         \
     if (v->len == 0) {                                                          \
-        fprintf(stderr, "tollvm: vec.max() on empty vec\n"); exit(1); }         \
+        fprintf(stderr, "lux: vec.max() on empty vec\n"); exit(1); }         \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     T m = d[0];                                                                 \
     for (size_t i = 1; i < v->len; i++) if (d[i] > m) m = d[i];               \
     return m;                                                                   \
 }                                                                               \
-double tollvm_vec_average_##SUFFIX(const tollvm_vec_header* v) {                \
+double lux_vec_average_##SUFFIX(const lux_vec_header* v) {                \
     if (v->len == 0) return 0.0;                                                \
     const T* d = vec_cdata_##SUFFIX(v);                                         \
     double sum = 0.0;                                                           \
@@ -322,8 +322,8 @@ double tollvm_vec_average_##SUFFIX(const tollvm_vec_header* v) {                
 }                                                                               \
                                                                                 \
 /* ── Clone ─────────────────────────────────────────────────────────────── */  \
-void tollvm_vec_clone_##SUFFIX(const tollvm_vec_header* src,                    \
-                               tollvm_vec_header* dst) {                        \
+void lux_vec_clone_##SUFFIX(const lux_vec_header* src,                    \
+                               lux_vec_header* dst) {                        \
     dst->len = src->len;                                                        \
     dst->cap = src->len;                                                        \
     if (src->len > 0) {                                                         \
@@ -339,27 +339,27 @@ void tollvm_vec_clone_##SUFFIX(const tollvm_vec_header* src,                    
 // Instantiate for all primitive types
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TOLLVM_VEC_IMPL(int8_t,    i8)
-TOLLVM_VEC_IMPL(int16_t,   i16)
-TOLLVM_VEC_IMPL(int32_t,   i32)
-TOLLVM_VEC_IMPL(int64_t,   i64)
-TOLLVM_VEC_IMPL(uint8_t,   u8)
-TOLLVM_VEC_IMPL(uint16_t,  u16)
-TOLLVM_VEC_IMPL(uint32_t,  u32)
-TOLLVM_VEC_IMPL(uint64_t,  u64)
-TOLLVM_VEC_IMPL(float,     f32)
-TOLLVM_VEC_IMPL(double,    f64)
-TOLLVM_VEC_IMPL(char,      char)
+LUX_VEC_IMPL(int8_t,    i8)
+LUX_VEC_IMPL(int16_t,   i16)
+LUX_VEC_IMPL(int32_t,   i32)
+LUX_VEC_IMPL(int64_t,   i64)
+LUX_VEC_IMPL(uint8_t,   u8)
+LUX_VEC_IMPL(uint16_t,  u16)
+LUX_VEC_IMPL(uint32_t,  u32)
+LUX_VEC_IMPL(uint64_t,  u64)
+LUX_VEC_IMPL(float,     f32)
+LUX_VEC_IMPL(double,    f64)
+LUX_VEC_IMPL(char,      char)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // toString / join — format-specific implementations
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Helper: build a string by iterating elements with a format specifier
-#define TOLLVM_VEC_TOSTRING_IMPL(T, SUFFIX, FMT)                                \
-tollvm_string tollvm_vec_toString_##SUFFIX(const tollvm_vec_header* v) {         \
+#define LUX_VEC_TOSTRING_IMPL(T, SUFFIX, FMT)                                \
+lux_string lux_vec_toString_##SUFFIX(const lux_vec_header* v) {         \
     if (v->len == 0) {                                                          \
-        const char* s = "[]"; tollvm_string r = { s, 2 }; return r;            \
+        const char* s = "[]"; lux_string r = { s, 2 }; return r;            \
     }                                                                           \
     size_t cap = 64;                                                            \
     char* buf = (char*)malloc(cap);                                             \
@@ -374,12 +374,12 @@ tollvm_string tollvm_vec_toString_##SUFFIX(const tollvm_vec_header* v) {        
     if (pos + 1 >= cap) { cap = pos + 2; buf = (char*)realloc(buf, cap); }     \
     buf[pos++] = ']';                                                           \
     buf[pos] = '\0';                                                            \
-    tollvm_string r = { buf, pos }; return r;                                   \
+    lux_string r = { buf, pos }; return r;                                   \
 }                                                                               \
                                                                                 \
-tollvm_string tollvm_vec_join_##SUFFIX(const tollvm_vec_header* v,              \
-                                       tollvm_string sep) {                     \
-    if (v->len == 0) { tollvm_string r = { "", 0 }; return r; }                \
+lux_string lux_vec_join_##SUFFIX(const lux_vec_header* v,              \
+                                       lux_string sep) {                     \
+    if (v->len == 0) { lux_string r = { "", 0 }; return r; }                \
     size_t cap = 64;                                                            \
     char* buf = (char*)malloc(cap);                                             \
     size_t pos = 0;                                                             \
@@ -393,178 +393,178 @@ tollvm_string tollvm_vec_join_##SUFFIX(const tollvm_vec_header* v,              
         pos += (size_t)snprintf(buf + pos, cap - pos, FMT, d[i]);              \
     }                                                                           \
     buf[pos] = '\0';                                                            \
-    tollvm_string r = { buf, pos }; return r;                                   \
+    lux_string r = { buf, pos }; return r;                                   \
 }
 
-TOLLVM_VEC_TOSTRING_IMPL(int8_t,   i8,   "%d")
-TOLLVM_VEC_TOSTRING_IMPL(int16_t,  i16,  "%d")
-TOLLVM_VEC_TOSTRING_IMPL(int32_t,  i32,  "%d")
-TOLLVM_VEC_TOSTRING_IMPL(int64_t,  i64,  "%lld")
-TOLLVM_VEC_TOSTRING_IMPL(uint8_t,  u8,   "%u")
-TOLLVM_VEC_TOSTRING_IMPL(uint16_t, u16,  "%u")
-TOLLVM_VEC_TOSTRING_IMPL(uint32_t, u32,  "%u")
-TOLLVM_VEC_TOSTRING_IMPL(uint64_t, u64,  "%llu")
-TOLLVM_VEC_TOSTRING_IMPL(float,    f32,  "%g")
-TOLLVM_VEC_TOSTRING_IMPL(double,   f64,  "%g")
-TOLLVM_VEC_TOSTRING_IMPL(char,     char, "%c")
+LUX_VEC_TOSTRING_IMPL(int8_t,   i8,   "%d")
+LUX_VEC_TOSTRING_IMPL(int16_t,  i16,  "%d")
+LUX_VEC_TOSTRING_IMPL(int32_t,  i32,  "%d")
+LUX_VEC_TOSTRING_IMPL(int64_t,  i64,  "%lld")
+LUX_VEC_TOSTRING_IMPL(uint8_t,  u8,   "%u")
+LUX_VEC_TOSTRING_IMPL(uint16_t, u16,  "%u")
+LUX_VEC_TOSTRING_IMPL(uint32_t, u32,  "%u")
+LUX_VEC_TOSTRING_IMPL(uint64_t, u64,  "%llu")
+LUX_VEC_TOSTRING_IMPL(float,    f32,  "%g")
+LUX_VEC_TOSTRING_IMPL(double,   f64,  "%g")
+LUX_VEC_TOSTRING_IMPL(char,     char, "%c")
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Vec<string> — manual implementation (struct comparison needs memcmp)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-static inline tollvm_string* vec_data_str(tollvm_vec_header* v) {
-    return (tollvm_string*)v->ptr;
+static inline lux_string* vec_data_str(lux_vec_header* v) {
+    return (lux_string*)v->ptr;
 }
-static inline const tollvm_string* vec_cdata_str(const tollvm_vec_header* v) {
-    return (const tollvm_string*)v->ptr;
+static inline const lux_string* vec_cdata_str(const lux_vec_header* v) {
+    return (const lux_string*)v->ptr;
 }
 
-static void vec_grow_str(tollvm_vec_header* v, size_t needed) {
+static void vec_grow_str(lux_vec_header* v, size_t needed) {
     if (needed <= v->cap) return;
-    size_t newCap = v->cap ? v->cap : TOLLVM_VEC_INITIAL_CAP;
-    while (newCap < needed) newCap *= TOLLVM_VEC_GROWTH_FACTOR;
-    v->ptr = realloc(v->ptr, newCap * sizeof(tollvm_string));
+    size_t newCap = v->cap ? v->cap : LUX_VEC_INITIAL_CAP;
+    while (newCap < needed) newCap *= LUX_VEC_GROWTH_FACTOR;
+    v->ptr = realloc(v->ptr, newCap * sizeof(lux_string));
     v->cap = newCap;
 }
 
-static int str_equal(tollvm_string a, tollvm_string b) {
+static int str_equal(lux_string a, lux_string b) {
     return a.len == b.len && (a.ptr == b.ptr || memcmp(a.ptr, b.ptr, a.len) == 0);
 }
 
 // ── Creation / destruction ──────────────────────────────────────────────────
-void tollvm_vec_init_str(tollvm_vec_header* v) {
+void lux_vec_init_str(lux_vec_header* v) {
     v->ptr = NULL; v->len = 0; v->cap = 0;
 }
-void tollvm_vec_init_cap_str(tollvm_vec_header* v, size_t cap) {
-    v->ptr = malloc(cap * sizeof(tollvm_string)); v->len = 0; v->cap = cap;
+void lux_vec_init_cap_str(lux_vec_header* v, size_t cap) {
+    v->ptr = malloc(cap * sizeof(lux_string)); v->len = 0; v->cap = cap;
 }
-void tollvm_vec_free_str(tollvm_vec_header* v) {
+void lux_vec_free_str(lux_vec_header* v) {
     free(v->ptr); v->ptr = NULL; v->len = 0; v->cap = 0;
 }
 
 // ── Size / capacity ─────────────────────────────────────────────────────────
-size_t tollvm_vec_len_str(const tollvm_vec_header* v) { return v->len; }
-size_t tollvm_vec_capacity_str(const tollvm_vec_header* v) { return v->cap; }
-int    tollvm_vec_isEmpty_str(const tollvm_vec_header* v) { return v->len == 0; }
+size_t lux_vec_len_str(const lux_vec_header* v) { return v->len; }
+size_t lux_vec_capacity_str(const lux_vec_header* v) { return v->cap; }
+int    lux_vec_isEmpty_str(const lux_vec_header* v) { return v->len == 0; }
 
 // ── Element access ──────────────────────────────────────────────────────────
-tollvm_string tollvm_vec_at_str(const tollvm_vec_header* v, size_t idx) {
+lux_string lux_vec_at_str(const lux_vec_header* v, size_t idx) {
     if (idx >= v->len) {
-        fprintf(stderr, "tollvm: vec index out of bounds: %zu >= %zu\n", idx, v->len);
+        fprintf(stderr, "lux: vec index out of bounds: %zu >= %zu\n", idx, v->len);
         exit(1);
     }
     return vec_cdata_str(v)[idx];
 }
-tollvm_string tollvm_vec_first_str(const tollvm_vec_header* v) {
-    if (v->len == 0) { fprintf(stderr, "tollvm: vec.first() on empty vec\n"); exit(1); }
+lux_string lux_vec_first_str(const lux_vec_header* v) {
+    if (v->len == 0) { fprintf(stderr, "lux: vec.first() on empty vec\n"); exit(1); }
     return vec_cdata_str(v)[0];
 }
-tollvm_string tollvm_vec_last_str(const tollvm_vec_header* v) {
-    if (v->len == 0) { fprintf(stderr, "tollvm: vec.last() on empty vec\n"); exit(1); }
+lux_string lux_vec_last_str(const lux_vec_header* v) {
+    if (v->len == 0) { fprintf(stderr, "lux: vec.last() on empty vec\n"); exit(1); }
     return vec_cdata_str(v)[v->len - 1];
 }
-void tollvm_vec_set_str(tollvm_vec_header* v, size_t idx, tollvm_string val) {
+void lux_vec_set_str(lux_vec_header* v, size_t idx, lux_string val) {
     if (idx >= v->len) {
-        fprintf(stderr, "tollvm: vec index out of bounds: %zu >= %zu\n", idx, v->len);
+        fprintf(stderr, "lux: vec index out of bounds: %zu >= %zu\n", idx, v->len);
         exit(1);
     }
     vec_data_str(v)[idx] = val;
 }
 
 // ── Mutation ────────────────────────────────────────────────────────────────
-void tollvm_vec_push_str(tollvm_vec_header* v, tollvm_string val) {
+void lux_vec_push_str(lux_vec_header* v, lux_string val) {
     vec_grow_str(v, v->len + 1);
     vec_data_str(v)[v->len++] = val;
 }
-tollvm_string tollvm_vec_pop_str(tollvm_vec_header* v) {
-    if (v->len == 0) { fprintf(stderr, "tollvm: vec.pop() on empty vec\n"); exit(1); }
+lux_string lux_vec_pop_str(lux_vec_header* v) {
+    if (v->len == 0) { fprintf(stderr, "lux: vec.pop() on empty vec\n"); exit(1); }
     return vec_data_str(v)[--v->len];
 }
-void tollvm_vec_insert_str(tollvm_vec_header* v, size_t idx, tollvm_string val) {
+void lux_vec_insert_str(lux_vec_header* v, size_t idx, lux_string val) {
     if (idx > v->len) {
-        fprintf(stderr, "tollvm: vec.insert() index out of bounds\n"); exit(1);
+        fprintf(stderr, "lux: vec.insert() index out of bounds\n"); exit(1);
     }
     vec_grow_str(v, v->len + 1);
-    tollvm_string* d = vec_data_str(v);
-    memmove(&d[idx + 1], &d[idx], (v->len - idx) * sizeof(tollvm_string));
+    lux_string* d = vec_data_str(v);
+    memmove(&d[idx + 1], &d[idx], (v->len - idx) * sizeof(lux_string));
     d[idx] = val;
     v->len++;
 }
-tollvm_string tollvm_vec_removeAt_str(tollvm_vec_header* v, size_t idx) {
+lux_string lux_vec_removeAt_str(lux_vec_header* v, size_t idx) {
     if (idx >= v->len) {
-        fprintf(stderr, "tollvm: vec.removeAt() index out of bounds\n"); exit(1);
+        fprintf(stderr, "lux: vec.removeAt() index out of bounds\n"); exit(1);
     }
-    tollvm_string* d = vec_data_str(v);
-    tollvm_string val = d[idx];
-    memmove(&d[idx], &d[idx + 1], (v->len - idx - 1) * sizeof(tollvm_string));
+    lux_string* d = vec_data_str(v);
+    lux_string val = d[idx];
+    memmove(&d[idx], &d[idx + 1], (v->len - idx - 1) * sizeof(lux_string));
     v->len--;
     return val;
 }
-tollvm_string tollvm_vec_removeSwap_str(tollvm_vec_header* v, size_t idx) {
+lux_string lux_vec_removeSwap_str(lux_vec_header* v, size_t idx) {
     if (idx >= v->len) {
-        fprintf(stderr, "tollvm: vec.removeSwap() index out of bounds\n"); exit(1);
+        fprintf(stderr, "lux: vec.removeSwap() index out of bounds\n"); exit(1);
     }
-    tollvm_string* d = vec_data_str(v);
-    tollvm_string val = d[idx];
+    lux_string* d = vec_data_str(v);
+    lux_string val = d[idx];
     d[idx] = d[v->len - 1];
     v->len--;
     return val;
 }
-void tollvm_vec_clear_str(tollvm_vec_header* v) { v->len = 0; }
-void tollvm_vec_fill_str(tollvm_vec_header* v, tollvm_string val) {
-    tollvm_string* d = vec_data_str(v);
+void lux_vec_clear_str(lux_vec_header* v) { v->len = 0; }
+void lux_vec_fill_str(lux_vec_header* v, lux_string val) {
+    lux_string* d = vec_data_str(v);
     for (size_t i = 0; i < v->len; i++) d[i] = val;
 }
-void tollvm_vec_swap_str(tollvm_vec_header* v, size_t i, size_t j) {
+void lux_vec_swap_str(lux_vec_header* v, size_t i, size_t j) {
     if (i >= v->len || j >= v->len) {
-        fprintf(stderr, "tollvm: vec.swap() index out of bounds\n"); exit(1);
+        fprintf(stderr, "lux: vec.swap() index out of bounds\n"); exit(1);
     }
-    tollvm_string* d = vec_data_str(v);
-    tollvm_string tmp = d[i]; d[i] = d[j]; d[j] = tmp;
+    lux_string* d = vec_data_str(v);
+    lux_string tmp = d[i]; d[i] = d[j]; d[j] = tmp;
 }
 
 // ── Memory ──────────────────────────────────────────────────────────────────
-void tollvm_vec_reserve_str(tollvm_vec_header* v, size_t cap) {
+void lux_vec_reserve_str(lux_vec_header* v, size_t cap) {
     vec_grow_str(v, cap);
 }
-void tollvm_vec_shrink_str(tollvm_vec_header* v) {
+void lux_vec_shrink_str(lux_vec_header* v) {
     if (v->len == 0) { free(v->ptr); v->ptr = NULL; v->cap = 0; }
     else if (v->cap > v->len) {
-        v->ptr = realloc(v->ptr, v->len * sizeof(tollvm_string));
+        v->ptr = realloc(v->ptr, v->len * sizeof(lux_string));
         v->cap = v->len;
     }
 }
-void tollvm_vec_resize_str(tollvm_vec_header* v, size_t len, tollvm_string fill) {
+void lux_vec_resize_str(lux_vec_header* v, size_t len, lux_string fill) {
     vec_grow_str(v, len);
-    tollvm_string* d = vec_data_str(v);
+    lux_string* d = vec_data_str(v);
     for (size_t i = v->len; i < len; i++) d[i] = fill;
     v->len = len;
 }
-void tollvm_vec_truncate_str(tollvm_vec_header* v, size_t len) {
+void lux_vec_truncate_str(lux_vec_header* v, size_t len) {
     if (len < v->len) v->len = len;
 }
 
 // ── Search (string comparison via memcmp) ───────────────────────────────────
-int tollvm_vec_contains_str(const tollvm_vec_header* v, tollvm_string val) {
-    const tollvm_string* d = vec_cdata_str(v);
+int lux_vec_contains_str(const lux_vec_header* v, lux_string val) {
+    const lux_string* d = vec_cdata_str(v);
     for (size_t i = 0; i < v->len; i++)
         if (str_equal(d[i], val)) return 1;
     return 0;
 }
-long long tollvm_vec_indexOf_str(const tollvm_vec_header* v, tollvm_string val) {
-    const tollvm_string* d = vec_cdata_str(v);
+long long lux_vec_indexOf_str(const lux_vec_header* v, lux_string val) {
+    const lux_string* d = vec_cdata_str(v);
     for (size_t i = 0; i < v->len; i++)
         if (str_equal(d[i], val)) return (long long)i;
     return -1;
 }
-long long tollvm_vec_lastIndexOf_str(const tollvm_vec_header* v, tollvm_string val) {
-    const tollvm_string* d = vec_cdata_str(v);
+long long lux_vec_lastIndexOf_str(const lux_vec_header* v, lux_string val) {
+    const lux_string* d = vec_cdata_str(v);
     for (size_t i = v->len; i > 0; i--)
         if (str_equal(d[i - 1], val)) return (long long)(i - 1);
     return -1;
 }
-size_t tollvm_vec_count_str(const tollvm_vec_header* v, tollvm_string val) {
-    const tollvm_string* d = vec_cdata_str(v);
+size_t lux_vec_count_str(const lux_vec_header* v, lux_string val) {
+    const lux_string* d = vec_cdata_str(v);
     size_t c = 0;
     for (size_t i = 0; i < v->len; i++)
         if (str_equal(d[i], val)) c++;
@@ -572,48 +572,48 @@ size_t tollvm_vec_count_str(const tollvm_vec_header* v, tollvm_string val) {
 }
 
 // ── Reorder ─────────────────────────────────────────────────────────────────
-void tollvm_vec_reverse_str(tollvm_vec_header* v) {
-    tollvm_string* d = vec_data_str(v);
+void lux_vec_reverse_str(lux_vec_header* v) {
+    lux_string* d = vec_data_str(v);
     for (size_t i = 0, j = v->len - 1; i < j; i++, j--) {
-        tollvm_string tmp = d[i]; d[i] = d[j]; d[j] = tmp;
+        lux_string tmp = d[i]; d[i] = d[j]; d[j] = tmp;
     }
 }
 
 // ── Comparison ──────────────────────────────────────────────────────────────
-int tollvm_vec_equals_str(const tollvm_vec_header* a, const tollvm_vec_header* b) {
+int lux_vec_equals_str(const lux_vec_header* a, const lux_vec_header* b) {
     if (a->len != b->len) return 0;
-    const tollvm_string* da = vec_cdata_str(a);
-    const tollvm_string* db = (const tollvm_string*)b->ptr;
+    const lux_string* da = vec_cdata_str(a);
+    const lux_string* db = (const lux_string*)b->ptr;
     for (size_t i = 0; i < a->len; i++)
         if (!str_equal(da[i], db[i])) return 0;
     return 1;
 }
 
 // ── Rotate ──────────────────────────────────────────────────────────────────
-void tollvm_vec_rotate_str(tollvm_vec_header* v, int32_t steps) {
+void lux_vec_rotate_str(lux_vec_header* v, int32_t steps) {
     if (v->len <= 1) return;
     int64_t n = (int64_t)v->len;
     int64_t s = ((int64_t)steps % n + n) % n;
     if (s == 0) return;
-    tollvm_string* d = vec_data_str(v);
+    lux_string* d = vec_data_str(v);
     for (size_t i = 0, j = v->len - 1; i < j; i++, j--) {
-        tollvm_string tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
+        lux_string tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
     for (size_t i = 0, j = (size_t)s - 1; i < j; i++, j--) {
-        tollvm_string tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
+        lux_string tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
     for (size_t i = (size_t)s, j = v->len - 1; i < j; i++, j--) {
-        tollvm_string tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
+        lux_string tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
 }
 
 // ── Conversion ──────────────────────────────────────────────────────────────
-tollvm_string tollvm_vec_toString_str(const tollvm_vec_header* v) {
+lux_string lux_vec_toString_str(const lux_vec_header* v) {
     if (v->len == 0) {
-        tollvm_string r = { "[]", 2 }; return r;
+        lux_string r = { "[]", 2 }; return r;
     }
     size_t cap = 64;
     char* buf = (char*)malloc(cap);
     size_t pos = 0;
     buf[pos++] = '[';
-    const tollvm_string* d = vec_cdata_str(v);
+    const lux_string* d = vec_cdata_str(v);
     for (size_t i = 0; i < v->len; i++) {
         if (i > 0) { buf[pos++] = ','; buf[pos++] = ' '; }
         size_t need = d[i].len + 3; // quotes + content
@@ -625,12 +625,12 @@ tollvm_string tollvm_vec_toString_str(const tollvm_vec_header* v) {
     if (pos + 1 >= cap) { cap = pos + 2; buf = (char*)realloc(buf, cap); }
     buf[pos++] = ']';
     buf[pos] = '\0';
-    tollvm_string r = { buf, pos }; return r;
+    lux_string r = { buf, pos }; return r;
 }
 
-tollvm_string tollvm_vec_join_str(const tollvm_vec_header* v, tollvm_string sep) {
-    if (v->len == 0) { tollvm_string r = { "", 0 }; return r; }
-    const tollvm_string* d = vec_cdata_str(v);
+lux_string lux_vec_join_str(const lux_vec_header* v, lux_string sep) {
+    if (v->len == 0) { lux_string r = { "", 0 }; return r; }
+    const lux_string* d = vec_cdata_str(v);
     // Calculate total size
     size_t total = 0;
     for (size_t i = 0; i < v->len; i++) {
@@ -644,16 +644,16 @@ tollvm_string tollvm_vec_join_str(const tollvm_vec_header* v, tollvm_string sep)
         memcpy(buf + pos, d[i].ptr, d[i].len); pos += d[i].len;
     }
     buf[pos] = '\0';
-    tollvm_string r = { buf, pos }; return r;
+    lux_string r = { buf, pos }; return r;
 }
 
 // ── Clone ───────────────────────────────────────────────────────────────────
-void tollvm_vec_clone_str(const tollvm_vec_header* src, tollvm_vec_header* dst) {
+void lux_vec_clone_str(const lux_vec_header* src, lux_vec_header* dst) {
     dst->len = src->len;
     dst->cap = src->len;
     if (src->len > 0) {
-        dst->ptr = malloc(src->len * sizeof(tollvm_string));
-        memcpy(dst->ptr, src->ptr, src->len * sizeof(tollvm_string));
+        dst->ptr = malloc(src->len * sizeof(lux_string));
+        memcpy(dst->ptr, src->ptr, src->len * sizeof(lux_string));
     } else {
         dst->ptr = NULL;
         dst->cap = 0;
@@ -664,12 +664,12 @@ void tollvm_vec_clone_str(const tollvm_vec_header* src, tollvm_vec_header* dst) 
 // Args helper — converts C main(argc, argv) → Vec<string>
 // ═══════════════════════════════════════════════════════════════════════════════
 
-void tollvm_args_init(tollvm_vec_header* out, int argc, const char** argv) {
-    tollvm_vec_init_cap_str(out, (size_t)argc);
+void lux_args_init(lux_vec_header* out, int argc, const char** argv) {
+    lux_vec_init_cap_str(out, (size_t)argc);
     for (int i = 0; i < argc; i++) {
-        tollvm_string s;
+        lux_string s;
         s.ptr = argv[i];
         s.len = strlen(argv[i]);
-        tollvm_vec_push_str(out, s);
+        lux_vec_push_str(out, s);
     }
 }

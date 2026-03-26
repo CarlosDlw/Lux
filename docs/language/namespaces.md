@@ -1,12 +1,12 @@
 # Namespaces
 
-Every T source file begins with a `namespace` declaration. Namespaces identify the module a file belongs to and enable cross-file symbol resolution.
+Every Lux source file begins with a `namespace` declaration. Namespaces identify the module a file belongs to and enable cross-file symbol resolution.
 
 ---
 
 ## Declaration
 
-The `namespace` keyword must be the first declaration in every `.tm` file:
+The `namespace` keyword must be the first declaration in every `.lx` file:
 
 ```tm
 namespace MyApp;
@@ -24,7 +24,7 @@ The name is a single identifier — typically PascalCase.
 
 Namespaces enable multi-file compilation. Functions defined in one file can be imported in another using `use`:
 
-### File: `math.tm`
+### File: `math.lx`
 
 ```tm
 namespace Math;
@@ -38,7 +38,7 @@ int32 multiply(int32 a, int32 b) {
 }
 ```
 
-### File: `main.tm`
+### File: `main.lx`
 
 ```tm
 namespace Main;
@@ -75,7 +75,7 @@ The `::` operator resolves symbols within a namespace or type:
 
 ## Namespace Rules
 
-- Every `.tm` file must have exactly one `namespace` declaration
+- Every `.lx` file must have exactly one `namespace` declaration
 - It must be the first declaration in the file (before `use`, `#include`, or any other code)
 - The standard library uses the `std` namespace hierarchy (`std::log`, `std::math`, etc.)
 - User namespaces are flat identifiers — no nesting like `App::Utils::Math`

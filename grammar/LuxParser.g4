@@ -1,7 +1,7 @@
-parser grammar ToLLVMParser;
+parser grammar LuxParser;
 
 options {
-    tokenVocab=ToLLVMLexer;
+    tokenVocab=LuxLexer;
 }
 
 // Entry point

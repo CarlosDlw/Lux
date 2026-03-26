@@ -1,10 +1,10 @@
 # Hello World
 
-This page walks you through writing, compiling, and running your first T program.
+This page walks you through writing, compiling, and running your first Lux program.
 
 ## Your First Program
 
-Create a file called `hello.tm`:
+Create a file called `hello.lx`:
 
 ```t
 namespace Hello;
@@ -22,7 +22,7 @@ int32 main() {
 Compile the program to a native binary and execute it:
 
 ```bash
-./build/tollvm hello.tm ./hello
+./build/lux hello.lx ./hello
 ./hello
 ```
 
@@ -35,12 +35,12 @@ Hello, world!
 You can also view the generated LLVM IR by omitting the output argument:
 
 ```bash
-./build/tollvm hello.tm
+./build/lux hello.lx
 ```
 
 ## Understanding the Code
 
-Every T program has three essential parts:
+Every Lux program has three essential parts:
 
 ### 1. Namespace Declaration
 
@@ -48,7 +48,7 @@ Every T program has three essential parts:
 namespace Hello;
 ```
 
-Every `.tm` file **must** begin with a namespace declaration. This names the module and is used for imports across files.
+Every `.lx` file **must** begin with a namespace declaration. This names the module and is used for imports across files.
 
 ### 2. Imports
 

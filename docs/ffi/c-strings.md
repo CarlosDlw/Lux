@@ -1,6 +1,6 @@
 # C Strings
 
-T strings and C strings have different internal representations. This page explains the difference, how to work with C string literals, and how to convert between the two formats.
+Lux strings and C strings have different internal representations. This page explains the difference, how to work with C string literals, and how to convert between the two formats.
 
 ---
 
@@ -18,7 +18,7 @@ In T, strings are length-prefixed — they carry a pointer and a length, and are
 "hello"  →  { ptr: → 'h','e','l','l','o', len: 5 }
 ```
 
-This means you **cannot** pass a T `string` directly to a C function that expects `char*`. You need to convert it. T provides three tools for this.
+This means you **cannot** pass a T `string` directly to a C function that expects `char*`. You need to convert it. Lux provides three tools for this.
 
 ---
 
@@ -74,7 +74,7 @@ int32 main() {
 Use C string literals when:
 - The string is a **constant** known at compile time
 - You're passing it directly to a C function
-- You don't need to manipulate it as a T string first
+- You don't need to manipulate it as a Lux string first
 
 ```tm
 puts(c"This is a constant");                 // direct use
@@ -113,8 +113,8 @@ extern int32 puts(*char s);
 extern void free(*void ptr);
 
 int32 main() {
-    string name = "TollVM";
-    *char c_name = cstr(name);   // allocates: "TollVM\0"
+    string name = "Lux";
+    *char c_name = cstr(name);   // allocates: "Lux\0"
     puts(c_name);                // passes to C
     free(c_name as *void);       // you own the memory — free it!
     ret 0;
@@ -131,7 +131,7 @@ int32 main() {
 **Important:** The returned pointer is heap-allocated. You are responsible for freeing it when done. Use `defer` for automatic cleanup:
 
 ```tm
-string message = "Hello from T";
+string message = "Hello from Lux";
 *char c_msg = cstr(message);
 defer free(c_msg as *void);    // cleaned up at function exit
 
@@ -171,10 +171,10 @@ int32 main() {
 ### How `fromCStr()` Works
 
 1. Calls `strlen()` on the pointer to determine the length
-2. Wraps the pointer and length into a T string struct
-3. **Does NOT copy** — the T string points to the original C memory
+2. Wraps the pointer and length into a Lux string struct
+3. **Does NOT copy** — the Lux string points to the original C memory
 
-**Important:** Since `fromCStr()` does not copy, the returned string is only valid as long as the original `*char` pointer is valid. If the C function uses a static buffer or the pointer is freed, the T string becomes dangling.
+**Important:** Since `fromCStr()` does not copy, the returned string is only valid as long as the original `*char` pointer is valid. If the C function uses a static buffer or the pointer is freed, the Lux string becomes dangling.
 
 ### Signature
 
@@ -185,7 +185,7 @@ fromCStr(*char) -> string
 - **Parameter:** A null-terminated `*char` pointer
 - **Returns:** A T `string` wrapping the pointer
 - **Cost:** O(n) for the `strlen()` call, but zero-copy
-- **Ownership:** The T string does NOT own the memory — it borrows it
+- **Ownership:** The Lux string does NOT own the memory — it borrows it
 
 ### Null Safety
 
@@ -219,7 +219,7 @@ fromCStrLen(*char, usize) -> string
 - **Parameter 2:** The number of bytes to use
 - **Returns:** A T `string` wrapping the pointer with the given length
 - **Cost:** O(1) — zero-cost, just wraps the pointer and length
-- **Ownership:** The T string does NOT own the memory
+- **Ownership:** The Lux string does NOT own the memory
 
 This is useful when:
 - You know the length from another source (e.g., a `read()` return value)
@@ -230,21 +230,21 @@ This is useful when:
 
 ## Round-Trip Conversion
 
-You can safely convert back and forth between T strings and C strings:
+You can safely convert back and forth between Lux strings and C strings:
 
 ```tm
 extern int32 strcmp(*char s1, *char s2);
 extern void free(*void ptr);
 
 int32 main() {
-    // Start with a T string
+    // Start with a Lux string
     string original = "Round Trip Test";
 
     // Convert to C string
     *char c1 = cstr(original);
     defer free(c1 as *void);
 
-    // Convert back to T string
+    // Convert back to Lux string
     string back = fromCStr(c1);
 
     // Convert again to C string
@@ -266,9 +266,9 @@ int32 main() {
 | Function | Direction | Copies? | Cost | Ownership |
 |----------|-----------|---------|------|-----------|
 | `c"..."` | Compile-time C string | N/A (static) | Zero | Static (program lifetime) |
-| `cstr(s)` | T string → `*char` | Yes (malloc) | O(n) | Caller must `free()` |
-| `fromCStr(p)` | `*char` → T string | No (wraps) | O(n) strlen | Borrows original |
-| `fromCStrLen(p, n)` | `*char` → T string | No (wraps) | O(1) | Borrows original |
+| `cstr(s)` | Lux string → `*char` | Yes (malloc) | O(n) | Caller must `free()` |
+| `fromCStr(p)` | `*char` → Lux string | No (wraps) | O(n) strlen | Borrows original |
+| `fromCStrLen(p, n)` | `*char` → Lux string | No (wraps) | O(1) | Borrows original |
 
 ---
 

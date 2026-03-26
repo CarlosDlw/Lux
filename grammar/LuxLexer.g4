@@ -1,4 +1,4 @@
-lexer grammar ToLLVMLexer;
+lexer grammar LuxLexer;
 
 // Keywords
 NAMESPACE : 'namespace';

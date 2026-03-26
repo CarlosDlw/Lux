@@ -1,11 +1,11 @@
 namespace IntStd;
 
 /*
-    podemos importar módulos tollvm usando sintaxe similar a Rust.
+    podemos importar módulos lux usando sintaxe similar a Rust.
 
     importação de std::log::println, std::log::print, std::log::{ println, print }, etc. também são suportados.
 
-    os módulos builtins de tollvm são escritos em C, e estão localizados em src/builtins, separados por categorias:
+    os módulos builtins de lux são escritos em C, e estão localizados em src/builtins, separados por categorias:
 
     src/builtins/log: funções de log, como println, print, eprint, eprintln, etc.
 */

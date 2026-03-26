@@ -19,7 +19,7 @@ static uint64_t splitmix64(uint64_t* state) {
 
 static void ensure_initialized(void) {
     if (!rng_initialized) {
-        tollvm_seedTime();
+        lux_seedTime();
     }
 }
 
@@ -36,7 +36,7 @@ static uint64_t next_random(void) {
     return result;
 }
 
-void tollvm_seed(uint64_t s) {
+void lux_seed(uint64_t s) {
     uint64_t sm = s;
     rng_state[0] = splitmix64(&sm);
     rng_state[1] = splitmix64(&sm);
@@ -45,42 +45,42 @@ void tollvm_seed(uint64_t s) {
     rng_initialized = 1;
 }
 
-void tollvm_seedTime(void) {
+void lux_seedTime(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     uint64_t s = (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
-    tollvm_seed(s);
+    lux_seed(s);
 }
 
-int64_t tollvm_randInt(void) {
+int64_t lux_randInt(void) {
     return (int64_t)next_random();
 }
 
-int64_t tollvm_randIntRange(int64_t min, int64_t max) {
+int64_t lux_randIntRange(int64_t min, int64_t max) {
     if (min >= max) return min;
     uint64_t range = (uint64_t)(max - min) + 1;
     uint64_t r = next_random();
     return min + (int64_t)(r % range);
 }
 
-uint64_t tollvm_randUint(void) {
+uint64_t lux_randUint(void) {
     return next_random();
 }
 
-double tollvm_randFloat(void) {
+double lux_randFloat(void) {
     return (double)(next_random() >> 11) * 0x1.0p-53;
 }
 
-double tollvm_randFloatRange(double min, double max) {
+double lux_randFloatRange(double min, double max) {
     if (min >= max) return min;
-    return min + tollvm_randFloat() * (max - min);
+    return min + lux_randFloat() * (max - min);
 }
 
-int32_t tollvm_randBool(void) {
+int32_t lux_randBool(void) {
     return (next_random() & 1) ? 1 : 0;
 }
 
-uint8_t tollvm_randChar(void) {
+uint8_t lux_randChar(void) {
     // Printable ASCII: 32 ('space') to 126 ('~') = 95 chars
     return (uint8_t)(32 + (next_random() % 95));
 }

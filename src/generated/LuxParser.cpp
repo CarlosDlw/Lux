@@ -1,10 +1,10 @@
 
-// Generated from /home/carlos/projects/cpp/tollvm/grammar/ToLLVMParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/projects/cpp/tollvm/grammar/LuxParser.g4 by ANTLR 4.13.2
 
 
-#include "ToLLVMParserVisitor.h"
+#include "LuxParserVisitor.h"
 
-#include "ToLLVMParser.h"
+#include "LuxParser.h"
 
 
 using namespace antlrcpp;
@@ -13,18 +13,18 @@ using namespace antlr4;
 
 namespace {
 
-struct ToLLVMParserStaticData final {
-  ToLLVMParserStaticData(std::vector<std::string> ruleNames,
+struct LuxParserStaticData final {
+  LuxParserStaticData(std::vector<std::string> ruleNames,
                         std::vector<std::string> literalNames,
                         std::vector<std::string> symbolicNames)
       : ruleNames(std::move(ruleNames)), literalNames(std::move(literalNames)),
         symbolicNames(std::move(symbolicNames)),
         vocabulary(this->literalNames, this->symbolicNames) {}
 
-  ToLLVMParserStaticData(const ToLLVMParserStaticData&) = delete;
-  ToLLVMParserStaticData(ToLLVMParserStaticData&&) = delete;
-  ToLLVMParserStaticData& operator=(const ToLLVMParserStaticData&) = delete;
-  ToLLVMParserStaticData& operator=(ToLLVMParserStaticData&&) = delete;
+  LuxParserStaticData(const LuxParserStaticData&) = delete;
+  LuxParserStaticData(LuxParserStaticData&&) = delete;
+  LuxParserStaticData& operator=(const LuxParserStaticData&) = delete;
+  LuxParserStaticData& operator=(LuxParserStaticData&&) = delete;
 
   std::vector<antlr4::dfa::DFA> decisionToDFA;
   antlr4::atn::PredictionContextCache sharedContextCache;
@@ -36,21 +36,21 @@ struct ToLLVMParserStaticData final {
   std::unique_ptr<antlr4::atn::ATN> atn;
 };
 
-::antlr4::internal::OnceFlag tollvmparserParserOnceFlag;
+::antlr4::internal::OnceFlag luxparserParserOnceFlag;
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
 static thread_local
 #endif
-std::unique_ptr<ToLLVMParserStaticData> tollvmparserParserStaticData = nullptr;
+std::unique_ptr<LuxParserStaticData> luxparserParserStaticData = nullptr;
 
-void tollvmparserParserInitialize() {
+void luxparserParserInitialize() {
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
-  if (tollvmparserParserStaticData != nullptr) {
+  if (luxparserParserStaticData != nullptr) {
     return;
   }
 #else
-  assert(tollvmparserParserStaticData == nullptr);
+  assert(luxparserParserStaticData == nullptr);
 #endif
-  auto staticData = std::make_unique<ToLLVMParserStaticData>(
+  auto staticData = std::make_unique<LuxParserStaticData>(
     std::vector<std::string>{
       "program", "namespaceDecl", "useDecl", "modulePath", "includeDecl", 
       "topLevelDecl", "typeAliasDecl", "enumDecl", "structDecl", "structField", 
@@ -427,97 +427,97 @@ void tollvmparserParserInitialize() {
   for (size_t i = 0; i < count; i++) { 
     staticData->decisionToDFA.emplace_back(staticData->atn->getDecisionState(i), i);
   }
-  tollvmparserParserStaticData = std::move(staticData);
+  luxparserParserStaticData = std::move(staticData);
 }
 
 }
 
-ToLLVMParser::ToLLVMParser(TokenStream *input) : ToLLVMParser(input, antlr4::atn::ParserATNSimulatorOptions()) {}
+LuxParser::LuxParser(TokenStream *input) : LuxParser(input, antlr4::atn::ParserATNSimulatorOptions()) {}
 
-ToLLVMParser::ToLLVMParser(TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options) : Parser(input) {
-  ToLLVMParser::initialize();
-  _interpreter = new atn::ParserATNSimulator(this, *tollvmparserParserStaticData->atn, tollvmparserParserStaticData->decisionToDFA, tollvmparserParserStaticData->sharedContextCache, options);
+LuxParser::LuxParser(TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options) : Parser(input) {
+  LuxParser::initialize();
+  _interpreter = new atn::ParserATNSimulator(this, *luxparserParserStaticData->atn, luxparserParserStaticData->decisionToDFA, luxparserParserStaticData->sharedContextCache, options);
 }
 
-ToLLVMParser::~ToLLVMParser() {
+LuxParser::~LuxParser() {
   delete _interpreter;
 }
 
-const atn::ATN& ToLLVMParser::getATN() const {
-  return *tollvmparserParserStaticData->atn;
+const atn::ATN& LuxParser::getATN() const {
+  return *luxparserParserStaticData->atn;
 }
 
-std::string ToLLVMParser::getGrammarFileName() const {
-  return "ToLLVMParser.g4";
+std::string LuxParser::getGrammarFileName() const {
+  return "LuxParser.g4";
 }
 
-const std::vector<std::string>& ToLLVMParser::getRuleNames() const {
-  return tollvmparserParserStaticData->ruleNames;
+const std::vector<std::string>& LuxParser::getRuleNames() const {
+  return luxparserParserStaticData->ruleNames;
 }
 
-const dfa::Vocabulary& ToLLVMParser::getVocabulary() const {
-  return tollvmparserParserStaticData->vocabulary;
+const dfa::Vocabulary& LuxParser::getVocabulary() const {
+  return luxparserParserStaticData->vocabulary;
 }
 
-antlr4::atn::SerializedATNView ToLLVMParser::getSerializedATN() const {
-  return tollvmparserParserStaticData->serializedATN;
+antlr4::atn::SerializedATNView LuxParser::getSerializedATN() const {
+  return luxparserParserStaticData->serializedATN;
 }
 
 
 //----------------- ProgramContext ------------------------------------------------------------------
 
-ToLLVMParser::ProgramContext::ProgramContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ProgramContext::ProgramContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::ProgramContext::EOF() {
-  return getToken(ToLLVMParser::EOF, 0);
+tree::TerminalNode* LuxParser::ProgramContext::EOF() {
+  return getToken(LuxParser::EOF, 0);
 }
 
-ToLLVMParser::NamespaceDeclContext* ToLLVMParser::ProgramContext::namespaceDecl() {
-  return getRuleContext<ToLLVMParser::NamespaceDeclContext>(0);
+LuxParser::NamespaceDeclContext* LuxParser::ProgramContext::namespaceDecl() {
+  return getRuleContext<LuxParser::NamespaceDeclContext>(0);
 }
 
-std::vector<ToLLVMParser::UseDeclContext *> ToLLVMParser::ProgramContext::useDecl() {
-  return getRuleContexts<ToLLVMParser::UseDeclContext>();
+std::vector<LuxParser::UseDeclContext *> LuxParser::ProgramContext::useDecl() {
+  return getRuleContexts<LuxParser::UseDeclContext>();
 }
 
-ToLLVMParser::UseDeclContext* ToLLVMParser::ProgramContext::useDecl(size_t i) {
-  return getRuleContext<ToLLVMParser::UseDeclContext>(i);
+LuxParser::UseDeclContext* LuxParser::ProgramContext::useDecl(size_t i) {
+  return getRuleContext<LuxParser::UseDeclContext>(i);
 }
 
-std::vector<ToLLVMParser::IncludeDeclContext *> ToLLVMParser::ProgramContext::includeDecl() {
-  return getRuleContexts<ToLLVMParser::IncludeDeclContext>();
+std::vector<LuxParser::IncludeDeclContext *> LuxParser::ProgramContext::includeDecl() {
+  return getRuleContexts<LuxParser::IncludeDeclContext>();
 }
 
-ToLLVMParser::IncludeDeclContext* ToLLVMParser::ProgramContext::includeDecl(size_t i) {
-  return getRuleContext<ToLLVMParser::IncludeDeclContext>(i);
+LuxParser::IncludeDeclContext* LuxParser::ProgramContext::includeDecl(size_t i) {
+  return getRuleContext<LuxParser::IncludeDeclContext>(i);
 }
 
-std::vector<ToLLVMParser::TopLevelDeclContext *> ToLLVMParser::ProgramContext::topLevelDecl() {
-  return getRuleContexts<ToLLVMParser::TopLevelDeclContext>();
+std::vector<LuxParser::TopLevelDeclContext *> LuxParser::ProgramContext::topLevelDecl() {
+  return getRuleContexts<LuxParser::TopLevelDeclContext>();
 }
 
-ToLLVMParser::TopLevelDeclContext* ToLLVMParser::ProgramContext::topLevelDecl(size_t i) {
-  return getRuleContext<ToLLVMParser::TopLevelDeclContext>(i);
-}
-
-
-size_t ToLLVMParser::ProgramContext::getRuleIndex() const {
-  return ToLLVMParser::RuleProgram;
+LuxParser::TopLevelDeclContext* LuxParser::ProgramContext::topLevelDecl(size_t i) {
+  return getRuleContext<LuxParser::TopLevelDeclContext>(i);
 }
 
 
-std::any ToLLVMParser::ProgramContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ProgramContext::getRuleIndex() const {
+  return LuxParser::RuleProgram;
+}
+
+
+std::any LuxParser::ProgramContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitProgram(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ProgramContext* ToLLVMParser::program() {
+LuxParser::ProgramContext* LuxParser::program() {
   ProgramContext *_localctx = _tracker.createInstance<ProgramContext>(_ctx, getState());
-  enterRule(_localctx, 0, ToLLVMParser::RuleProgram);
+  enterRule(_localctx, 0, LuxParser::RuleProgram);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -533,14 +533,14 @@ ToLLVMParser::ProgramContext* ToLLVMParser::program() {
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (_la == ToLLVMParser::NAMESPACE) {
+    if (_la == LuxParser::NAMESPACE) {
       setState(112);
       namespaceDecl();
     }
     setState(118);
     _errHandler->sync(this);
     _la = _input->LA(1);
-    while (_la == ToLLVMParser::USE) {
+    while (_la == LuxParser::USE) {
       setState(115);
       useDecl();
       setState(120);
@@ -550,9 +550,9 @@ ToLLVMParser::ProgramContext* ToLLVMParser::program() {
     setState(124);
     _errHandler->sync(this);
     _la = _input->LA(1);
-    while (_la == ToLLVMParser::INCLUDE_SYS
+    while (_la == LuxParser::INCLUDE_SYS
 
-    || _la == ToLLVMParser::INCLUDE_LOCAL) {
+    || _la == LuxParser::INCLUDE_LOCAL) {
       setState(121);
       includeDecl();
       setState(126);
@@ -572,7 +572,7 @@ ToLLVMParser::ProgramContext* ToLLVMParser::program() {
       _la = _input->LA(1);
     }
     setState(133);
-    match(ToLLVMParser::EOF);
+    match(LuxParser::EOF);
    
   }
   catch (RecognitionException &e) {
@@ -586,38 +586,38 @@ ToLLVMParser::ProgramContext* ToLLVMParser::program() {
 
 //----------------- NamespaceDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::NamespaceDeclContext::NamespaceDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::NamespaceDeclContext::NamespaceDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::NamespaceDeclContext::NAMESPACE() {
-  return getToken(ToLLVMParser::NAMESPACE, 0);
+tree::TerminalNode* LuxParser::NamespaceDeclContext::NAMESPACE() {
+  return getToken(LuxParser::NAMESPACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::NamespaceDeclContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::NamespaceDeclContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::NamespaceDeclContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::NamespaceDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleNamespaceDecl;
+tree::TerminalNode* LuxParser::NamespaceDeclContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::NamespaceDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::NamespaceDeclContext::getRuleIndex() const {
+  return LuxParser::RuleNamespaceDecl;
+}
+
+
+std::any LuxParser::NamespaceDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitNamespaceDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::NamespaceDeclContext* ToLLVMParser::namespaceDecl() {
+LuxParser::NamespaceDeclContext* LuxParser::namespaceDecl() {
   NamespaceDeclContext *_localctx = _tracker.createInstance<NamespaceDeclContext>(_ctx, getState());
-  enterRule(_localctx, 2, ToLLVMParser::RuleNamespaceDecl);
+  enterRule(_localctx, 2, LuxParser::RuleNamespaceDecl);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -629,11 +629,11 @@ ToLLVMParser::NamespaceDeclContext* ToLLVMParser::namespaceDecl() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(135);
-    match(ToLLVMParser::NAMESPACE);
+    match(LuxParser::NAMESPACE);
     setState(136);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(137);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -647,104 +647,104 @@ ToLLVMParser::NamespaceDeclContext* ToLLVMParser::namespaceDecl() {
 
 //----------------- UseDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::UseDeclContext::UseDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::UseDeclContext::UseDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
 
-size_t ToLLVMParser::UseDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleUseDecl;
+size_t LuxParser::UseDeclContext::getRuleIndex() const {
+  return LuxParser::RuleUseDecl;
 }
 
-void ToLLVMParser::UseDeclContext::copyFrom(UseDeclContext *ctx) {
+void LuxParser::UseDeclContext::copyFrom(UseDeclContext *ctx) {
   ParserRuleContext::copyFrom(ctx);
 }
 
 //----------------- UseItemContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::UseItemContext::USE() {
-  return getToken(ToLLVMParser::USE, 0);
+tree::TerminalNode* LuxParser::UseItemContext::USE() {
+  return getToken(LuxParser::USE, 0);
 }
 
-ToLLVMParser::ModulePathContext* ToLLVMParser::UseItemContext::modulePath() {
-  return getRuleContext<ToLLVMParser::ModulePathContext>(0);
+LuxParser::ModulePathContext* LuxParser::UseItemContext::modulePath() {
+  return getRuleContext<LuxParser::ModulePathContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::UseItemContext::SCOPE() {
-  return getToken(ToLLVMParser::SCOPE, 0);
+tree::TerminalNode* LuxParser::UseItemContext::SCOPE() {
+  return getToken(LuxParser::SCOPE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::UseItemContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::UseItemContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::UseItemContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::UseItemContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-ToLLVMParser::UseItemContext::UseItemContext(UseDeclContext *ctx) { copyFrom(ctx); }
+LuxParser::UseItemContext::UseItemContext(UseDeclContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::UseItemContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::UseItemContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitUseItem(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- UseGroupContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::UseGroupContext::USE() {
-  return getToken(ToLLVMParser::USE, 0);
+tree::TerminalNode* LuxParser::UseGroupContext::USE() {
+  return getToken(LuxParser::USE, 0);
 }
 
-ToLLVMParser::ModulePathContext* ToLLVMParser::UseGroupContext::modulePath() {
-  return getRuleContext<ToLLVMParser::ModulePathContext>(0);
+LuxParser::ModulePathContext* LuxParser::UseGroupContext::modulePath() {
+  return getRuleContext<LuxParser::ModulePathContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::UseGroupContext::SCOPE() {
-  return getToken(ToLLVMParser::SCOPE, 0);
+tree::TerminalNode* LuxParser::UseGroupContext::SCOPE() {
+  return getToken(LuxParser::SCOPE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::UseGroupContext::LBRACE() {
-  return getToken(ToLLVMParser::LBRACE, 0);
+tree::TerminalNode* LuxParser::UseGroupContext::LBRACE() {
+  return getToken(LuxParser::LBRACE, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::UseGroupContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::UseGroupContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::UseGroupContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::UseGroupContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::UseGroupContext::RBRACE() {
-  return getToken(ToLLVMParser::RBRACE, 0);
+tree::TerminalNode* LuxParser::UseGroupContext::RBRACE() {
+  return getToken(LuxParser::RBRACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::UseGroupContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::UseGroupContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::UseGroupContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::UseGroupContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::UseGroupContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
+tree::TerminalNode* LuxParser::UseGroupContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
-ToLLVMParser::UseGroupContext::UseGroupContext(UseDeclContext *ctx) { copyFrom(ctx); }
+LuxParser::UseGroupContext::UseGroupContext(UseDeclContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::UseGroupContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::UseGroupContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitUseGroup(this);
   else
     return visitor->visitChildren(this);
 }
-ToLLVMParser::UseDeclContext* ToLLVMParser::useDecl() {
+LuxParser::UseDeclContext* LuxParser::useDecl() {
   UseDeclContext *_localctx = _tracker.createInstance<UseDeclContext>(_ctx, getState());
-  enterRule(_localctx, 4, ToLLVMParser::RuleUseDecl);
+  enterRule(_localctx, 4, LuxParser::RuleUseDecl);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -759,50 +759,50 @@ ToLLVMParser::UseDeclContext* ToLLVMParser::useDecl() {
     _errHandler->sync(this);
     switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 5, _ctx)) {
     case 1: {
-      _localctx = _tracker.createInstance<ToLLVMParser::UseItemContext>(_localctx);
+      _localctx = _tracker.createInstance<LuxParser::UseItemContext>(_localctx);
       enterOuterAlt(_localctx, 1);
       setState(139);
-      match(ToLLVMParser::USE);
+      match(LuxParser::USE);
       setState(140);
       modulePath();
       setState(141);
-      match(ToLLVMParser::SCOPE);
+      match(LuxParser::SCOPE);
       setState(142);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(143);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       break;
     }
 
     case 2: {
-      _localctx = _tracker.createInstance<ToLLVMParser::UseGroupContext>(_localctx);
+      _localctx = _tracker.createInstance<LuxParser::UseGroupContext>(_localctx);
       enterOuterAlt(_localctx, 2);
       setState(145);
-      match(ToLLVMParser::USE);
+      match(LuxParser::USE);
       setState(146);
       modulePath();
       setState(147);
-      match(ToLLVMParser::SCOPE);
+      match(LuxParser::SCOPE);
       setState(148);
-      match(ToLLVMParser::LBRACE);
+      match(LuxParser::LBRACE);
       setState(149);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(154);
       _errHandler->sync(this);
       _la = _input->LA(1);
-      while (_la == ToLLVMParser::COMMA) {
+      while (_la == LuxParser::COMMA) {
         setState(150);
-        match(ToLLVMParser::COMMA);
+        match(LuxParser::COMMA);
         setState(151);
-        match(ToLLVMParser::IDENTIFIER);
+        match(LuxParser::IDENTIFIER);
         setState(156);
         _errHandler->sync(this);
         _la = _input->LA(1);
       }
       setState(157);
-      match(ToLLVMParser::RBRACE);
+      match(LuxParser::RBRACE);
       setState(158);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       break;
     }
 
@@ -822,42 +822,42 @@ ToLLVMParser::UseDeclContext* ToLLVMParser::useDecl() {
 
 //----------------- ModulePathContext ------------------------------------------------------------------
 
-ToLLVMParser::ModulePathContext::ModulePathContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ModulePathContext::ModulePathContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ModulePathContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::ModulePathContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::ModulePathContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::ModulePathContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ModulePathContext::SCOPE() {
-  return getTokens(ToLLVMParser::SCOPE);
+std::vector<tree::TerminalNode *> LuxParser::ModulePathContext::SCOPE() {
+  return getTokens(LuxParser::SCOPE);
 }
 
-tree::TerminalNode* ToLLVMParser::ModulePathContext::SCOPE(size_t i) {
-  return getToken(ToLLVMParser::SCOPE, i);
-}
-
-
-size_t ToLLVMParser::ModulePathContext::getRuleIndex() const {
-  return ToLLVMParser::RuleModulePath;
+tree::TerminalNode* LuxParser::ModulePathContext::SCOPE(size_t i) {
+  return getToken(LuxParser::SCOPE, i);
 }
 
 
-std::any ToLLVMParser::ModulePathContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ModulePathContext::getRuleIndex() const {
+  return LuxParser::RuleModulePath;
+}
+
+
+std::any LuxParser::ModulePathContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitModulePath(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ModulePathContext* ToLLVMParser::modulePath() {
+LuxParser::ModulePathContext* LuxParser::modulePath() {
   ModulePathContext *_localctx = _tracker.createInstance<ModulePathContext>(_ctx, getState());
-  enterRule(_localctx, 6, ToLLVMParser::RuleModulePath);
+  enterRule(_localctx, 6, LuxParser::RuleModulePath);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -870,16 +870,16 @@ ToLLVMParser::ModulePathContext* ToLLVMParser::modulePath() {
     size_t alt;
     enterOuterAlt(_localctx, 1);
     setState(162);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(167);
     _errHandler->sync(this);
     alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 6, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
         setState(163);
-        match(ToLLVMParser::SCOPE);
+        match(LuxParser::SCOPE);
         setState(164);
-        match(ToLLVMParser::IDENTIFIER); 
+        match(LuxParser::IDENTIFIER); 
       }
       setState(169);
       _errHandler->sync(this);
@@ -898,34 +898,34 @@ ToLLVMParser::ModulePathContext* ToLLVMParser::modulePath() {
 
 //----------------- IncludeDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::IncludeDeclContext::IncludeDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::IncludeDeclContext::IncludeDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::IncludeDeclContext::INCLUDE_SYS() {
-  return getToken(ToLLVMParser::INCLUDE_SYS, 0);
+tree::TerminalNode* LuxParser::IncludeDeclContext::INCLUDE_SYS() {
+  return getToken(LuxParser::INCLUDE_SYS, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::IncludeDeclContext::INCLUDE_LOCAL() {
-  return getToken(ToLLVMParser::INCLUDE_LOCAL, 0);
-}
-
-
-size_t ToLLVMParser::IncludeDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleIncludeDecl;
+tree::TerminalNode* LuxParser::IncludeDeclContext::INCLUDE_LOCAL() {
+  return getToken(LuxParser::INCLUDE_LOCAL, 0);
 }
 
 
-std::any ToLLVMParser::IncludeDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::IncludeDeclContext::getRuleIndex() const {
+  return LuxParser::RuleIncludeDecl;
+}
+
+
+std::any LuxParser::IncludeDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitIncludeDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::IncludeDeclContext* ToLLVMParser::includeDecl() {
+LuxParser::IncludeDeclContext* LuxParser::includeDecl() {
   IncludeDeclContext *_localctx = _tracker.createInstance<IncludeDeclContext>(_ctx, getState());
-  enterRule(_localctx, 8, ToLLVMParser::RuleIncludeDecl);
+  enterRule(_localctx, 8, LuxParser::RuleIncludeDecl);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -939,9 +939,9 @@ ToLLVMParser::IncludeDeclContext* ToLLVMParser::includeDecl() {
     enterOuterAlt(_localctx, 1);
     setState(170);
     _la = _input->LA(1);
-    if (!(_la == ToLLVMParser::INCLUDE_SYS
+    if (!(_la == LuxParser::INCLUDE_SYS
 
-    || _la == ToLLVMParser::INCLUDE_LOCAL)) {
+    || _la == LuxParser::INCLUDE_LOCAL)) {
     _errHandler->recoverInline(this);
     }
     else {
@@ -961,54 +961,54 @@ ToLLVMParser::IncludeDeclContext* ToLLVMParser::includeDecl() {
 
 //----------------- TopLevelDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::TopLevelDeclContext::TopLevelDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::TopLevelDeclContext::TopLevelDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::TypeAliasDeclContext* ToLLVMParser::TopLevelDeclContext::typeAliasDecl() {
-  return getRuleContext<ToLLVMParser::TypeAliasDeclContext>(0);
+LuxParser::TypeAliasDeclContext* LuxParser::TopLevelDeclContext::typeAliasDecl() {
+  return getRuleContext<LuxParser::TypeAliasDeclContext>(0);
 }
 
-ToLLVMParser::StructDeclContext* ToLLVMParser::TopLevelDeclContext::structDecl() {
-  return getRuleContext<ToLLVMParser::StructDeclContext>(0);
+LuxParser::StructDeclContext* LuxParser::TopLevelDeclContext::structDecl() {
+  return getRuleContext<LuxParser::StructDeclContext>(0);
 }
 
-ToLLVMParser::UnionDeclContext* ToLLVMParser::TopLevelDeclContext::unionDecl() {
-  return getRuleContext<ToLLVMParser::UnionDeclContext>(0);
+LuxParser::UnionDeclContext* LuxParser::TopLevelDeclContext::unionDecl() {
+  return getRuleContext<LuxParser::UnionDeclContext>(0);
 }
 
-ToLLVMParser::EnumDeclContext* ToLLVMParser::TopLevelDeclContext::enumDecl() {
-  return getRuleContext<ToLLVMParser::EnumDeclContext>(0);
+LuxParser::EnumDeclContext* LuxParser::TopLevelDeclContext::enumDecl() {
+  return getRuleContext<LuxParser::EnumDeclContext>(0);
 }
 
-ToLLVMParser::ExtendDeclContext* ToLLVMParser::TopLevelDeclContext::extendDecl() {
-  return getRuleContext<ToLLVMParser::ExtendDeclContext>(0);
+LuxParser::ExtendDeclContext* LuxParser::TopLevelDeclContext::extendDecl() {
+  return getRuleContext<LuxParser::ExtendDeclContext>(0);
 }
 
-ToLLVMParser::ExternDeclContext* ToLLVMParser::TopLevelDeclContext::externDecl() {
-  return getRuleContext<ToLLVMParser::ExternDeclContext>(0);
+LuxParser::ExternDeclContext* LuxParser::TopLevelDeclContext::externDecl() {
+  return getRuleContext<LuxParser::ExternDeclContext>(0);
 }
 
-ToLLVMParser::FunctionDeclContext* ToLLVMParser::TopLevelDeclContext::functionDecl() {
-  return getRuleContext<ToLLVMParser::FunctionDeclContext>(0);
-}
-
-
-size_t ToLLVMParser::TopLevelDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleTopLevelDecl;
+LuxParser::FunctionDeclContext* LuxParser::TopLevelDeclContext::functionDecl() {
+  return getRuleContext<LuxParser::FunctionDeclContext>(0);
 }
 
 
-std::any ToLLVMParser::TopLevelDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::TopLevelDeclContext::getRuleIndex() const {
+  return LuxParser::RuleTopLevelDecl;
+}
+
+
+std::any LuxParser::TopLevelDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitTopLevelDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::TopLevelDeclContext* ToLLVMParser::topLevelDecl() {
+LuxParser::TopLevelDeclContext* LuxParser::topLevelDecl() {
   TopLevelDeclContext *_localctx = _tracker.createInstance<TopLevelDeclContext>(_ctx, getState());
-  enterRule(_localctx, 10, ToLLVMParser::RuleTopLevelDecl);
+  enterRule(_localctx, 10, LuxParser::RuleTopLevelDecl);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -1021,77 +1021,77 @@ ToLLVMParser::TopLevelDeclContext* ToLLVMParser::topLevelDecl() {
     setState(179);
     _errHandler->sync(this);
     switch (_input->LA(1)) {
-      case ToLLVMParser::TYPE: {
+      case LuxParser::TYPE: {
         enterOuterAlt(_localctx, 1);
         setState(172);
         typeAliasDecl();
         break;
       }
 
-      case ToLLVMParser::STRUCT: {
+      case LuxParser::STRUCT: {
         enterOuterAlt(_localctx, 2);
         setState(173);
         structDecl();
         break;
       }
 
-      case ToLLVMParser::UNION: {
+      case LuxParser::UNION: {
         enterOuterAlt(_localctx, 3);
         setState(174);
         unionDecl();
         break;
       }
 
-      case ToLLVMParser::ENUM: {
+      case LuxParser::ENUM: {
         enterOuterAlt(_localctx, 4);
         setState(175);
         enumDecl();
         break;
       }
 
-      case ToLLVMParser::EXTEND: {
+      case LuxParser::EXTEND: {
         enterOuterAlt(_localctx, 5);
         setState(176);
         extendDecl();
         break;
       }
 
-      case ToLLVMParser::EXTERN: {
+      case LuxParser::EXTERN: {
         enterOuterAlt(_localctx, 6);
         setState(177);
         externDecl();
         break;
       }
 
-      case ToLLVMParser::FN:
-      case ToLLVMParser::INT1:
-      case ToLLVMParser::INT8:
-      case ToLLVMParser::INT16:
-      case ToLLVMParser::INT32:
-      case ToLLVMParser::INT64:
-      case ToLLVMParser::INT128:
-      case ToLLVMParser::INTINF:
-      case ToLLVMParser::ISIZE:
-      case ToLLVMParser::UINT1:
-      case ToLLVMParser::UINT8:
-      case ToLLVMParser::UINT16:
-      case ToLLVMParser::UINT32:
-      case ToLLVMParser::UINT64:
-      case ToLLVMParser::UINT128:
-      case ToLLVMParser::USIZE:
-      case ToLLVMParser::FLOAT32:
-      case ToLLVMParser::FLOAT64:
-      case ToLLVMParser::FLOAT80:
-      case ToLLVMParser::FLOAT128:
-      case ToLLVMParser::DOUBLE:
-      case ToLLVMParser::BOOL:
-      case ToLLVMParser::CHAR:
-      case ToLLVMParser::VOID:
-      case ToLLVMParser::STRING:
-      case ToLLVMParser::CSTRING:
-      case ToLLVMParser::IDENTIFIER:
-      case ToLLVMParser::LBRACKET:
-      case ToLLVMParser::STAR: {
+      case LuxParser::FN:
+      case LuxParser::INT1:
+      case LuxParser::INT8:
+      case LuxParser::INT16:
+      case LuxParser::INT32:
+      case LuxParser::INT64:
+      case LuxParser::INT128:
+      case LuxParser::INTINF:
+      case LuxParser::ISIZE:
+      case LuxParser::UINT1:
+      case LuxParser::UINT8:
+      case LuxParser::UINT16:
+      case LuxParser::UINT32:
+      case LuxParser::UINT64:
+      case LuxParser::UINT128:
+      case LuxParser::USIZE:
+      case LuxParser::FLOAT32:
+      case LuxParser::FLOAT64:
+      case LuxParser::FLOAT80:
+      case LuxParser::FLOAT128:
+      case LuxParser::DOUBLE:
+      case LuxParser::BOOL:
+      case LuxParser::CHAR:
+      case LuxParser::VOID:
+      case LuxParser::STRING:
+      case LuxParser::CSTRING:
+      case LuxParser::IDENTIFIER:
+      case LuxParser::LBRACKET:
+      case LuxParser::STAR: {
         enterOuterAlt(_localctx, 7);
         setState(178);
         functionDecl();
@@ -1114,46 +1114,46 @@ ToLLVMParser::TopLevelDeclContext* ToLLVMParser::topLevelDecl() {
 
 //----------------- TypeAliasDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::TypeAliasDeclContext::TypeAliasDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::TypeAliasDeclContext::TypeAliasDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::TypeAliasDeclContext::TYPE() {
-  return getToken(ToLLVMParser::TYPE, 0);
+tree::TerminalNode* LuxParser::TypeAliasDeclContext::TYPE() {
+  return getToken(LuxParser::TYPE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeAliasDeclContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::TypeAliasDeclContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeAliasDeclContext::ASSIGN() {
-  return getToken(ToLLVMParser::ASSIGN, 0);
+tree::TerminalNode* LuxParser::TypeAliasDeclContext::ASSIGN() {
+  return getToken(LuxParser::ASSIGN, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::TypeAliasDeclContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::TypeAliasDeclContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeAliasDeclContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::TypeAliasDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleTypeAliasDecl;
+tree::TerminalNode* LuxParser::TypeAliasDeclContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::TypeAliasDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::TypeAliasDeclContext::getRuleIndex() const {
+  return LuxParser::RuleTypeAliasDecl;
+}
+
+
+std::any LuxParser::TypeAliasDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitTypeAliasDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::TypeAliasDeclContext* ToLLVMParser::typeAliasDecl() {
+LuxParser::TypeAliasDeclContext* LuxParser::typeAliasDecl() {
   TypeAliasDeclContext *_localctx = _tracker.createInstance<TypeAliasDeclContext>(_ctx, getState());
-  enterRule(_localctx, 12, ToLLVMParser::RuleTypeAliasDecl);
+  enterRule(_localctx, 12, LuxParser::RuleTypeAliasDecl);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -1165,15 +1165,15 @@ ToLLVMParser::TypeAliasDeclContext* ToLLVMParser::typeAliasDecl() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(181);
-    match(ToLLVMParser::TYPE);
+    match(LuxParser::TYPE);
     setState(182);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(183);
-    match(ToLLVMParser::ASSIGN);
+    match(LuxParser::ASSIGN);
     setState(184);
     typeSpec();
     setState(185);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -1187,54 +1187,54 @@ ToLLVMParser::TypeAliasDeclContext* ToLLVMParser::typeAliasDecl() {
 
 //----------------- EnumDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::EnumDeclContext::EnumDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::EnumDeclContext::EnumDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::EnumDeclContext::ENUM() {
-  return getToken(ToLLVMParser::ENUM, 0);
+tree::TerminalNode* LuxParser::EnumDeclContext::ENUM() {
+  return getToken(LuxParser::ENUM, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::EnumDeclContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::EnumDeclContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::EnumDeclContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::EnumDeclContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::EnumDeclContext::LBRACE() {
-  return getToken(ToLLVMParser::LBRACE, 0);
+tree::TerminalNode* LuxParser::EnumDeclContext::LBRACE() {
+  return getToken(LuxParser::LBRACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::EnumDeclContext::RBRACE() {
-  return getToken(ToLLVMParser::RBRACE, 0);
+tree::TerminalNode* LuxParser::EnumDeclContext::RBRACE() {
+  return getToken(LuxParser::RBRACE, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::EnumDeclContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::EnumDeclContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::EnumDeclContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
-}
-
-
-size_t ToLLVMParser::EnumDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleEnumDecl;
+tree::TerminalNode* LuxParser::EnumDeclContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
 
-std::any ToLLVMParser::EnumDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::EnumDeclContext::getRuleIndex() const {
+  return LuxParser::RuleEnumDecl;
+}
+
+
+std::any LuxParser::EnumDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitEnumDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::EnumDeclContext* ToLLVMParser::enumDecl() {
+LuxParser::EnumDeclContext* LuxParser::enumDecl() {
   EnumDeclContext *_localctx = _tracker.createInstance<EnumDeclContext>(_ctx, getState());
-  enterRule(_localctx, 14, ToLLVMParser::RuleEnumDecl);
+  enterRule(_localctx, 14, LuxParser::RuleEnumDecl);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -1248,22 +1248,22 @@ ToLLVMParser::EnumDeclContext* ToLLVMParser::enumDecl() {
     size_t alt;
     enterOuterAlt(_localctx, 1);
     setState(187);
-    match(ToLLVMParser::ENUM);
+    match(LuxParser::ENUM);
     setState(188);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(189);
-    match(ToLLVMParser::LBRACE);
+    match(LuxParser::LBRACE);
     setState(190);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(195);
     _errHandler->sync(this);
     alt = getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 8, _ctx);
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
         setState(191);
-        match(ToLLVMParser::COMMA);
+        match(LuxParser::COMMA);
         setState(192);
-        match(ToLLVMParser::IDENTIFIER); 
+        match(LuxParser::IDENTIFIER); 
       }
       setState(197);
       _errHandler->sync(this);
@@ -1273,12 +1273,12 @@ ToLLVMParser::EnumDeclContext* ToLLVMParser::enumDecl() {
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (_la == ToLLVMParser::COMMA) {
+    if (_la == LuxParser::COMMA) {
       setState(198);
-      match(ToLLVMParser::COMMA);
+      match(LuxParser::COMMA);
     }
     setState(201);
-    match(ToLLVMParser::RBRACE);
+    match(LuxParser::RBRACE);
    
   }
   catch (RecognitionException &e) {
@@ -1292,50 +1292,50 @@ ToLLVMParser::EnumDeclContext* ToLLVMParser::enumDecl() {
 
 //----------------- StructDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::StructDeclContext::StructDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::StructDeclContext::StructDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::StructDeclContext::STRUCT() {
-  return getToken(ToLLVMParser::STRUCT, 0);
+tree::TerminalNode* LuxParser::StructDeclContext::STRUCT() {
+  return getToken(LuxParser::STRUCT, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::StructDeclContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::StructDeclContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::StructDeclContext::LBRACE() {
-  return getToken(ToLLVMParser::LBRACE, 0);
+tree::TerminalNode* LuxParser::StructDeclContext::LBRACE() {
+  return getToken(LuxParser::LBRACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::StructDeclContext::RBRACE() {
-  return getToken(ToLLVMParser::RBRACE, 0);
+tree::TerminalNode* LuxParser::StructDeclContext::RBRACE() {
+  return getToken(LuxParser::RBRACE, 0);
 }
 
-std::vector<ToLLVMParser::StructFieldContext *> ToLLVMParser::StructDeclContext::structField() {
-  return getRuleContexts<ToLLVMParser::StructFieldContext>();
+std::vector<LuxParser::StructFieldContext *> LuxParser::StructDeclContext::structField() {
+  return getRuleContexts<LuxParser::StructFieldContext>();
 }
 
-ToLLVMParser::StructFieldContext* ToLLVMParser::StructDeclContext::structField(size_t i) {
-  return getRuleContext<ToLLVMParser::StructFieldContext>(i);
-}
-
-
-size_t ToLLVMParser::StructDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleStructDecl;
+LuxParser::StructFieldContext* LuxParser::StructDeclContext::structField(size_t i) {
+  return getRuleContext<LuxParser::StructFieldContext>(i);
 }
 
 
-std::any ToLLVMParser::StructDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::StructDeclContext::getRuleIndex() const {
+  return LuxParser::RuleStructDecl;
+}
+
+
+std::any LuxParser::StructDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitStructDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::StructDeclContext* ToLLVMParser::structDecl() {
+LuxParser::StructDeclContext* LuxParser::structDecl() {
   StructDeclContext *_localctx = _tracker.createInstance<StructDeclContext>(_ctx, getState());
-  enterRule(_localctx, 16, ToLLVMParser::RuleStructDecl);
+  enterRule(_localctx, 16, LuxParser::RuleStructDecl);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -1348,11 +1348,11 @@ ToLLVMParser::StructDeclContext* ToLLVMParser::structDecl() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(203);
-    match(ToLLVMParser::STRUCT);
+    match(LuxParser::STRUCT);
     setState(204);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(205);
-    match(ToLLVMParser::LBRACE);
+    match(LuxParser::LBRACE);
     setState(209);
     _errHandler->sync(this);
     _la = _input->LA(1);
@@ -1366,7 +1366,7 @@ ToLLVMParser::StructDeclContext* ToLLVMParser::structDecl() {
       _la = _input->LA(1);
     }
     setState(212);
-    match(ToLLVMParser::RBRACE);
+    match(LuxParser::RBRACE);
    
   }
   catch (RecognitionException &e) {
@@ -1380,38 +1380,38 @@ ToLLVMParser::StructDeclContext* ToLLVMParser::structDecl() {
 
 //----------------- StructFieldContext ------------------------------------------------------------------
 
-ToLLVMParser::StructFieldContext::StructFieldContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::StructFieldContext::StructFieldContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::StructFieldContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::StructFieldContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::StructFieldContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::StructFieldContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::StructFieldContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::StructFieldContext::getRuleIndex() const {
-  return ToLLVMParser::RuleStructField;
+tree::TerminalNode* LuxParser::StructFieldContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::StructFieldContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::StructFieldContext::getRuleIndex() const {
+  return LuxParser::RuleStructField;
+}
+
+
+std::any LuxParser::StructFieldContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitStructField(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::StructFieldContext* ToLLVMParser::structField() {
+LuxParser::StructFieldContext* LuxParser::structField() {
   StructFieldContext *_localctx = _tracker.createInstance<StructFieldContext>(_ctx, getState());
-  enterRule(_localctx, 18, ToLLVMParser::RuleStructField);
+  enterRule(_localctx, 18, LuxParser::RuleStructField);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -1425,9 +1425,9 @@ ToLLVMParser::StructFieldContext* ToLLVMParser::structField() {
     setState(214);
     typeSpec();
     setState(215);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(216);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -1441,50 +1441,50 @@ ToLLVMParser::StructFieldContext* ToLLVMParser::structField() {
 
 //----------------- UnionDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::UnionDeclContext::UnionDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::UnionDeclContext::UnionDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::UnionDeclContext::UNION() {
-  return getToken(ToLLVMParser::UNION, 0);
+tree::TerminalNode* LuxParser::UnionDeclContext::UNION() {
+  return getToken(LuxParser::UNION, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::UnionDeclContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::UnionDeclContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::UnionDeclContext::LBRACE() {
-  return getToken(ToLLVMParser::LBRACE, 0);
+tree::TerminalNode* LuxParser::UnionDeclContext::LBRACE() {
+  return getToken(LuxParser::LBRACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::UnionDeclContext::RBRACE() {
-  return getToken(ToLLVMParser::RBRACE, 0);
+tree::TerminalNode* LuxParser::UnionDeclContext::RBRACE() {
+  return getToken(LuxParser::RBRACE, 0);
 }
 
-std::vector<ToLLVMParser::UnionFieldContext *> ToLLVMParser::UnionDeclContext::unionField() {
-  return getRuleContexts<ToLLVMParser::UnionFieldContext>();
+std::vector<LuxParser::UnionFieldContext *> LuxParser::UnionDeclContext::unionField() {
+  return getRuleContexts<LuxParser::UnionFieldContext>();
 }
 
-ToLLVMParser::UnionFieldContext* ToLLVMParser::UnionDeclContext::unionField(size_t i) {
-  return getRuleContext<ToLLVMParser::UnionFieldContext>(i);
-}
-
-
-size_t ToLLVMParser::UnionDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleUnionDecl;
+LuxParser::UnionFieldContext* LuxParser::UnionDeclContext::unionField(size_t i) {
+  return getRuleContext<LuxParser::UnionFieldContext>(i);
 }
 
 
-std::any ToLLVMParser::UnionDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::UnionDeclContext::getRuleIndex() const {
+  return LuxParser::RuleUnionDecl;
+}
+
+
+std::any LuxParser::UnionDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitUnionDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::UnionDeclContext* ToLLVMParser::unionDecl() {
+LuxParser::UnionDeclContext* LuxParser::unionDecl() {
   UnionDeclContext *_localctx = _tracker.createInstance<UnionDeclContext>(_ctx, getState());
-  enterRule(_localctx, 20, ToLLVMParser::RuleUnionDecl);
+  enterRule(_localctx, 20, LuxParser::RuleUnionDecl);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -1497,11 +1497,11 @@ ToLLVMParser::UnionDeclContext* ToLLVMParser::unionDecl() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(218);
-    match(ToLLVMParser::UNION);
+    match(LuxParser::UNION);
     setState(219);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(220);
-    match(ToLLVMParser::LBRACE);
+    match(LuxParser::LBRACE);
     setState(224);
     _errHandler->sync(this);
     _la = _input->LA(1);
@@ -1515,7 +1515,7 @@ ToLLVMParser::UnionDeclContext* ToLLVMParser::unionDecl() {
       _la = _input->LA(1);
     }
     setState(227);
-    match(ToLLVMParser::RBRACE);
+    match(LuxParser::RBRACE);
    
   }
   catch (RecognitionException &e) {
@@ -1529,38 +1529,38 @@ ToLLVMParser::UnionDeclContext* ToLLVMParser::unionDecl() {
 
 //----------------- UnionFieldContext ------------------------------------------------------------------
 
-ToLLVMParser::UnionFieldContext::UnionFieldContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::UnionFieldContext::UnionFieldContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::UnionFieldContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::UnionFieldContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::UnionFieldContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::UnionFieldContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::UnionFieldContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::UnionFieldContext::getRuleIndex() const {
-  return ToLLVMParser::RuleUnionField;
+tree::TerminalNode* LuxParser::UnionFieldContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::UnionFieldContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::UnionFieldContext::getRuleIndex() const {
+  return LuxParser::RuleUnionField;
+}
+
+
+std::any LuxParser::UnionFieldContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitUnionField(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::UnionFieldContext* ToLLVMParser::unionField() {
+LuxParser::UnionFieldContext* LuxParser::unionField() {
   UnionFieldContext *_localctx = _tracker.createInstance<UnionFieldContext>(_ctx, getState());
-  enterRule(_localctx, 22, ToLLVMParser::RuleUnionField);
+  enterRule(_localctx, 22, LuxParser::RuleUnionField);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -1574,9 +1574,9 @@ ToLLVMParser::UnionFieldContext* ToLLVMParser::unionField() {
     setState(229);
     typeSpec();
     setState(230);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(231);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -1590,62 +1590,62 @@ ToLLVMParser::UnionFieldContext* ToLLVMParser::unionField() {
 
 //----------------- ExternDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::ExternDeclContext::ExternDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ExternDeclContext::ExternDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::ExternDeclContext::EXTERN() {
-  return getToken(ToLLVMParser::EXTERN, 0);
+tree::TerminalNode* LuxParser::ExternDeclContext::EXTERN() {
+  return getToken(LuxParser::EXTERN, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::ExternDeclContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::ExternDeclContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExternDeclContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::ExternDeclContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExternDeclContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::ExternDeclContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExternDeclContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::ExternDeclContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExternDeclContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::ExternDeclContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-ToLLVMParser::ExternParamListContext* ToLLVMParser::ExternDeclContext::externParamList() {
-  return getRuleContext<ToLLVMParser::ExternParamListContext>(0);
+LuxParser::ExternParamListContext* LuxParser::ExternDeclContext::externParamList() {
+  return getRuleContext<LuxParser::ExternParamListContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExternDeclContext::COMMA() {
-  return getToken(ToLLVMParser::COMMA, 0);
+tree::TerminalNode* LuxParser::ExternDeclContext::COMMA() {
+  return getToken(LuxParser::COMMA, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExternDeclContext::SPREAD() {
-  return getToken(ToLLVMParser::SPREAD, 0);
-}
-
-
-size_t ToLLVMParser::ExternDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleExternDecl;
+tree::TerminalNode* LuxParser::ExternDeclContext::SPREAD() {
+  return getToken(LuxParser::SPREAD, 0);
 }
 
 
-std::any ToLLVMParser::ExternDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ExternDeclContext::getRuleIndex() const {
+  return LuxParser::RuleExternDecl;
+}
+
+
+std::any LuxParser::ExternDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitExternDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ExternDeclContext* ToLLVMParser::externDecl() {
+LuxParser::ExternDeclContext* LuxParser::externDecl() {
   ExternDeclContext *_localctx = _tracker.createInstance<ExternDeclContext>(_ctx, getState());
-  enterRule(_localctx, 24, ToLLVMParser::RuleExternDecl);
+  enterRule(_localctx, 24, LuxParser::RuleExternDecl);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -1658,13 +1658,13 @@ ToLLVMParser::ExternDeclContext* ToLLVMParser::externDecl() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(233);
-    match(ToLLVMParser::EXTERN);
+    match(LuxParser::EXTERN);
     setState(234);
     typeSpec();
     setState(235);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(236);
-    match(ToLLVMParser::LPAREN);
+    match(LuxParser::LPAREN);
     setState(238);
     _errHandler->sync(this);
 
@@ -1679,16 +1679,16 @@ ToLLVMParser::ExternDeclContext* ToLLVMParser::externDecl() {
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (_la == ToLLVMParser::COMMA) {
+    if (_la == LuxParser::COMMA) {
       setState(240);
-      match(ToLLVMParser::COMMA);
+      match(LuxParser::COMMA);
       setState(241);
-      match(ToLLVMParser::SPREAD);
+      match(LuxParser::SPREAD);
     }
     setState(244);
-    match(ToLLVMParser::RPAREN);
+    match(LuxParser::RPAREN);
     setState(245);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -1702,42 +1702,42 @@ ToLLVMParser::ExternDeclContext* ToLLVMParser::externDecl() {
 
 //----------------- ExternParamListContext ------------------------------------------------------------------
 
-ToLLVMParser::ExternParamListContext::ExternParamListContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ExternParamListContext::ExternParamListContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<ToLLVMParser::ExternParamContext *> ToLLVMParser::ExternParamListContext::externParam() {
-  return getRuleContexts<ToLLVMParser::ExternParamContext>();
+std::vector<LuxParser::ExternParamContext *> LuxParser::ExternParamListContext::externParam() {
+  return getRuleContexts<LuxParser::ExternParamContext>();
 }
 
-ToLLVMParser::ExternParamContext* ToLLVMParser::ExternParamListContext::externParam(size_t i) {
-  return getRuleContext<ToLLVMParser::ExternParamContext>(i);
+LuxParser::ExternParamContext* LuxParser::ExternParamListContext::externParam(size_t i) {
+  return getRuleContext<LuxParser::ExternParamContext>(i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ExternParamListContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::ExternParamListContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::ExternParamListContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
-}
-
-
-size_t ToLLVMParser::ExternParamListContext::getRuleIndex() const {
-  return ToLLVMParser::RuleExternParamList;
+tree::TerminalNode* LuxParser::ExternParamListContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
 
-std::any ToLLVMParser::ExternParamListContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ExternParamListContext::getRuleIndex() const {
+  return LuxParser::RuleExternParamList;
+}
+
+
+std::any LuxParser::ExternParamListContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitExternParamList(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ExternParamListContext* ToLLVMParser::externParamList() {
+LuxParser::ExternParamListContext* LuxParser::externParamList() {
   ExternParamListContext *_localctx = _tracker.createInstance<ExternParamListContext>(_ctx, getState());
-  enterRule(_localctx, 26, ToLLVMParser::RuleExternParamList);
+  enterRule(_localctx, 26, LuxParser::RuleExternParamList);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -1757,7 +1757,7 @@ ToLLVMParser::ExternParamListContext* ToLLVMParser::externParamList() {
     while (alt != 2 && alt != atn::ATN::INVALID_ALT_NUMBER) {
       if (alt == 1) {
         setState(248);
-        match(ToLLVMParser::COMMA);
+        match(LuxParser::COMMA);
         setState(249);
         externParam(); 
       }
@@ -1778,34 +1778,34 @@ ToLLVMParser::ExternParamListContext* ToLLVMParser::externParamList() {
 
 //----------------- ExternParamContext ------------------------------------------------------------------
 
-ToLLVMParser::ExternParamContext::ExternParamContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ExternParamContext::ExternParamContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::ExternParamContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::ExternParamContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExternParamContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
-}
-
-
-size_t ToLLVMParser::ExternParamContext::getRuleIndex() const {
-  return ToLLVMParser::RuleExternParam;
+tree::TerminalNode* LuxParser::ExternParamContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
 
-std::any ToLLVMParser::ExternParamContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ExternParamContext::getRuleIndex() const {
+  return LuxParser::RuleExternParam;
+}
+
+
+std::any LuxParser::ExternParamContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitExternParam(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ExternParamContext* ToLLVMParser::externParam() {
+LuxParser::ExternParamContext* LuxParser::externParam() {
   ExternParamContext *_localctx = _tracker.createInstance<ExternParamContext>(_ctx, getState());
-  enterRule(_localctx, 28, ToLLVMParser::RuleExternParam);
+  enterRule(_localctx, 28, LuxParser::RuleExternParam);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -1823,9 +1823,9 @@ ToLLVMParser::ExternParamContext* ToLLVMParser::externParam() {
     _errHandler->sync(this);
 
     _la = _input->LA(1);
-    if (_la == ToLLVMParser::IDENTIFIER) {
+    if (_la == LuxParser::IDENTIFIER) {
       setState(256);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
     }
    
   }
@@ -1840,50 +1840,50 @@ ToLLVMParser::ExternParamContext* ToLLVMParser::externParam() {
 
 //----------------- FunctionDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::FunctionDeclContext::FunctionDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::FunctionDeclContext::FunctionDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::FunctionDeclContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::FunctionDeclContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::FunctionDeclContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::FunctionDeclContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::FunctionDeclContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::FunctionDeclContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::FunctionDeclContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::FunctionDeclContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::FunctionDeclContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::FunctionDeclContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-ToLLVMParser::ParamListContext* ToLLVMParser::FunctionDeclContext::paramList() {
-  return getRuleContext<ToLLVMParser::ParamListContext>(0);
-}
-
-
-size_t ToLLVMParser::FunctionDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleFunctionDecl;
+LuxParser::ParamListContext* LuxParser::FunctionDeclContext::paramList() {
+  return getRuleContext<LuxParser::ParamListContext>(0);
 }
 
 
-std::any ToLLVMParser::FunctionDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::FunctionDeclContext::getRuleIndex() const {
+  return LuxParser::RuleFunctionDecl;
+}
+
+
+std::any LuxParser::FunctionDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitFunctionDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::FunctionDeclContext* ToLLVMParser::functionDecl() {
+LuxParser::FunctionDeclContext* LuxParser::functionDecl() {
   FunctionDeclContext *_localctx = _tracker.createInstance<FunctionDeclContext>(_ctx, getState());
-  enterRule(_localctx, 30, ToLLVMParser::RuleFunctionDecl);
+  enterRule(_localctx, 30, LuxParser::RuleFunctionDecl);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -1898,9 +1898,9 @@ ToLLVMParser::FunctionDeclContext* ToLLVMParser::functionDecl() {
     setState(259);
     typeSpec();
     setState(260);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(261);
-    match(ToLLVMParser::LPAREN);
+    match(LuxParser::LPAREN);
     setState(263);
     _errHandler->sync(this);
 
@@ -1912,7 +1912,7 @@ ToLLVMParser::FunctionDeclContext* ToLLVMParser::functionDecl() {
       paramList();
     }
     setState(265);
-    match(ToLLVMParser::RPAREN);
+    match(LuxParser::RPAREN);
     setState(266);
     block();
    
@@ -1928,50 +1928,50 @@ ToLLVMParser::FunctionDeclContext* ToLLVMParser::functionDecl() {
 
 //----------------- ExtendDeclContext ------------------------------------------------------------------
 
-ToLLVMParser::ExtendDeclContext::ExtendDeclContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ExtendDeclContext::ExtendDeclContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendDeclContext::EXTEND() {
-  return getToken(ToLLVMParser::EXTEND, 0);
+tree::TerminalNode* LuxParser::ExtendDeclContext::EXTEND() {
+  return getToken(LuxParser::EXTEND, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendDeclContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::ExtendDeclContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendDeclContext::LBRACE() {
-  return getToken(ToLLVMParser::LBRACE, 0);
+tree::TerminalNode* LuxParser::ExtendDeclContext::LBRACE() {
+  return getToken(LuxParser::LBRACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendDeclContext::RBRACE() {
-  return getToken(ToLLVMParser::RBRACE, 0);
+tree::TerminalNode* LuxParser::ExtendDeclContext::RBRACE() {
+  return getToken(LuxParser::RBRACE, 0);
 }
 
-std::vector<ToLLVMParser::ExtendMethodContext *> ToLLVMParser::ExtendDeclContext::extendMethod() {
-  return getRuleContexts<ToLLVMParser::ExtendMethodContext>();
+std::vector<LuxParser::ExtendMethodContext *> LuxParser::ExtendDeclContext::extendMethod() {
+  return getRuleContexts<LuxParser::ExtendMethodContext>();
 }
 
-ToLLVMParser::ExtendMethodContext* ToLLVMParser::ExtendDeclContext::extendMethod(size_t i) {
-  return getRuleContext<ToLLVMParser::ExtendMethodContext>(i);
-}
-
-
-size_t ToLLVMParser::ExtendDeclContext::getRuleIndex() const {
-  return ToLLVMParser::RuleExtendDecl;
+LuxParser::ExtendMethodContext* LuxParser::ExtendDeclContext::extendMethod(size_t i) {
+  return getRuleContext<LuxParser::ExtendMethodContext>(i);
 }
 
 
-std::any ToLLVMParser::ExtendDeclContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ExtendDeclContext::getRuleIndex() const {
+  return LuxParser::RuleExtendDecl;
+}
+
+
+std::any LuxParser::ExtendDeclContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitExtendDecl(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ExtendDeclContext* ToLLVMParser::extendDecl() {
+LuxParser::ExtendDeclContext* LuxParser::extendDecl() {
   ExtendDeclContext *_localctx = _tracker.createInstance<ExtendDeclContext>(_ctx, getState());
-  enterRule(_localctx, 32, ToLLVMParser::RuleExtendDecl);
+  enterRule(_localctx, 32, LuxParser::RuleExtendDecl);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -1984,11 +1984,11 @@ ToLLVMParser::ExtendDeclContext* ToLLVMParser::extendDecl() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(268);
-    match(ToLLVMParser::EXTEND);
+    match(LuxParser::EXTEND);
     setState(269);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(270);
-    match(ToLLVMParser::LBRACE);
+    match(LuxParser::LBRACE);
     setState(274);
     _errHandler->sync(this);
     _la = _input->LA(1);
@@ -2002,7 +2002,7 @@ ToLLVMParser::ExtendDeclContext* ToLLVMParser::extendDecl() {
       _la = _input->LA(1);
     }
     setState(277);
-    match(ToLLVMParser::RBRACE);
+    match(LuxParser::RBRACE);
    
   }
   catch (RecognitionException &e) {
@@ -2016,74 +2016,74 @@ ToLLVMParser::ExtendDeclContext* ToLLVMParser::extendDecl() {
 
 //----------------- ExtendMethodContext ------------------------------------------------------------------
 
-ToLLVMParser::ExtendMethodContext::ExtendMethodContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ExtendMethodContext::ExtendMethodContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::ExtendMethodContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::ExtendMethodContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ExtendMethodContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::ExtendMethodContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendMethodContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::ExtendMethodContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendMethodContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::ExtendMethodContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendMethodContext::AMPERSAND() {
-  return getToken(ToLLVMParser::AMPERSAND, 0);
+tree::TerminalNode* LuxParser::ExtendMethodContext::AMPERSAND() {
+  return getToken(LuxParser::AMPERSAND, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendMethodContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::ExtendMethodContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::ExtendMethodContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::ExtendMethodContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ExtendMethodContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::ExtendMethodContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::ExtendMethodContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
+tree::TerminalNode* LuxParser::ExtendMethodContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
-std::vector<ToLLVMParser::ParamContext *> ToLLVMParser::ExtendMethodContext::param() {
-  return getRuleContexts<ToLLVMParser::ParamContext>();
+std::vector<LuxParser::ParamContext *> LuxParser::ExtendMethodContext::param() {
+  return getRuleContexts<LuxParser::ParamContext>();
 }
 
-ToLLVMParser::ParamContext* ToLLVMParser::ExtendMethodContext::param(size_t i) {
-  return getRuleContext<ToLLVMParser::ParamContext>(i);
+LuxParser::ParamContext* LuxParser::ExtendMethodContext::param(size_t i) {
+  return getRuleContext<LuxParser::ParamContext>(i);
 }
 
-ToLLVMParser::ParamListContext* ToLLVMParser::ExtendMethodContext::paramList() {
-  return getRuleContext<ToLLVMParser::ParamListContext>(0);
-}
-
-
-size_t ToLLVMParser::ExtendMethodContext::getRuleIndex() const {
-  return ToLLVMParser::RuleExtendMethod;
+LuxParser::ParamListContext* LuxParser::ExtendMethodContext::paramList() {
+  return getRuleContext<LuxParser::ParamListContext>(0);
 }
 
 
-std::any ToLLVMParser::ExtendMethodContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ExtendMethodContext::getRuleIndex() const {
+  return LuxParser::RuleExtendMethod;
+}
+
+
+std::any LuxParser::ExtendMethodContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitExtendMethod(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ExtendMethodContext* ToLLVMParser::extendMethod() {
+LuxParser::ExtendMethodContext* LuxParser::extendMethod() {
   ExtendMethodContext *_localctx = _tracker.createInstance<ExtendMethodContext>(_ctx, getState());
-  enterRule(_localctx, 34, ToLLVMParser::RuleExtendMethod);
+  enterRule(_localctx, 34, LuxParser::RuleExtendMethod);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -2102,19 +2102,19 @@ ToLLVMParser::ExtendMethodContext* ToLLVMParser::extendMethod() {
       setState(279);
       typeSpec();
       setState(280);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(281);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(282);
-      match(ToLLVMParser::AMPERSAND);
+      match(LuxParser::AMPERSAND);
       setState(283);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(288);
       _errHandler->sync(this);
       _la = _input->LA(1);
-      while (_la == ToLLVMParser::COMMA) {
+      while (_la == LuxParser::COMMA) {
         setState(284);
-        match(ToLLVMParser::COMMA);
+        match(LuxParser::COMMA);
         setState(285);
         param();
         setState(290);
@@ -2122,7 +2122,7 @@ ToLLVMParser::ExtendMethodContext* ToLLVMParser::extendMethod() {
         _la = _input->LA(1);
       }
       setState(291);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       setState(292);
       block();
       break;
@@ -2133,9 +2133,9 @@ ToLLVMParser::ExtendMethodContext* ToLLVMParser::extendMethod() {
       setState(294);
       typeSpec();
       setState(295);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(296);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(298);
       _errHandler->sync(this);
 
@@ -2147,7 +2147,7 @@ ToLLVMParser::ExtendMethodContext* ToLLVMParser::extendMethod() {
         paramList();
       }
       setState(300);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       setState(301);
       block();
       break;
@@ -2169,42 +2169,42 @@ ToLLVMParser::ExtendMethodContext* ToLLVMParser::extendMethod() {
 
 //----------------- ParamListContext ------------------------------------------------------------------
 
-ToLLVMParser::ParamListContext::ParamListContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ParamListContext::ParamListContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<ToLLVMParser::ParamContext *> ToLLVMParser::ParamListContext::param() {
-  return getRuleContexts<ToLLVMParser::ParamContext>();
+std::vector<LuxParser::ParamContext *> LuxParser::ParamListContext::param() {
+  return getRuleContexts<LuxParser::ParamContext>();
 }
 
-ToLLVMParser::ParamContext* ToLLVMParser::ParamListContext::param(size_t i) {
-  return getRuleContext<ToLLVMParser::ParamContext>(i);
+LuxParser::ParamContext* LuxParser::ParamListContext::param(size_t i) {
+  return getRuleContext<LuxParser::ParamContext>(i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ParamListContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::ParamListContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::ParamListContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
-}
-
-
-size_t ToLLVMParser::ParamListContext::getRuleIndex() const {
-  return ToLLVMParser::RuleParamList;
+tree::TerminalNode* LuxParser::ParamListContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
 
-std::any ToLLVMParser::ParamListContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ParamListContext::getRuleIndex() const {
+  return LuxParser::RuleParamList;
+}
+
+
+std::any LuxParser::ParamListContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitParamList(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ParamListContext* ToLLVMParser::paramList() {
+LuxParser::ParamListContext* LuxParser::paramList() {
   ParamListContext *_localctx = _tracker.createInstance<ParamListContext>(_ctx, getState());
-  enterRule(_localctx, 36, ToLLVMParser::RuleParamList);
+  enterRule(_localctx, 36, LuxParser::RuleParamList);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -2221,9 +2221,9 @@ ToLLVMParser::ParamListContext* ToLLVMParser::paramList() {
     setState(310);
     _errHandler->sync(this);
     _la = _input->LA(1);
-    while (_la == ToLLVMParser::COMMA) {
+    while (_la == LuxParser::COMMA) {
       setState(306);
-      match(ToLLVMParser::COMMA);
+      match(LuxParser::COMMA);
       setState(307);
       param();
       setState(312);
@@ -2243,38 +2243,38 @@ ToLLVMParser::ParamListContext* ToLLVMParser::paramList() {
 
 //----------------- ParamContext ------------------------------------------------------------------
 
-ToLLVMParser::ParamContext::ParamContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ParamContext::ParamContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::ParamContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::ParamContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ParamContext::SPREAD() {
-  return getToken(ToLLVMParser::SPREAD, 0);
+tree::TerminalNode* LuxParser::ParamContext::SPREAD() {
+  return getToken(LuxParser::SPREAD, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ParamContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
-}
-
-
-size_t ToLLVMParser::ParamContext::getRuleIndex() const {
-  return ToLLVMParser::RuleParam;
+tree::TerminalNode* LuxParser::ParamContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
 
-std::any ToLLVMParser::ParamContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ParamContext::getRuleIndex() const {
+  return LuxParser::RuleParam;
+}
+
+
+std::any LuxParser::ParamContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitParam(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ParamContext* ToLLVMParser::param() {
+LuxParser::ParamContext* LuxParser::param() {
   ParamContext *_localctx = _tracker.createInstance<ParamContext>(_ctx, getState());
-  enterRule(_localctx, 38, ToLLVMParser::RuleParam);
+  enterRule(_localctx, 38, LuxParser::RuleParam);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -2292,9 +2292,9 @@ ToLLVMParser::ParamContext* ToLLVMParser::param() {
       setState(313);
       typeSpec();
       setState(314);
-      match(ToLLVMParser::SPREAD);
+      match(LuxParser::SPREAD);
       setState(315);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       break;
     }
 
@@ -2303,7 +2303,7 @@ ToLLVMParser::ParamContext* ToLLVMParser::param() {
       setState(317);
       typeSpec();
       setState(318);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       break;
     }
 
@@ -2323,42 +2323,42 @@ ToLLVMParser::ParamContext* ToLLVMParser::param() {
 
 //----------------- BlockContext ------------------------------------------------------------------
 
-ToLLVMParser::BlockContext::BlockContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::BlockContext::BlockContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::BlockContext::LBRACE() {
-  return getToken(ToLLVMParser::LBRACE, 0);
+tree::TerminalNode* LuxParser::BlockContext::LBRACE() {
+  return getToken(LuxParser::LBRACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::BlockContext::RBRACE() {
-  return getToken(ToLLVMParser::RBRACE, 0);
+tree::TerminalNode* LuxParser::BlockContext::RBRACE() {
+  return getToken(LuxParser::RBRACE, 0);
 }
 
-std::vector<ToLLVMParser::StatementContext *> ToLLVMParser::BlockContext::statement() {
-  return getRuleContexts<ToLLVMParser::StatementContext>();
+std::vector<LuxParser::StatementContext *> LuxParser::BlockContext::statement() {
+  return getRuleContexts<LuxParser::StatementContext>();
 }
 
-ToLLVMParser::StatementContext* ToLLVMParser::BlockContext::statement(size_t i) {
-  return getRuleContext<ToLLVMParser::StatementContext>(i);
-}
-
-
-size_t ToLLVMParser::BlockContext::getRuleIndex() const {
-  return ToLLVMParser::RuleBlock;
+LuxParser::StatementContext* LuxParser::BlockContext::statement(size_t i) {
+  return getRuleContext<LuxParser::StatementContext>(i);
 }
 
 
-std::any ToLLVMParser::BlockContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::BlockContext::getRuleIndex() const {
+  return LuxParser::RuleBlock;
+}
+
+
+std::any LuxParser::BlockContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitBlock(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::block() {
+LuxParser::BlockContext* LuxParser::block() {
   BlockContext *_localctx = _tracker.createInstance<BlockContext>(_ctx, getState());
-  enterRule(_localctx, 40, ToLLVMParser::RuleBlock);
+  enterRule(_localctx, 40, LuxParser::RuleBlock);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -2371,7 +2371,7 @@ ToLLVMParser::BlockContext* ToLLVMParser::block() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(322);
-    match(ToLLVMParser::LBRACE);
+    match(LuxParser::LBRACE);
     setState(326);
     _errHandler->sync(this);
     _la = _input->LA(1);
@@ -2385,7 +2385,7 @@ ToLLVMParser::BlockContext* ToLLVMParser::block() {
       _la = _input->LA(1);
     }
     setState(329);
-    match(ToLLVMParser::RBRACE);
+    match(LuxParser::RBRACE);
    
   }
   catch (RecognitionException &e) {
@@ -2399,118 +2399,118 @@ ToLLVMParser::BlockContext* ToLLVMParser::block() {
 
 //----------------- StatementContext ------------------------------------------------------------------
 
-ToLLVMParser::StatementContext::StatementContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::StatementContext::StatementContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::VarDeclStmtContext* ToLLVMParser::StatementContext::varDeclStmt() {
-  return getRuleContext<ToLLVMParser::VarDeclStmtContext>(0);
+LuxParser::VarDeclStmtContext* LuxParser::StatementContext::varDeclStmt() {
+  return getRuleContext<LuxParser::VarDeclStmtContext>(0);
 }
 
-ToLLVMParser::AssignStmtContext* ToLLVMParser::StatementContext::assignStmt() {
-  return getRuleContext<ToLLVMParser::AssignStmtContext>(0);
+LuxParser::AssignStmtContext* LuxParser::StatementContext::assignStmt() {
+  return getRuleContext<LuxParser::AssignStmtContext>(0);
 }
 
-ToLLVMParser::CompoundAssignStmtContext* ToLLVMParser::StatementContext::compoundAssignStmt() {
-  return getRuleContext<ToLLVMParser::CompoundAssignStmtContext>(0);
+LuxParser::CompoundAssignStmtContext* LuxParser::StatementContext::compoundAssignStmt() {
+  return getRuleContext<LuxParser::CompoundAssignStmtContext>(0);
 }
 
-ToLLVMParser::DerefAssignStmtContext* ToLLVMParser::StatementContext::derefAssignStmt() {
-  return getRuleContext<ToLLVMParser::DerefAssignStmtContext>(0);
+LuxParser::DerefAssignStmtContext* LuxParser::StatementContext::derefAssignStmt() {
+  return getRuleContext<LuxParser::DerefAssignStmtContext>(0);
 }
 
-ToLLVMParser::IndexFieldAssignStmtContext* ToLLVMParser::StatementContext::indexFieldAssignStmt() {
-  return getRuleContext<ToLLVMParser::IndexFieldAssignStmtContext>(0);
+LuxParser::IndexFieldAssignStmtContext* LuxParser::StatementContext::indexFieldAssignStmt() {
+  return getRuleContext<LuxParser::IndexFieldAssignStmtContext>(0);
 }
 
-ToLLVMParser::FieldAssignStmtContext* ToLLVMParser::StatementContext::fieldAssignStmt() {
-  return getRuleContext<ToLLVMParser::FieldAssignStmtContext>(0);
+LuxParser::FieldAssignStmtContext* LuxParser::StatementContext::fieldAssignStmt() {
+  return getRuleContext<LuxParser::FieldAssignStmtContext>(0);
 }
 
-ToLLVMParser::ArrowAssignStmtContext* ToLLVMParser::StatementContext::arrowAssignStmt() {
-  return getRuleContext<ToLLVMParser::ArrowAssignStmtContext>(0);
+LuxParser::ArrowAssignStmtContext* LuxParser::StatementContext::arrowAssignStmt() {
+  return getRuleContext<LuxParser::ArrowAssignStmtContext>(0);
 }
 
-ToLLVMParser::ArrowCompoundAssignStmtContext* ToLLVMParser::StatementContext::arrowCompoundAssignStmt() {
-  return getRuleContext<ToLLVMParser::ArrowCompoundAssignStmtContext>(0);
+LuxParser::ArrowCompoundAssignStmtContext* LuxParser::StatementContext::arrowCompoundAssignStmt() {
+  return getRuleContext<LuxParser::ArrowCompoundAssignStmtContext>(0);
 }
 
-ToLLVMParser::CallStmtContext* ToLLVMParser::StatementContext::callStmt() {
-  return getRuleContext<ToLLVMParser::CallStmtContext>(0);
+LuxParser::CallStmtContext* LuxParser::StatementContext::callStmt() {
+  return getRuleContext<LuxParser::CallStmtContext>(0);
 }
 
-ToLLVMParser::ExprStmtContext* ToLLVMParser::StatementContext::exprStmt() {
-  return getRuleContext<ToLLVMParser::ExprStmtContext>(0);
+LuxParser::ExprStmtContext* LuxParser::StatementContext::exprStmt() {
+  return getRuleContext<LuxParser::ExprStmtContext>(0);
 }
 
-ToLLVMParser::ReturnStmtContext* ToLLVMParser::StatementContext::returnStmt() {
-  return getRuleContext<ToLLVMParser::ReturnStmtContext>(0);
+LuxParser::ReturnStmtContext* LuxParser::StatementContext::returnStmt() {
+  return getRuleContext<LuxParser::ReturnStmtContext>(0);
 }
 
-ToLLVMParser::IfStmtContext* ToLLVMParser::StatementContext::ifStmt() {
-  return getRuleContext<ToLLVMParser::IfStmtContext>(0);
+LuxParser::IfStmtContext* LuxParser::StatementContext::ifStmt() {
+  return getRuleContext<LuxParser::IfStmtContext>(0);
 }
 
-ToLLVMParser::ForStmtContext* ToLLVMParser::StatementContext::forStmt() {
-  return getRuleContext<ToLLVMParser::ForStmtContext>(0);
+LuxParser::ForStmtContext* LuxParser::StatementContext::forStmt() {
+  return getRuleContext<LuxParser::ForStmtContext>(0);
 }
 
-ToLLVMParser::LoopStmtContext* ToLLVMParser::StatementContext::loopStmt() {
-  return getRuleContext<ToLLVMParser::LoopStmtContext>(0);
+LuxParser::LoopStmtContext* LuxParser::StatementContext::loopStmt() {
+  return getRuleContext<LuxParser::LoopStmtContext>(0);
 }
 
-ToLLVMParser::WhileStmtContext* ToLLVMParser::StatementContext::whileStmt() {
-  return getRuleContext<ToLLVMParser::WhileStmtContext>(0);
+LuxParser::WhileStmtContext* LuxParser::StatementContext::whileStmt() {
+  return getRuleContext<LuxParser::WhileStmtContext>(0);
 }
 
-ToLLVMParser::DoWhileStmtContext* ToLLVMParser::StatementContext::doWhileStmt() {
-  return getRuleContext<ToLLVMParser::DoWhileStmtContext>(0);
+LuxParser::DoWhileStmtContext* LuxParser::StatementContext::doWhileStmt() {
+  return getRuleContext<LuxParser::DoWhileStmtContext>(0);
 }
 
-ToLLVMParser::BreakStmtContext* ToLLVMParser::StatementContext::breakStmt() {
-  return getRuleContext<ToLLVMParser::BreakStmtContext>(0);
+LuxParser::BreakStmtContext* LuxParser::StatementContext::breakStmt() {
+  return getRuleContext<LuxParser::BreakStmtContext>(0);
 }
 
-ToLLVMParser::ContinueStmtContext* ToLLVMParser::StatementContext::continueStmt() {
-  return getRuleContext<ToLLVMParser::ContinueStmtContext>(0);
+LuxParser::ContinueStmtContext* LuxParser::StatementContext::continueStmt() {
+  return getRuleContext<LuxParser::ContinueStmtContext>(0);
 }
 
-ToLLVMParser::SwitchStmtContext* ToLLVMParser::StatementContext::switchStmt() {
-  return getRuleContext<ToLLVMParser::SwitchStmtContext>(0);
+LuxParser::SwitchStmtContext* LuxParser::StatementContext::switchStmt() {
+  return getRuleContext<LuxParser::SwitchStmtContext>(0);
 }
 
-ToLLVMParser::LockStmtContext* ToLLVMParser::StatementContext::lockStmt() {
-  return getRuleContext<ToLLVMParser::LockStmtContext>(0);
+LuxParser::LockStmtContext* LuxParser::StatementContext::lockStmt() {
+  return getRuleContext<LuxParser::LockStmtContext>(0);
 }
 
-ToLLVMParser::TryCatchStmtContext* ToLLVMParser::StatementContext::tryCatchStmt() {
-  return getRuleContext<ToLLVMParser::TryCatchStmtContext>(0);
+LuxParser::TryCatchStmtContext* LuxParser::StatementContext::tryCatchStmt() {
+  return getRuleContext<LuxParser::TryCatchStmtContext>(0);
 }
 
-ToLLVMParser::ThrowStmtContext* ToLLVMParser::StatementContext::throwStmt() {
-  return getRuleContext<ToLLVMParser::ThrowStmtContext>(0);
+LuxParser::ThrowStmtContext* LuxParser::StatementContext::throwStmt() {
+  return getRuleContext<LuxParser::ThrowStmtContext>(0);
 }
 
-ToLLVMParser::DeferStmtContext* ToLLVMParser::StatementContext::deferStmt() {
-  return getRuleContext<ToLLVMParser::DeferStmtContext>(0);
-}
-
-
-size_t ToLLVMParser::StatementContext::getRuleIndex() const {
-  return ToLLVMParser::RuleStatement;
+LuxParser::DeferStmtContext* LuxParser::StatementContext::deferStmt() {
+  return getRuleContext<LuxParser::DeferStmtContext>(0);
 }
 
 
-std::any ToLLVMParser::StatementContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::StatementContext::getRuleIndex() const {
+  return LuxParser::RuleStatement;
+}
+
+
+std::any LuxParser::StatementContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitStatement(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::StatementContext* ToLLVMParser::statement() {
+LuxParser::StatementContext* LuxParser::statement() {
   StatementContext *_localctx = _tracker.createInstance<StatementContext>(_ctx, getState());
-  enterRule(_localctx, 42, ToLLVMParser::RuleStatement);
+  enterRule(_localctx, 42, LuxParser::RuleStatement);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -2700,38 +2700,38 @@ ToLLVMParser::StatementContext* ToLLVMParser::statement() {
 
 //----------------- DeferStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::DeferStmtContext::DeferStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::DeferStmtContext::DeferStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::DeferStmtContext::DEFER() {
-  return getToken(ToLLVMParser::DEFER, 0);
+tree::TerminalNode* LuxParser::DeferStmtContext::DEFER() {
+  return getToken(LuxParser::DEFER, 0);
 }
 
-ToLLVMParser::CallStmtContext* ToLLVMParser::DeferStmtContext::callStmt() {
-  return getRuleContext<ToLLVMParser::CallStmtContext>(0);
+LuxParser::CallStmtContext* LuxParser::DeferStmtContext::callStmt() {
+  return getRuleContext<LuxParser::CallStmtContext>(0);
 }
 
-ToLLVMParser::ExprStmtContext* ToLLVMParser::DeferStmtContext::exprStmt() {
-  return getRuleContext<ToLLVMParser::ExprStmtContext>(0);
-}
-
-
-size_t ToLLVMParser::DeferStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleDeferStmt;
+LuxParser::ExprStmtContext* LuxParser::DeferStmtContext::exprStmt() {
+  return getRuleContext<LuxParser::ExprStmtContext>(0);
 }
 
 
-std::any ToLLVMParser::DeferStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::DeferStmtContext::getRuleIndex() const {
+  return LuxParser::RuleDeferStmt;
+}
+
+
+std::any LuxParser::DeferStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitDeferStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::DeferStmtContext* ToLLVMParser::deferStmt() {
+LuxParser::DeferStmtContext* LuxParser::deferStmt() {
   DeferStmtContext *_localctx = _tracker.createInstance<DeferStmtContext>(_ctx, getState());
-  enterRule(_localctx, 44, ToLLVMParser::RuleDeferStmt);
+  enterRule(_localctx, 44, LuxParser::RuleDeferStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -2747,7 +2747,7 @@ ToLLVMParser::DeferStmtContext* ToLLVMParser::deferStmt() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(356);
-      match(ToLLVMParser::DEFER);
+      match(LuxParser::DEFER);
       setState(357);
       callStmt();
       break;
@@ -2756,7 +2756,7 @@ ToLLVMParser::DeferStmtContext* ToLLVMParser::deferStmt() {
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(358);
-      match(ToLLVMParser::DEFER);
+      match(LuxParser::DEFER);
       setState(359);
       exprStmt();
       break;
@@ -2778,34 +2778,34 @@ ToLLVMParser::DeferStmtContext* ToLLVMParser::deferStmt() {
 
 //----------------- ExprStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::ExprStmtContext::ExprStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ExprStmtContext::ExprStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ExprStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::ExprStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ExprStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::ExprStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleExprStmt;
+tree::TerminalNode* LuxParser::ExprStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::ExprStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ExprStmtContext::getRuleIndex() const {
+  return LuxParser::RuleExprStmt;
+}
+
+
+std::any LuxParser::ExprStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitExprStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ExprStmtContext* ToLLVMParser::exprStmt() {
+LuxParser::ExprStmtContext* LuxParser::exprStmt() {
   ExprStmtContext *_localctx = _tracker.createInstance<ExprStmtContext>(_ctx, getState());
-  enterRule(_localctx, 46, ToLLVMParser::RuleExprStmt);
+  enterRule(_localctx, 46, LuxParser::RuleExprStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -2819,7 +2819,7 @@ ToLLVMParser::ExprStmtContext* ToLLVMParser::exprStmt() {
     setState(362);
     expression(0);
     setState(363);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -2833,46 +2833,46 @@ ToLLVMParser::ExprStmtContext* ToLLVMParser::exprStmt() {
 
 //----------------- VarDeclStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::VarDeclStmtContext::VarDeclStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::VarDeclStmtContext::VarDeclStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::VarDeclStmtContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::VarDeclStmtContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::VarDeclStmtContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::VarDeclStmtContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::VarDeclStmtContext::ASSIGN() {
-  return getToken(ToLLVMParser::ASSIGN, 0);
+tree::TerminalNode* LuxParser::VarDeclStmtContext::ASSIGN() {
+  return getToken(LuxParser::ASSIGN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::VarDeclStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::VarDeclStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::VarDeclStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::VarDeclStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleVarDeclStmt;
+tree::TerminalNode* LuxParser::VarDeclStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::VarDeclStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::VarDeclStmtContext::getRuleIndex() const {
+  return LuxParser::RuleVarDeclStmt;
+}
+
+
+std::any LuxParser::VarDeclStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitVarDeclStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::VarDeclStmtContext* ToLLVMParser::varDeclStmt() {
+LuxParser::VarDeclStmtContext* LuxParser::varDeclStmt() {
   VarDeclStmtContext *_localctx = _tracker.createInstance<VarDeclStmtContext>(_ctx, getState());
-  enterRule(_localctx, 48, ToLLVMParser::RuleVarDeclStmt);
+  enterRule(_localctx, 48, LuxParser::RuleVarDeclStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -2890,13 +2890,13 @@ ToLLVMParser::VarDeclStmtContext* ToLLVMParser::varDeclStmt() {
       setState(365);
       typeSpec();
       setState(366);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(367);
-      match(ToLLVMParser::ASSIGN);
+      match(LuxParser::ASSIGN);
       setState(368);
       expression(0);
       setState(369);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       break;
     }
 
@@ -2905,9 +2905,9 @@ ToLLVMParser::VarDeclStmtContext* ToLLVMParser::varDeclStmt() {
       setState(371);
       typeSpec();
       setState(372);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(373);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       break;
     }
 
@@ -2927,62 +2927,62 @@ ToLLVMParser::VarDeclStmtContext* ToLLVMParser::varDeclStmt() {
 
 //----------------- AssignStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::AssignStmtContext::AssignStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::AssignStmtContext::AssignStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::AssignStmtContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::AssignStmtContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::AssignStmtContext::ASSIGN() {
-  return getToken(ToLLVMParser::ASSIGN, 0);
+tree::TerminalNode* LuxParser::AssignStmtContext::ASSIGN() {
+  return getToken(LuxParser::ASSIGN, 0);
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::AssignStmtContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::AssignStmtContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::AssignStmtContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::AssignStmtContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::AssignStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::AssignStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::AssignStmtContext::LBRACKET() {
-  return getTokens(ToLLVMParser::LBRACKET);
+std::vector<tree::TerminalNode *> LuxParser::AssignStmtContext::LBRACKET() {
+  return getTokens(LuxParser::LBRACKET);
 }
 
-tree::TerminalNode* ToLLVMParser::AssignStmtContext::LBRACKET(size_t i) {
-  return getToken(ToLLVMParser::LBRACKET, i);
+tree::TerminalNode* LuxParser::AssignStmtContext::LBRACKET(size_t i) {
+  return getToken(LuxParser::LBRACKET, i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::AssignStmtContext::RBRACKET() {
-  return getTokens(ToLLVMParser::RBRACKET);
+std::vector<tree::TerminalNode *> LuxParser::AssignStmtContext::RBRACKET() {
+  return getTokens(LuxParser::RBRACKET);
 }
 
-tree::TerminalNode* ToLLVMParser::AssignStmtContext::RBRACKET(size_t i) {
-  return getToken(ToLLVMParser::RBRACKET, i);
-}
-
-
-size_t ToLLVMParser::AssignStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleAssignStmt;
+tree::TerminalNode* LuxParser::AssignStmtContext::RBRACKET(size_t i) {
+  return getToken(LuxParser::RBRACKET, i);
 }
 
 
-std::any ToLLVMParser::AssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::AssignStmtContext::getRuleIndex() const {
+  return LuxParser::RuleAssignStmt;
+}
+
+
+std::any LuxParser::AssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitAssignStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::AssignStmtContext* ToLLVMParser::assignStmt() {
+LuxParser::AssignStmtContext* LuxParser::assignStmt() {
   AssignStmtContext *_localctx = _tracker.createInstance<AssignStmtContext>(_ctx, getState());
-  enterRule(_localctx, 50, ToLLVMParser::RuleAssignStmt);
+  enterRule(_localctx, 50, LuxParser::RuleAssignStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -2995,27 +2995,27 @@ ToLLVMParser::AssignStmtContext* ToLLVMParser::assignStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(377);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(384);
     _errHandler->sync(this);
     _la = _input->LA(1);
-    while (_la == ToLLVMParser::LBRACKET) {
+    while (_la == LuxParser::LBRACKET) {
       setState(378);
-      match(ToLLVMParser::LBRACKET);
+      match(LuxParser::LBRACKET);
       setState(379);
       expression(0);
       setState(380);
-      match(ToLLVMParser::RBRACKET);
+      match(LuxParser::RBRACKET);
       setState(386);
       _errHandler->sync(this);
       _la = _input->LA(1);
     }
     setState(387);
-    match(ToLLVMParser::ASSIGN);
+    match(LuxParser::ASSIGN);
     setState(388);
     expression(0);
     setState(389);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -3029,78 +3029,78 @@ ToLLVMParser::AssignStmtContext* ToLLVMParser::assignStmt() {
 
 //----------------- CompoundAssignStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::CompoundAssignStmtContext::CompoundAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::CompoundAssignStmtContext::CompoundAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::CompoundAssignStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::CompoundAssignStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::PLUS_ASSIGN() {
-  return getToken(ToLLVMParser::PLUS_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::PLUS_ASSIGN() {
+  return getToken(LuxParser::PLUS_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::MINUS_ASSIGN() {
-  return getToken(ToLLVMParser::MINUS_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::MINUS_ASSIGN() {
+  return getToken(LuxParser::MINUS_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::STAR_ASSIGN() {
-  return getToken(ToLLVMParser::STAR_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::STAR_ASSIGN() {
+  return getToken(LuxParser::STAR_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::SLASH_ASSIGN() {
-  return getToken(ToLLVMParser::SLASH_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::SLASH_ASSIGN() {
+  return getToken(LuxParser::SLASH_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::PERCENT_ASSIGN() {
-  return getToken(ToLLVMParser::PERCENT_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::PERCENT_ASSIGN() {
+  return getToken(LuxParser::PERCENT_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::AMP_ASSIGN() {
-  return getToken(ToLLVMParser::AMP_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::AMP_ASSIGN() {
+  return getToken(LuxParser::AMP_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::PIPE_ASSIGN() {
-  return getToken(ToLLVMParser::PIPE_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::PIPE_ASSIGN() {
+  return getToken(LuxParser::PIPE_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::CARET_ASSIGN() {
-  return getToken(ToLLVMParser::CARET_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::CARET_ASSIGN() {
+  return getToken(LuxParser::CARET_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::LSHIFT_ASSIGN() {
-  return getToken(ToLLVMParser::LSHIFT_ASSIGN, 0);
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::LSHIFT_ASSIGN() {
+  return getToken(LuxParser::LSHIFT_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CompoundAssignStmtContext::RSHIFT_ASSIGN() {
-  return getToken(ToLLVMParser::RSHIFT_ASSIGN, 0);
-}
-
-
-size_t ToLLVMParser::CompoundAssignStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleCompoundAssignStmt;
+tree::TerminalNode* LuxParser::CompoundAssignStmtContext::RSHIFT_ASSIGN() {
+  return getToken(LuxParser::RSHIFT_ASSIGN, 0);
 }
 
 
-std::any ToLLVMParser::CompoundAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::CompoundAssignStmtContext::getRuleIndex() const {
+  return LuxParser::RuleCompoundAssignStmt;
+}
+
+
+std::any LuxParser::CompoundAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitCompoundAssignStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::CompoundAssignStmtContext* ToLLVMParser::compoundAssignStmt() {
+LuxParser::CompoundAssignStmtContext* LuxParser::compoundAssignStmt() {
   CompoundAssignStmtContext *_localctx = _tracker.createInstance<CompoundAssignStmtContext>(_ctx, getState());
-  enterRule(_localctx, 52, ToLLVMParser::RuleCompoundAssignStmt);
+  enterRule(_localctx, 52, LuxParser::RuleCompoundAssignStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -3113,7 +3113,7 @@ ToLLVMParser::CompoundAssignStmtContext* ToLLVMParser::compoundAssignStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(391);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(392);
     antlrcpp::downCast<CompoundAssignStmtContext *>(_localctx)->op = _input->LT(1);
     _la = _input->LA(1);
@@ -3128,7 +3128,7 @@ ToLLVMParser::CompoundAssignStmtContext* ToLLVMParser::compoundAssignStmt() {
     setState(393);
     expression(0);
     setState(394);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -3142,54 +3142,54 @@ ToLLVMParser::CompoundAssignStmtContext* ToLLVMParser::compoundAssignStmt() {
 
 //----------------- FieldAssignStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::FieldAssignStmtContext::FieldAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::FieldAssignStmtContext::FieldAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::FieldAssignStmtContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::FieldAssignStmtContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::FieldAssignStmtContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::FieldAssignStmtContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::FieldAssignStmtContext::ASSIGN() {
-  return getToken(ToLLVMParser::ASSIGN, 0);
+tree::TerminalNode* LuxParser::FieldAssignStmtContext::ASSIGN() {
+  return getToken(LuxParser::ASSIGN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::FieldAssignStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::FieldAssignStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::FieldAssignStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::FieldAssignStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::FieldAssignStmtContext::DOT() {
-  return getTokens(ToLLVMParser::DOT);
+std::vector<tree::TerminalNode *> LuxParser::FieldAssignStmtContext::DOT() {
+  return getTokens(LuxParser::DOT);
 }
 
-tree::TerminalNode* ToLLVMParser::FieldAssignStmtContext::DOT(size_t i) {
-  return getToken(ToLLVMParser::DOT, i);
-}
-
-
-size_t ToLLVMParser::FieldAssignStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleFieldAssignStmt;
+tree::TerminalNode* LuxParser::FieldAssignStmtContext::DOT(size_t i) {
+  return getToken(LuxParser::DOT, i);
 }
 
 
-std::any ToLLVMParser::FieldAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::FieldAssignStmtContext::getRuleIndex() const {
+  return LuxParser::RuleFieldAssignStmt;
+}
+
+
+std::any LuxParser::FieldAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitFieldAssignStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::FieldAssignStmtContext* ToLLVMParser::fieldAssignStmt() {
+LuxParser::FieldAssignStmtContext* LuxParser::fieldAssignStmt() {
   FieldAssignStmtContext *_localctx = _tracker.createInstance<FieldAssignStmtContext>(_ctx, getState());
-  enterRule(_localctx, 54, ToLLVMParser::RuleFieldAssignStmt);
+  enterRule(_localctx, 54, LuxParser::RuleFieldAssignStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -3202,25 +3202,25 @@ ToLLVMParser::FieldAssignStmtContext* ToLLVMParser::fieldAssignStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(396);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(399); 
     _errHandler->sync(this);
     _la = _input->LA(1);
     do {
       setState(397);
-      match(ToLLVMParser::DOT);
+      match(LuxParser::DOT);
       setState(398);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(401); 
       _errHandler->sync(this);
       _la = _input->LA(1);
-    } while (_la == ToLLVMParser::DOT);
+    } while (_la == LuxParser::DOT);
     setState(403);
-    match(ToLLVMParser::ASSIGN);
+    match(LuxParser::ASSIGN);
     setState(404);
     expression(0);
     setState(405);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -3234,74 +3234,74 @@ ToLLVMParser::FieldAssignStmtContext* ToLLVMParser::fieldAssignStmt() {
 
 //----------------- IndexFieldAssignStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::IndexFieldAssignStmtContext::IndexFieldAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::IndexFieldAssignStmtContext::IndexFieldAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::IndexFieldAssignStmtContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::IndexFieldAssignStmtContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::IndexFieldAssignStmtContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::IndexFieldAssignStmtContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::IndexFieldAssignStmtContext::ASSIGN() {
-  return getToken(ToLLVMParser::ASSIGN, 0);
+tree::TerminalNode* LuxParser::IndexFieldAssignStmtContext::ASSIGN() {
+  return getToken(LuxParser::ASSIGN, 0);
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::IndexFieldAssignStmtContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::IndexFieldAssignStmtContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::IndexFieldAssignStmtContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::IndexFieldAssignStmtContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::IndexFieldAssignStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::IndexFieldAssignStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::IndexFieldAssignStmtContext::LBRACKET() {
-  return getTokens(ToLLVMParser::LBRACKET);
+std::vector<tree::TerminalNode *> LuxParser::IndexFieldAssignStmtContext::LBRACKET() {
+  return getTokens(LuxParser::LBRACKET);
 }
 
-tree::TerminalNode* ToLLVMParser::IndexFieldAssignStmtContext::LBRACKET(size_t i) {
-  return getToken(ToLLVMParser::LBRACKET, i);
+tree::TerminalNode* LuxParser::IndexFieldAssignStmtContext::LBRACKET(size_t i) {
+  return getToken(LuxParser::LBRACKET, i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::IndexFieldAssignStmtContext::RBRACKET() {
-  return getTokens(ToLLVMParser::RBRACKET);
+std::vector<tree::TerminalNode *> LuxParser::IndexFieldAssignStmtContext::RBRACKET() {
+  return getTokens(LuxParser::RBRACKET);
 }
 
-tree::TerminalNode* ToLLVMParser::IndexFieldAssignStmtContext::RBRACKET(size_t i) {
-  return getToken(ToLLVMParser::RBRACKET, i);
+tree::TerminalNode* LuxParser::IndexFieldAssignStmtContext::RBRACKET(size_t i) {
+  return getToken(LuxParser::RBRACKET, i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::IndexFieldAssignStmtContext::DOT() {
-  return getTokens(ToLLVMParser::DOT);
+std::vector<tree::TerminalNode *> LuxParser::IndexFieldAssignStmtContext::DOT() {
+  return getTokens(LuxParser::DOT);
 }
 
-tree::TerminalNode* ToLLVMParser::IndexFieldAssignStmtContext::DOT(size_t i) {
-  return getToken(ToLLVMParser::DOT, i);
-}
-
-
-size_t ToLLVMParser::IndexFieldAssignStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleIndexFieldAssignStmt;
+tree::TerminalNode* LuxParser::IndexFieldAssignStmtContext::DOT(size_t i) {
+  return getToken(LuxParser::DOT, i);
 }
 
 
-std::any ToLLVMParser::IndexFieldAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::IndexFieldAssignStmtContext::getRuleIndex() const {
+  return LuxParser::RuleIndexFieldAssignStmt;
+}
+
+
+std::any LuxParser::IndexFieldAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitIndexFieldAssignStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::IndexFieldAssignStmtContext* ToLLVMParser::indexFieldAssignStmt() {
+LuxParser::IndexFieldAssignStmtContext* LuxParser::indexFieldAssignStmt() {
   IndexFieldAssignStmtContext *_localctx = _tracker.createInstance<IndexFieldAssignStmtContext>(_ctx, getState());
-  enterRule(_localctx, 56, ToLLVMParser::RuleIndexFieldAssignStmt);
+  enterRule(_localctx, 56, LuxParser::RuleIndexFieldAssignStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -3314,39 +3314,39 @@ ToLLVMParser::IndexFieldAssignStmtContext* ToLLVMParser::indexFieldAssignStmt() 
   try {
     enterOuterAlt(_localctx, 1);
     setState(407);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(412); 
     _errHandler->sync(this);
     _la = _input->LA(1);
     do {
       setState(408);
-      match(ToLLVMParser::LBRACKET);
+      match(LuxParser::LBRACKET);
       setState(409);
       expression(0);
       setState(410);
-      match(ToLLVMParser::RBRACKET);
+      match(LuxParser::RBRACKET);
       setState(414); 
       _errHandler->sync(this);
       _la = _input->LA(1);
-    } while (_la == ToLLVMParser::LBRACKET);
+    } while (_la == LuxParser::LBRACKET);
     setState(418); 
     _errHandler->sync(this);
     _la = _input->LA(1);
     do {
       setState(416);
-      match(ToLLVMParser::DOT);
+      match(LuxParser::DOT);
       setState(417);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(420); 
       _errHandler->sync(this);
       _la = _input->LA(1);
-    } while (_la == ToLLVMParser::DOT);
+    } while (_la == LuxParser::DOT);
     setState(422);
-    match(ToLLVMParser::ASSIGN);
+    match(LuxParser::ASSIGN);
     setState(423);
     expression(0);
     setState(424);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -3360,58 +3360,58 @@ ToLLVMParser::IndexFieldAssignStmtContext* ToLLVMParser::indexFieldAssignStmt() 
 
 //----------------- DerefAssignStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::DerefAssignStmtContext::DerefAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::DerefAssignStmtContext::DerefAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::DerefAssignStmtContext::STAR() {
-  return getToken(ToLLVMParser::STAR, 0);
+tree::TerminalNode* LuxParser::DerefAssignStmtContext::STAR() {
+  return getToken(LuxParser::STAR, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::DerefAssignStmtContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::DerefAssignStmtContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::DerefAssignStmtContext::ASSIGN() {
-  return getToken(ToLLVMParser::ASSIGN, 0);
+tree::TerminalNode* LuxParser::DerefAssignStmtContext::ASSIGN() {
+  return getToken(LuxParser::ASSIGN, 0);
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::DerefAssignStmtContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::DerefAssignStmtContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::DerefAssignStmtContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::DerefAssignStmtContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::DerefAssignStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::DerefAssignStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::DerefAssignStmtContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::DerefAssignStmtContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::DerefAssignStmtContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
-}
-
-
-size_t ToLLVMParser::DerefAssignStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleDerefAssignStmt;
+tree::TerminalNode* LuxParser::DerefAssignStmtContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
 
-std::any ToLLVMParser::DerefAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::DerefAssignStmtContext::getRuleIndex() const {
+  return LuxParser::RuleDerefAssignStmt;
+}
+
+
+std::any LuxParser::DerefAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitDerefAssignStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::DerefAssignStmtContext* ToLLVMParser::derefAssignStmt() {
+LuxParser::DerefAssignStmtContext* LuxParser::derefAssignStmt() {
   DerefAssignStmtContext *_localctx = _tracker.createInstance<DerefAssignStmtContext>(_ctx, getState());
-  enterRule(_localctx, 58, ToLLVMParser::RuleDerefAssignStmt);
+  enterRule(_localctx, 58, LuxParser::RuleDerefAssignStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -3427,34 +3427,34 @@ ToLLVMParser::DerefAssignStmtContext* ToLLVMParser::derefAssignStmt() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(426);
-      match(ToLLVMParser::STAR);
+      match(LuxParser::STAR);
       setState(427);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(428);
-      match(ToLLVMParser::ASSIGN);
+      match(LuxParser::ASSIGN);
       setState(429);
       expression(0);
       setState(430);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       break;
     }
 
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(432);
-      match(ToLLVMParser::STAR);
+      match(LuxParser::STAR);
       setState(433);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(434);
       expression(0);
       setState(435);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       setState(436);
-      match(ToLLVMParser::ASSIGN);
+      match(LuxParser::ASSIGN);
       setState(437);
       expression(0);
       setState(438);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       break;
     }
 
@@ -3474,50 +3474,50 @@ ToLLVMParser::DerefAssignStmtContext* ToLLVMParser::derefAssignStmt() {
 
 //----------------- ArrowAssignStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::ArrowAssignStmtContext::ArrowAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ArrowAssignStmtContext::ArrowAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ArrowAssignStmtContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::ArrowAssignStmtContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowAssignStmtContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::ArrowAssignStmtContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowAssignStmtContext::ARROW() {
-  return getToken(ToLLVMParser::ARROW, 0);
+tree::TerminalNode* LuxParser::ArrowAssignStmtContext::ARROW() {
+  return getToken(LuxParser::ARROW, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowAssignStmtContext::ASSIGN() {
-  return getToken(ToLLVMParser::ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowAssignStmtContext::ASSIGN() {
+  return getToken(LuxParser::ASSIGN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ArrowAssignStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::ArrowAssignStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowAssignStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::ArrowAssignStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleArrowAssignStmt;
+tree::TerminalNode* LuxParser::ArrowAssignStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::ArrowAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ArrowAssignStmtContext::getRuleIndex() const {
+  return LuxParser::RuleArrowAssignStmt;
+}
+
+
+std::any LuxParser::ArrowAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitArrowAssignStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ArrowAssignStmtContext* ToLLVMParser::arrowAssignStmt() {
+LuxParser::ArrowAssignStmtContext* LuxParser::arrowAssignStmt() {
   ArrowAssignStmtContext *_localctx = _tracker.createInstance<ArrowAssignStmtContext>(_ctx, getState());
-  enterRule(_localctx, 60, ToLLVMParser::RuleArrowAssignStmt);
+  enterRule(_localctx, 60, LuxParser::RuleArrowAssignStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -3529,17 +3529,17 @@ ToLLVMParser::ArrowAssignStmtContext* ToLLVMParser::arrowAssignStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(442);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(443);
-    match(ToLLVMParser::ARROW);
+    match(LuxParser::ARROW);
     setState(444);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(445);
-    match(ToLLVMParser::ASSIGN);
+    match(LuxParser::ASSIGN);
     setState(446);
     expression(0);
     setState(447);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -3553,86 +3553,86 @@ ToLLVMParser::ArrowAssignStmtContext* ToLLVMParser::arrowAssignStmt() {
 
 //----------------- ArrowCompoundAssignStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::ArrowCompoundAssignStmtContext::ArrowCompoundAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ArrowCompoundAssignStmtContext::ArrowCompoundAssignStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ArrowCompoundAssignStmtContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::ArrowCompoundAssignStmtContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::ARROW() {
-  return getToken(ToLLVMParser::ARROW, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::ARROW() {
+  return getToken(LuxParser::ARROW, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ArrowCompoundAssignStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::ArrowCompoundAssignStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::PLUS_ASSIGN() {
-  return getToken(ToLLVMParser::PLUS_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::PLUS_ASSIGN() {
+  return getToken(LuxParser::PLUS_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::MINUS_ASSIGN() {
-  return getToken(ToLLVMParser::MINUS_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::MINUS_ASSIGN() {
+  return getToken(LuxParser::MINUS_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::STAR_ASSIGN() {
-  return getToken(ToLLVMParser::STAR_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::STAR_ASSIGN() {
+  return getToken(LuxParser::STAR_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::SLASH_ASSIGN() {
-  return getToken(ToLLVMParser::SLASH_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::SLASH_ASSIGN() {
+  return getToken(LuxParser::SLASH_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::PERCENT_ASSIGN() {
-  return getToken(ToLLVMParser::PERCENT_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::PERCENT_ASSIGN() {
+  return getToken(LuxParser::PERCENT_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::AMP_ASSIGN() {
-  return getToken(ToLLVMParser::AMP_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::AMP_ASSIGN() {
+  return getToken(LuxParser::AMP_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::PIPE_ASSIGN() {
-  return getToken(ToLLVMParser::PIPE_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::PIPE_ASSIGN() {
+  return getToken(LuxParser::PIPE_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::CARET_ASSIGN() {
-  return getToken(ToLLVMParser::CARET_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::CARET_ASSIGN() {
+  return getToken(LuxParser::CARET_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::LSHIFT_ASSIGN() {
-  return getToken(ToLLVMParser::LSHIFT_ASSIGN, 0);
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::LSHIFT_ASSIGN() {
+  return getToken(LuxParser::LSHIFT_ASSIGN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowCompoundAssignStmtContext::RSHIFT_ASSIGN() {
-  return getToken(ToLLVMParser::RSHIFT_ASSIGN, 0);
-}
-
-
-size_t ToLLVMParser::ArrowCompoundAssignStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleArrowCompoundAssignStmt;
+tree::TerminalNode* LuxParser::ArrowCompoundAssignStmtContext::RSHIFT_ASSIGN() {
+  return getToken(LuxParser::RSHIFT_ASSIGN, 0);
 }
 
 
-std::any ToLLVMParser::ArrowCompoundAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ArrowCompoundAssignStmtContext::getRuleIndex() const {
+  return LuxParser::RuleArrowCompoundAssignStmt;
+}
+
+
+std::any LuxParser::ArrowCompoundAssignStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitArrowCompoundAssignStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ArrowCompoundAssignStmtContext* ToLLVMParser::arrowCompoundAssignStmt() {
+LuxParser::ArrowCompoundAssignStmtContext* LuxParser::arrowCompoundAssignStmt() {
   ArrowCompoundAssignStmtContext *_localctx = _tracker.createInstance<ArrowCompoundAssignStmtContext>(_ctx, getState());
-  enterRule(_localctx, 62, ToLLVMParser::RuleArrowCompoundAssignStmt);
+  enterRule(_localctx, 62, LuxParser::RuleArrowCompoundAssignStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -3645,11 +3645,11 @@ ToLLVMParser::ArrowCompoundAssignStmtContext* ToLLVMParser::arrowCompoundAssignS
   try {
     enterOuterAlt(_localctx, 1);
     setState(449);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(450);
-    match(ToLLVMParser::ARROW);
+    match(LuxParser::ARROW);
     setState(451);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(452);
     antlrcpp::downCast<ArrowCompoundAssignStmtContext *>(_localctx)->op = _input->LT(1);
     _la = _input->LA(1);
@@ -3664,7 +3664,7 @@ ToLLVMParser::ArrowCompoundAssignStmtContext* ToLLVMParser::arrowCompoundAssignS
     setState(453);
     expression(0);
     setState(454);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -3678,46 +3678,46 @@ ToLLVMParser::ArrowCompoundAssignStmtContext* ToLLVMParser::arrowCompoundAssignS
 
 //----------------- CallStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::CallStmtContext::CallStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::CallStmtContext::CallStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::CallStmtContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::CallStmtContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CallStmtContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::CallStmtContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CallStmtContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::CallStmtContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CallStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::CallStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-ToLLVMParser::ArgListContext* ToLLVMParser::CallStmtContext::argList() {
-  return getRuleContext<ToLLVMParser::ArgListContext>(0);
-}
-
-
-size_t ToLLVMParser::CallStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleCallStmt;
+LuxParser::ArgListContext* LuxParser::CallStmtContext::argList() {
+  return getRuleContext<LuxParser::ArgListContext>(0);
 }
 
 
-std::any ToLLVMParser::CallStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::CallStmtContext::getRuleIndex() const {
+  return LuxParser::RuleCallStmt;
+}
+
+
+std::any LuxParser::CallStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitCallStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::CallStmtContext* ToLLVMParser::callStmt() {
+LuxParser::CallStmtContext* LuxParser::callStmt() {
   CallStmtContext *_localctx = _tracker.createInstance<CallStmtContext>(_ctx, getState());
-  enterRule(_localctx, 64, ToLLVMParser::RuleCallStmt);
+  enterRule(_localctx, 64, LuxParser::RuleCallStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -3730,9 +3730,9 @@ ToLLVMParser::CallStmtContext* ToLLVMParser::callStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(456);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(457);
-    match(ToLLVMParser::LPAREN);
+    match(LuxParser::LPAREN);
     setState(459);
     _errHandler->sync(this);
 
@@ -3744,9 +3744,9 @@ ToLLVMParser::CallStmtContext* ToLLVMParser::callStmt() {
       argList();
     }
     setState(461);
-    match(ToLLVMParser::RPAREN);
+    match(LuxParser::RPAREN);
     setState(462);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -3760,42 +3760,42 @@ ToLLVMParser::CallStmtContext* ToLLVMParser::callStmt() {
 
 //----------------- ArgListContext ------------------------------------------------------------------
 
-ToLLVMParser::ArgListContext::ArgListContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ArgListContext::ArgListContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::ArgListContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::ArgListContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ArgListContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::ArgListContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ArgListContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::ArgListContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::ArgListContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
-}
-
-
-size_t ToLLVMParser::ArgListContext::getRuleIndex() const {
-  return ToLLVMParser::RuleArgList;
+tree::TerminalNode* LuxParser::ArgListContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
 
-std::any ToLLVMParser::ArgListContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ArgListContext::getRuleIndex() const {
+  return LuxParser::RuleArgList;
+}
+
+
+std::any LuxParser::ArgListContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitArgList(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ArgListContext* ToLLVMParser::argList() {
+LuxParser::ArgListContext* LuxParser::argList() {
   ArgListContext *_localctx = _tracker.createInstance<ArgListContext>(_ctx, getState());
-  enterRule(_localctx, 66, ToLLVMParser::RuleArgList);
+  enterRule(_localctx, 66, LuxParser::RuleArgList);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -3812,9 +3812,9 @@ ToLLVMParser::ArgListContext* ToLLVMParser::argList() {
     setState(469);
     _errHandler->sync(this);
     _la = _input->LA(1);
-    while (_la == ToLLVMParser::COMMA) {
+    while (_la == LuxParser::COMMA) {
       setState(465);
-      match(ToLLVMParser::COMMA);
+      match(LuxParser::COMMA);
       setState(466);
       expression(0);
       setState(471);
@@ -3834,38 +3834,38 @@ ToLLVMParser::ArgListContext* ToLLVMParser::argList() {
 
 //----------------- ReturnStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::ReturnStmtContext::ReturnStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ReturnStmtContext::ReturnStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::ReturnStmtContext::RET() {
-  return getToken(ToLLVMParser::RET, 0);
+tree::TerminalNode* LuxParser::ReturnStmtContext::RET() {
+  return getToken(LuxParser::RET, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ReturnStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::ReturnStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ReturnStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
-}
-
-
-size_t ToLLVMParser::ReturnStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleReturnStmt;
+LuxParser::ExpressionContext* LuxParser::ReturnStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
 
-std::any ToLLVMParser::ReturnStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ReturnStmtContext::getRuleIndex() const {
+  return LuxParser::RuleReturnStmt;
+}
+
+
+std::any LuxParser::ReturnStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitReturnStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ReturnStmtContext* ToLLVMParser::returnStmt() {
+LuxParser::ReturnStmtContext* LuxParser::returnStmt() {
   ReturnStmtContext *_localctx = _tracker.createInstance<ReturnStmtContext>(_ctx, getState());
-  enterRule(_localctx, 68, ToLLVMParser::RuleReturnStmt);
+  enterRule(_localctx, 68, LuxParser::RuleReturnStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -3878,7 +3878,7 @@ ToLLVMParser::ReturnStmtContext* ToLLVMParser::returnStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(472);
-    match(ToLLVMParser::RET);
+    match(LuxParser::RET);
     setState(474);
     _errHandler->sync(this);
 
@@ -3890,7 +3890,7 @@ ToLLVMParser::ReturnStmtContext* ToLLVMParser::returnStmt() {
       expression(0);
     }
     setState(476);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -3904,58 +3904,58 @@ ToLLVMParser::ReturnStmtContext* ToLLVMParser::returnStmt() {
 
 //----------------- IfStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::IfStmtContext::IfStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::IfStmtContext::IfStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::IfStmtContext::IF() {
-  return getToken(ToLLVMParser::IF, 0);
+tree::TerminalNode* LuxParser::IfStmtContext::IF() {
+  return getToken(LuxParser::IF, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::IfStmtContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::IfStmtContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::IfStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::IfStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::IfStmtContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::IfStmtContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::IfStmtContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::IfStmtContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-std::vector<ToLLVMParser::ElseIfClauseContext *> ToLLVMParser::IfStmtContext::elseIfClause() {
-  return getRuleContexts<ToLLVMParser::ElseIfClauseContext>();
+std::vector<LuxParser::ElseIfClauseContext *> LuxParser::IfStmtContext::elseIfClause() {
+  return getRuleContexts<LuxParser::ElseIfClauseContext>();
 }
 
-ToLLVMParser::ElseIfClauseContext* ToLLVMParser::IfStmtContext::elseIfClause(size_t i) {
-  return getRuleContext<ToLLVMParser::ElseIfClauseContext>(i);
+LuxParser::ElseIfClauseContext* LuxParser::IfStmtContext::elseIfClause(size_t i) {
+  return getRuleContext<LuxParser::ElseIfClauseContext>(i);
 }
 
-ToLLVMParser::ElseClauseContext* ToLLVMParser::IfStmtContext::elseClause() {
-  return getRuleContext<ToLLVMParser::ElseClauseContext>(0);
-}
-
-
-size_t ToLLVMParser::IfStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleIfStmt;
+LuxParser::ElseClauseContext* LuxParser::IfStmtContext::elseClause() {
+  return getRuleContext<LuxParser::ElseClauseContext>(0);
 }
 
 
-std::any ToLLVMParser::IfStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::IfStmtContext::getRuleIndex() const {
+  return LuxParser::RuleIfStmt;
+}
+
+
+std::any LuxParser::IfStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitIfStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::IfStmtContext* ToLLVMParser::ifStmt() {
+LuxParser::IfStmtContext* LuxParser::ifStmt() {
   IfStmtContext *_localctx = _tracker.createInstance<IfStmtContext>(_ctx, getState());
-  enterRule(_localctx, 70, ToLLVMParser::RuleIfStmt);
+  enterRule(_localctx, 70, LuxParser::RuleIfStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -3973,13 +3973,13 @@ ToLLVMParser::IfStmtContext* ToLLVMParser::ifStmt() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(478);
-      match(ToLLVMParser::IF);
+      match(LuxParser::IF);
       setState(479);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(480);
       expression(0);
       setState(481);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       setState(482);
       block();
       setState(486);
@@ -3998,7 +3998,7 @@ ToLLVMParser::IfStmtContext* ToLLVMParser::ifStmt() {
       _errHandler->sync(this);
 
       _la = _input->LA(1);
-      if (_la == ToLLVMParser::ELSE) {
+      if (_la == LuxParser::ELSE) {
         setState(489);
         elseClause();
       }
@@ -4008,7 +4008,7 @@ ToLLVMParser::IfStmtContext* ToLLVMParser::ifStmt() {
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(492);
-      match(ToLLVMParser::IF);
+      match(LuxParser::IF);
       setState(493);
       expression(0);
       setState(494);
@@ -4029,7 +4029,7 @@ ToLLVMParser::IfStmtContext* ToLLVMParser::ifStmt() {
       _errHandler->sync(this);
 
       _la = _input->LA(1);
-      if (_la == ToLLVMParser::ELSE) {
+      if (_la == LuxParser::ELSE) {
         setState(501);
         elseClause();
       }
@@ -4052,50 +4052,50 @@ ToLLVMParser::IfStmtContext* ToLLVMParser::ifStmt() {
 
 //----------------- ElseIfClauseContext ------------------------------------------------------------------
 
-ToLLVMParser::ElseIfClauseContext::ElseIfClauseContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ElseIfClauseContext::ElseIfClauseContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::ElseIfClauseContext::ELSE() {
-  return getToken(ToLLVMParser::ELSE, 0);
+tree::TerminalNode* LuxParser::ElseIfClauseContext::ELSE() {
+  return getToken(LuxParser::ELSE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ElseIfClauseContext::IF() {
-  return getToken(ToLLVMParser::IF, 0);
+tree::TerminalNode* LuxParser::ElseIfClauseContext::IF() {
+  return getToken(LuxParser::IF, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ElseIfClauseContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::ElseIfClauseContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ElseIfClauseContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::ElseIfClauseContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ElseIfClauseContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::ElseIfClauseContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::ElseIfClauseContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
-}
-
-
-size_t ToLLVMParser::ElseIfClauseContext::getRuleIndex() const {
-  return ToLLVMParser::RuleElseIfClause;
+LuxParser::BlockContext* LuxParser::ElseIfClauseContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
 
-std::any ToLLVMParser::ElseIfClauseContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ElseIfClauseContext::getRuleIndex() const {
+  return LuxParser::RuleElseIfClause;
+}
+
+
+std::any LuxParser::ElseIfClauseContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitElseIfClause(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ElseIfClauseContext* ToLLVMParser::elseIfClause() {
+LuxParser::ElseIfClauseContext* LuxParser::elseIfClause() {
   ElseIfClauseContext *_localctx = _tracker.createInstance<ElseIfClauseContext>(_ctx, getState());
-  enterRule(_localctx, 72, ToLLVMParser::RuleElseIfClause);
+  enterRule(_localctx, 72, LuxParser::RuleElseIfClause);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4111,15 +4111,15 @@ ToLLVMParser::ElseIfClauseContext* ToLLVMParser::elseIfClause() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(506);
-      match(ToLLVMParser::ELSE);
+      match(LuxParser::ELSE);
       setState(507);
-      match(ToLLVMParser::IF);
+      match(LuxParser::IF);
       setState(508);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(509);
       expression(0);
       setState(510);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       setState(511);
       block();
       break;
@@ -4128,9 +4128,9 @@ ToLLVMParser::ElseIfClauseContext* ToLLVMParser::elseIfClause() {
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(513);
-      match(ToLLVMParser::ELSE);
+      match(LuxParser::ELSE);
       setState(514);
-      match(ToLLVMParser::IF);
+      match(LuxParser::IF);
       setState(515);
       expression(0);
       setState(516);
@@ -4154,34 +4154,34 @@ ToLLVMParser::ElseIfClauseContext* ToLLVMParser::elseIfClause() {
 
 //----------------- ElseClauseContext ------------------------------------------------------------------
 
-ToLLVMParser::ElseClauseContext::ElseClauseContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ElseClauseContext::ElseClauseContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::ElseClauseContext::ELSE() {
-  return getToken(ToLLVMParser::ELSE, 0);
+tree::TerminalNode* LuxParser::ElseClauseContext::ELSE() {
+  return getToken(LuxParser::ELSE, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::ElseClauseContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
-}
-
-
-size_t ToLLVMParser::ElseClauseContext::getRuleIndex() const {
-  return ToLLVMParser::RuleElseClause;
+LuxParser::BlockContext* LuxParser::ElseClauseContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
 
-std::any ToLLVMParser::ElseClauseContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ElseClauseContext::getRuleIndex() const {
+  return LuxParser::RuleElseClause;
+}
+
+
+std::any LuxParser::ElseClauseContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitElseClause(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ElseClauseContext* ToLLVMParser::elseClause() {
+LuxParser::ElseClauseContext* LuxParser::elseClause() {
   ElseClauseContext *_localctx = _tracker.createInstance<ElseClauseContext>(_ctx, getState());
-  enterRule(_localctx, 74, ToLLVMParser::RuleElseClause);
+  enterRule(_localctx, 74, LuxParser::RuleElseClause);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4193,7 +4193,7 @@ ToLLVMParser::ElseClauseContext* ToLLVMParser::elseClause() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(520);
-    match(ToLLVMParser::ELSE);
+    match(LuxParser::ELSE);
     setState(521);
     block();
    
@@ -4209,104 +4209,104 @@ ToLLVMParser::ElseClauseContext* ToLLVMParser::elseClause() {
 
 //----------------- ForStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::ForStmtContext::ForStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ForStmtContext::ForStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
 
-size_t ToLLVMParser::ForStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleForStmt;
+size_t LuxParser::ForStmtContext::getRuleIndex() const {
+  return LuxParser::RuleForStmt;
 }
 
-void ToLLVMParser::ForStmtContext::copyFrom(ForStmtContext *ctx) {
+void LuxParser::ForStmtContext::copyFrom(ForStmtContext *ctx) {
   ParserRuleContext::copyFrom(ctx);
 }
 
 //----------------- ForInStmtContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::ForInStmtContext::FOR() {
-  return getToken(ToLLVMParser::FOR, 0);
+tree::TerminalNode* LuxParser::ForInStmtContext::FOR() {
+  return getToken(LuxParser::FOR, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::ForInStmtContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::ForInStmtContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ForInStmtContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::ForInStmtContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ForInStmtContext::IN() {
-  return getToken(ToLLVMParser::IN, 0);
+tree::TerminalNode* LuxParser::ForInStmtContext::IN() {
+  return getToken(LuxParser::IN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ForInStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::ForInStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::ForInStmtContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::ForInStmtContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-ToLLVMParser::ForInStmtContext::ForInStmtContext(ForStmtContext *ctx) { copyFrom(ctx); }
+LuxParser::ForInStmtContext::ForInStmtContext(ForStmtContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::ForInStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::ForInStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitForInStmt(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- ForClassicStmtContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::ForClassicStmtContext::FOR() {
-  return getToken(ToLLVMParser::FOR, 0);
+tree::TerminalNode* LuxParser::ForClassicStmtContext::FOR() {
+  return getToken(LuxParser::FOR, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::ForClassicStmtContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::ForClassicStmtContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ForClassicStmtContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::ForClassicStmtContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ForClassicStmtContext::ASSIGN() {
-  return getToken(ToLLVMParser::ASSIGN, 0);
+tree::TerminalNode* LuxParser::ForClassicStmtContext::ASSIGN() {
+  return getToken(LuxParser::ASSIGN, 0);
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::ForClassicStmtContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::ForClassicStmtContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ForClassicStmtContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::ForClassicStmtContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ForClassicStmtContext::SEMI() {
-  return getTokens(ToLLVMParser::SEMI);
+std::vector<tree::TerminalNode *> LuxParser::ForClassicStmtContext::SEMI() {
+  return getTokens(LuxParser::SEMI);
 }
 
-tree::TerminalNode* ToLLVMParser::ForClassicStmtContext::SEMI(size_t i) {
-  return getToken(ToLLVMParser::SEMI, i);
+tree::TerminalNode* LuxParser::ForClassicStmtContext::SEMI(size_t i) {
+  return getToken(LuxParser::SEMI, i);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::ForClassicStmtContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::ForClassicStmtContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-ToLLVMParser::ForClassicStmtContext::ForClassicStmtContext(ForStmtContext *ctx) { copyFrom(ctx); }
+LuxParser::ForClassicStmtContext::ForClassicStmtContext(ForStmtContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::ForClassicStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::ForClassicStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitForClassicStmt(this);
   else
     return visitor->visitChildren(this);
 }
-ToLLVMParser::ForStmtContext* ToLLVMParser::forStmt() {
+LuxParser::ForStmtContext* LuxParser::forStmt() {
   ForStmtContext *_localctx = _tracker.createInstance<ForStmtContext>(_ctx, getState());
-  enterRule(_localctx, 76, ToLLVMParser::RuleForStmt);
+  enterRule(_localctx, 76, LuxParser::RuleForStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4320,16 +4320,16 @@ ToLLVMParser::ForStmtContext* ToLLVMParser::forStmt() {
     _errHandler->sync(this);
     switch (getInterpreter<atn::ParserATNSimulator>()->adaptivePredict(_input, 41, _ctx)) {
     case 1: {
-      _localctx = _tracker.createInstance<ToLLVMParser::ForInStmtContext>(_localctx);
+      _localctx = _tracker.createInstance<LuxParser::ForInStmtContext>(_localctx);
       enterOuterAlt(_localctx, 1);
       setState(523);
-      match(ToLLVMParser::FOR);
+      match(LuxParser::FOR);
       setState(524);
       typeSpec();
       setState(525);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(526);
-      match(ToLLVMParser::IN);
+      match(LuxParser::IN);
       setState(527);
       expression(0);
       setState(528);
@@ -4338,24 +4338,24 @@ ToLLVMParser::ForStmtContext* ToLLVMParser::forStmt() {
     }
 
     case 2: {
-      _localctx = _tracker.createInstance<ToLLVMParser::ForClassicStmtContext>(_localctx);
+      _localctx = _tracker.createInstance<LuxParser::ForClassicStmtContext>(_localctx);
       enterOuterAlt(_localctx, 2);
       setState(530);
-      match(ToLLVMParser::FOR);
+      match(LuxParser::FOR);
       setState(531);
       typeSpec();
       setState(532);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(533);
-      match(ToLLVMParser::ASSIGN);
+      match(LuxParser::ASSIGN);
       setState(534);
       expression(0);
       setState(535);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       setState(536);
       expression(0);
       setState(537);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       setState(538);
       expression(0);
       setState(539);
@@ -4379,34 +4379,34 @@ ToLLVMParser::ForStmtContext* ToLLVMParser::forStmt() {
 
 //----------------- BreakStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::BreakStmtContext::BreakStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::BreakStmtContext::BreakStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::BreakStmtContext::BREAK() {
-  return getToken(ToLLVMParser::BREAK, 0);
+tree::TerminalNode* LuxParser::BreakStmtContext::BREAK() {
+  return getToken(LuxParser::BREAK, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::BreakStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::BreakStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleBreakStmt;
+tree::TerminalNode* LuxParser::BreakStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::BreakStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::BreakStmtContext::getRuleIndex() const {
+  return LuxParser::RuleBreakStmt;
+}
+
+
+std::any LuxParser::BreakStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitBreakStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::BreakStmtContext* ToLLVMParser::breakStmt() {
+LuxParser::BreakStmtContext* LuxParser::breakStmt() {
   BreakStmtContext *_localctx = _tracker.createInstance<BreakStmtContext>(_ctx, getState());
-  enterRule(_localctx, 78, ToLLVMParser::RuleBreakStmt);
+  enterRule(_localctx, 78, LuxParser::RuleBreakStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4418,9 +4418,9 @@ ToLLVMParser::BreakStmtContext* ToLLVMParser::breakStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(543);
-    match(ToLLVMParser::BREAK);
+    match(LuxParser::BREAK);
     setState(544);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -4434,34 +4434,34 @@ ToLLVMParser::BreakStmtContext* ToLLVMParser::breakStmt() {
 
 //----------------- ContinueStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::ContinueStmtContext::ContinueStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ContinueStmtContext::ContinueStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::ContinueStmtContext::CONTINUE() {
-  return getToken(ToLLVMParser::CONTINUE, 0);
+tree::TerminalNode* LuxParser::ContinueStmtContext::CONTINUE() {
+  return getToken(LuxParser::CONTINUE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ContinueStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::ContinueStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleContinueStmt;
+tree::TerminalNode* LuxParser::ContinueStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::ContinueStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ContinueStmtContext::getRuleIndex() const {
+  return LuxParser::RuleContinueStmt;
+}
+
+
+std::any LuxParser::ContinueStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitContinueStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ContinueStmtContext* ToLLVMParser::continueStmt() {
+LuxParser::ContinueStmtContext* LuxParser::continueStmt() {
   ContinueStmtContext *_localctx = _tracker.createInstance<ContinueStmtContext>(_ctx, getState());
-  enterRule(_localctx, 80, ToLLVMParser::RuleContinueStmt);
+  enterRule(_localctx, 80, LuxParser::RuleContinueStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4473,9 +4473,9 @@ ToLLVMParser::ContinueStmtContext* ToLLVMParser::continueStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(546);
-    match(ToLLVMParser::CONTINUE);
+    match(LuxParser::CONTINUE);
     setState(547);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -4489,34 +4489,34 @@ ToLLVMParser::ContinueStmtContext* ToLLVMParser::continueStmt() {
 
 //----------------- LoopStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::LoopStmtContext::LoopStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::LoopStmtContext::LoopStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::LoopStmtContext::LOOP() {
-  return getToken(ToLLVMParser::LOOP, 0);
+tree::TerminalNode* LuxParser::LoopStmtContext::LOOP() {
+  return getToken(LuxParser::LOOP, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::LoopStmtContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
-}
-
-
-size_t ToLLVMParser::LoopStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleLoopStmt;
+LuxParser::BlockContext* LuxParser::LoopStmtContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
 
-std::any ToLLVMParser::LoopStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::LoopStmtContext::getRuleIndex() const {
+  return LuxParser::RuleLoopStmt;
+}
+
+
+std::any LuxParser::LoopStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitLoopStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::LoopStmtContext* ToLLVMParser::loopStmt() {
+LuxParser::LoopStmtContext* LuxParser::loopStmt() {
   LoopStmtContext *_localctx = _tracker.createInstance<LoopStmtContext>(_ctx, getState());
-  enterRule(_localctx, 82, ToLLVMParser::RuleLoopStmt);
+  enterRule(_localctx, 82, LuxParser::RuleLoopStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4528,7 +4528,7 @@ ToLLVMParser::LoopStmtContext* ToLLVMParser::loopStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(549);
-    match(ToLLVMParser::LOOP);
+    match(LuxParser::LOOP);
     setState(550);
     block();
    
@@ -4544,46 +4544,46 @@ ToLLVMParser::LoopStmtContext* ToLLVMParser::loopStmt() {
 
 //----------------- WhileStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::WhileStmtContext::WhileStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::WhileStmtContext::WhileStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::WhileStmtContext::WHILE() {
-  return getToken(ToLLVMParser::WHILE, 0);
+tree::TerminalNode* LuxParser::WhileStmtContext::WHILE() {
+  return getToken(LuxParser::WHILE, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::WhileStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::WhileStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::WhileStmtContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::WhileStmtContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::WhileStmtContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::WhileStmtContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::WhileStmtContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
-}
-
-
-size_t ToLLVMParser::WhileStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleWhileStmt;
+tree::TerminalNode* LuxParser::WhileStmtContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
 
-std::any ToLLVMParser::WhileStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::WhileStmtContext::getRuleIndex() const {
+  return LuxParser::RuleWhileStmt;
+}
+
+
+std::any LuxParser::WhileStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitWhileStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::WhileStmtContext* ToLLVMParser::whileStmt() {
+LuxParser::WhileStmtContext* LuxParser::whileStmt() {
   WhileStmtContext *_localctx = _tracker.createInstance<WhileStmtContext>(_ctx, getState());
-  enterRule(_localctx, 84, ToLLVMParser::RuleWhileStmt);
+  enterRule(_localctx, 84, LuxParser::RuleWhileStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4599,7 +4599,7 @@ ToLLVMParser::WhileStmtContext* ToLLVMParser::whileStmt() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(552);
-      match(ToLLVMParser::WHILE);
+      match(LuxParser::WHILE);
       setState(553);
       expression(0);
       setState(554);
@@ -4610,13 +4610,13 @@ ToLLVMParser::WhileStmtContext* ToLLVMParser::whileStmt() {
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(556);
-      match(ToLLVMParser::WHILE);
+      match(LuxParser::WHILE);
       setState(557);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(558);
       expression(0);
       setState(559);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       setState(560);
       block();
       break;
@@ -4638,54 +4638,54 @@ ToLLVMParser::WhileStmtContext* ToLLVMParser::whileStmt() {
 
 //----------------- DoWhileStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::DoWhileStmtContext::DoWhileStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::DoWhileStmtContext::DoWhileStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::DoWhileStmtContext::DO() {
-  return getToken(ToLLVMParser::DO, 0);
+tree::TerminalNode* LuxParser::DoWhileStmtContext::DO() {
+  return getToken(LuxParser::DO, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::DoWhileStmtContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::DoWhileStmtContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::DoWhileStmtContext::WHILE() {
-  return getToken(ToLLVMParser::WHILE, 0);
+tree::TerminalNode* LuxParser::DoWhileStmtContext::WHILE() {
+  return getToken(LuxParser::WHILE, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::DoWhileStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::DoWhileStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::DoWhileStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
+tree::TerminalNode* LuxParser::DoWhileStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::DoWhileStmtContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::DoWhileStmtContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::DoWhileStmtContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
-}
-
-
-size_t ToLLVMParser::DoWhileStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleDoWhileStmt;
+tree::TerminalNode* LuxParser::DoWhileStmtContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
 
-std::any ToLLVMParser::DoWhileStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::DoWhileStmtContext::getRuleIndex() const {
+  return LuxParser::RuleDoWhileStmt;
+}
+
+
+std::any LuxParser::DoWhileStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitDoWhileStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::DoWhileStmtContext* ToLLVMParser::doWhileStmt() {
+LuxParser::DoWhileStmtContext* LuxParser::doWhileStmt() {
   DoWhileStmtContext *_localctx = _tracker.createInstance<DoWhileStmtContext>(_ctx, getState());
-  enterRule(_localctx, 86, ToLLVMParser::RuleDoWhileStmt);
+  enterRule(_localctx, 86, LuxParser::RuleDoWhileStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4701,34 +4701,34 @@ ToLLVMParser::DoWhileStmtContext* ToLLVMParser::doWhileStmt() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(564);
-      match(ToLLVMParser::DO);
+      match(LuxParser::DO);
       setState(565);
       block();
       setState(566);
-      match(ToLLVMParser::WHILE);
+      match(LuxParser::WHILE);
       setState(567);
       expression(0);
       setState(568);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       break;
     }
 
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(570);
-      match(ToLLVMParser::DO);
+      match(LuxParser::DO);
       setState(571);
       block();
       setState(572);
-      match(ToLLVMParser::WHILE);
+      match(LuxParser::WHILE);
       setState(573);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(574);
       expression(0);
       setState(575);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       setState(576);
-      match(ToLLVMParser::SEMI);
+      match(LuxParser::SEMI);
       break;
     }
 
@@ -4748,46 +4748,46 @@ ToLLVMParser::DoWhileStmtContext* ToLLVMParser::doWhileStmt() {
 
 //----------------- LockStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::LockStmtContext::LockStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::LockStmtContext::LockStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::LockStmtContext::LOCK() {
-  return getToken(ToLLVMParser::LOCK, 0);
+tree::TerminalNode* LuxParser::LockStmtContext::LOCK() {
+  return getToken(LuxParser::LOCK, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::LockStmtContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::LockStmtContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::LockStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::LockStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::LockStmtContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::LockStmtContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::LockStmtContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
-}
-
-
-size_t ToLLVMParser::LockStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleLockStmt;
+LuxParser::BlockContext* LuxParser::LockStmtContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
 
-std::any ToLLVMParser::LockStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::LockStmtContext::getRuleIndex() const {
+  return LuxParser::RuleLockStmt;
+}
+
+
+std::any LuxParser::LockStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitLockStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::LockStmtContext* ToLLVMParser::lockStmt() {
+LuxParser::LockStmtContext* LuxParser::lockStmt() {
   LockStmtContext *_localctx = _tracker.createInstance<LockStmtContext>(_ctx, getState());
-  enterRule(_localctx, 88, ToLLVMParser::RuleLockStmt);
+  enterRule(_localctx, 88, LuxParser::RuleLockStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4799,13 +4799,13 @@ ToLLVMParser::LockStmtContext* ToLLVMParser::lockStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(580);
-    match(ToLLVMParser::LOCK);
+    match(LuxParser::LOCK);
     setState(581);
-    match(ToLLVMParser::LPAREN);
+    match(LuxParser::LPAREN);
     setState(582);
     expression(0);
     setState(583);
-    match(ToLLVMParser::RPAREN);
+    match(LuxParser::RPAREN);
     setState(584);
     block();
    
@@ -4821,46 +4821,46 @@ ToLLVMParser::LockStmtContext* ToLLVMParser::lockStmt() {
 
 //----------------- TryCatchStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::TryCatchStmtContext::TryCatchStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::TryCatchStmtContext::TryCatchStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::TryCatchStmtContext::TRY() {
-  return getToken(ToLLVMParser::TRY, 0);
+tree::TerminalNode* LuxParser::TryCatchStmtContext::TRY() {
+  return getToken(LuxParser::TRY, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::TryCatchStmtContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::TryCatchStmtContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-std::vector<ToLLVMParser::CatchClauseContext *> ToLLVMParser::TryCatchStmtContext::catchClause() {
-  return getRuleContexts<ToLLVMParser::CatchClauseContext>();
+std::vector<LuxParser::CatchClauseContext *> LuxParser::TryCatchStmtContext::catchClause() {
+  return getRuleContexts<LuxParser::CatchClauseContext>();
 }
 
-ToLLVMParser::CatchClauseContext* ToLLVMParser::TryCatchStmtContext::catchClause(size_t i) {
-  return getRuleContext<ToLLVMParser::CatchClauseContext>(i);
+LuxParser::CatchClauseContext* LuxParser::TryCatchStmtContext::catchClause(size_t i) {
+  return getRuleContext<LuxParser::CatchClauseContext>(i);
 }
 
-ToLLVMParser::FinallyClauseContext* ToLLVMParser::TryCatchStmtContext::finallyClause() {
-  return getRuleContext<ToLLVMParser::FinallyClauseContext>(0);
-}
-
-
-size_t ToLLVMParser::TryCatchStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleTryCatchStmt;
+LuxParser::FinallyClauseContext* LuxParser::TryCatchStmtContext::finallyClause() {
+  return getRuleContext<LuxParser::FinallyClauseContext>(0);
 }
 
 
-std::any ToLLVMParser::TryCatchStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::TryCatchStmtContext::getRuleIndex() const {
+  return LuxParser::RuleTryCatchStmt;
+}
+
+
+std::any LuxParser::TryCatchStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitTryCatchStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::TryCatchStmtContext* ToLLVMParser::tryCatchStmt() {
+LuxParser::TryCatchStmtContext* LuxParser::tryCatchStmt() {
   TryCatchStmtContext *_localctx = _tracker.createInstance<TryCatchStmtContext>(_ctx, getState());
-  enterRule(_localctx, 90, ToLLVMParser::RuleTryCatchStmt);
+  enterRule(_localctx, 90, LuxParser::RuleTryCatchStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -4877,7 +4877,7 @@ ToLLVMParser::TryCatchStmtContext* ToLLVMParser::tryCatchStmt() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(586);
-      match(ToLLVMParser::TRY);
+      match(LuxParser::TRY);
       setState(587);
       block();
       setState(589); 
@@ -4889,12 +4889,12 @@ ToLLVMParser::TryCatchStmtContext* ToLLVMParser::tryCatchStmt() {
         setState(591); 
         _errHandler->sync(this);
         _la = _input->LA(1);
-      } while (_la == ToLLVMParser::CATCH);
+      } while (_la == LuxParser::CATCH);
       setState(594);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
-      if (_la == ToLLVMParser::FINALLY) {
+      if (_la == LuxParser::FINALLY) {
         setState(593);
         finallyClause();
       }
@@ -4904,7 +4904,7 @@ ToLLVMParser::TryCatchStmtContext* ToLLVMParser::tryCatchStmt() {
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(596);
-      match(ToLLVMParser::TRY);
+      match(LuxParser::TRY);
       setState(597);
       block();
       setState(598);
@@ -4928,50 +4928,50 @@ ToLLVMParser::TryCatchStmtContext* ToLLVMParser::tryCatchStmt() {
 
 //----------------- CatchClauseContext ------------------------------------------------------------------
 
-ToLLVMParser::CatchClauseContext::CatchClauseContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::CatchClauseContext::CatchClauseContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::CatchClauseContext::CATCH() {
-  return getToken(ToLLVMParser::CATCH, 0);
+tree::TerminalNode* LuxParser::CatchClauseContext::CATCH() {
+  return getToken(LuxParser::CATCH, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CatchClauseContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::CatchClauseContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::CatchClauseContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::CatchClauseContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::CatchClauseContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::CatchClauseContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::CatchClauseContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::CatchClauseContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::CatchClauseContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
-}
-
-
-size_t ToLLVMParser::CatchClauseContext::getRuleIndex() const {
-  return ToLLVMParser::RuleCatchClause;
+LuxParser::BlockContext* LuxParser::CatchClauseContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
 
-std::any ToLLVMParser::CatchClauseContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::CatchClauseContext::getRuleIndex() const {
+  return LuxParser::RuleCatchClause;
+}
+
+
+std::any LuxParser::CatchClauseContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitCatchClause(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::CatchClauseContext* ToLLVMParser::catchClause() {
+LuxParser::CatchClauseContext* LuxParser::catchClause() {
   CatchClauseContext *_localctx = _tracker.createInstance<CatchClauseContext>(_ctx, getState());
-  enterRule(_localctx, 92, ToLLVMParser::RuleCatchClause);
+  enterRule(_localctx, 92, LuxParser::RuleCatchClause);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -4983,15 +4983,15 @@ ToLLVMParser::CatchClauseContext* ToLLVMParser::catchClause() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(602);
-    match(ToLLVMParser::CATCH);
+    match(LuxParser::CATCH);
     setState(603);
-    match(ToLLVMParser::LPAREN);
+    match(LuxParser::LPAREN);
     setState(604);
     typeSpec();
     setState(605);
-    match(ToLLVMParser::IDENTIFIER);
+    match(LuxParser::IDENTIFIER);
     setState(606);
-    match(ToLLVMParser::RPAREN);
+    match(LuxParser::RPAREN);
     setState(607);
     block();
    
@@ -5007,34 +5007,34 @@ ToLLVMParser::CatchClauseContext* ToLLVMParser::catchClause() {
 
 //----------------- FinallyClauseContext ------------------------------------------------------------------
 
-ToLLVMParser::FinallyClauseContext::FinallyClauseContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::FinallyClauseContext::FinallyClauseContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::FinallyClauseContext::FINALLY() {
-  return getToken(ToLLVMParser::FINALLY, 0);
+tree::TerminalNode* LuxParser::FinallyClauseContext::FINALLY() {
+  return getToken(LuxParser::FINALLY, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::FinallyClauseContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
-}
-
-
-size_t ToLLVMParser::FinallyClauseContext::getRuleIndex() const {
-  return ToLLVMParser::RuleFinallyClause;
+LuxParser::BlockContext* LuxParser::FinallyClauseContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
 
-std::any ToLLVMParser::FinallyClauseContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::FinallyClauseContext::getRuleIndex() const {
+  return LuxParser::RuleFinallyClause;
+}
+
+
+std::any LuxParser::FinallyClauseContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitFinallyClause(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::FinallyClauseContext* ToLLVMParser::finallyClause() {
+LuxParser::FinallyClauseContext* LuxParser::finallyClause() {
   FinallyClauseContext *_localctx = _tracker.createInstance<FinallyClauseContext>(_ctx, getState());
-  enterRule(_localctx, 94, ToLLVMParser::RuleFinallyClause);
+  enterRule(_localctx, 94, LuxParser::RuleFinallyClause);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -5046,7 +5046,7 @@ ToLLVMParser::FinallyClauseContext* ToLLVMParser::finallyClause() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(609);
-    match(ToLLVMParser::FINALLY);
+    match(LuxParser::FINALLY);
     setState(610);
     block();
    
@@ -5062,38 +5062,38 @@ ToLLVMParser::FinallyClauseContext* ToLLVMParser::finallyClause() {
 
 //----------------- ThrowStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::ThrowStmtContext::ThrowStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ThrowStmtContext::ThrowStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::ThrowStmtContext::THROW() {
-  return getToken(ToLLVMParser::THROW, 0);
+tree::TerminalNode* LuxParser::ThrowStmtContext::THROW() {
+  return getToken(LuxParser::THROW, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ThrowStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::ThrowStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ThrowStmtContext::SEMI() {
-  return getToken(ToLLVMParser::SEMI, 0);
-}
-
-
-size_t ToLLVMParser::ThrowStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleThrowStmt;
+tree::TerminalNode* LuxParser::ThrowStmtContext::SEMI() {
+  return getToken(LuxParser::SEMI, 0);
 }
 
 
-std::any ToLLVMParser::ThrowStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::ThrowStmtContext::getRuleIndex() const {
+  return LuxParser::RuleThrowStmt;
+}
+
+
+std::any LuxParser::ThrowStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitThrowStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ThrowStmtContext* ToLLVMParser::throwStmt() {
+LuxParser::ThrowStmtContext* LuxParser::throwStmt() {
   ThrowStmtContext *_localctx = _tracker.createInstance<ThrowStmtContext>(_ctx, getState());
-  enterRule(_localctx, 96, ToLLVMParser::RuleThrowStmt);
+  enterRule(_localctx, 96, LuxParser::RuleThrowStmt);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -5105,11 +5105,11 @@ ToLLVMParser::ThrowStmtContext* ToLLVMParser::throwStmt() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(612);
-    match(ToLLVMParser::THROW);
+    match(LuxParser::THROW);
     setState(613);
     expression(0);
     setState(614);
-    match(ToLLVMParser::SEMI);
+    match(LuxParser::SEMI);
    
   }
   catch (RecognitionException &e) {
@@ -5123,62 +5123,62 @@ ToLLVMParser::ThrowStmtContext* ToLLVMParser::throwStmt() {
 
 //----------------- SwitchStmtContext ------------------------------------------------------------------
 
-ToLLVMParser::SwitchStmtContext::SwitchStmtContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::SwitchStmtContext::SwitchStmtContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::SwitchStmtContext::SWITCH() {
-  return getToken(ToLLVMParser::SWITCH, 0);
+tree::TerminalNode* LuxParser::SwitchStmtContext::SWITCH() {
+  return getToken(LuxParser::SWITCH, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::SwitchStmtContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::SwitchStmtContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::SwitchStmtContext::LBRACE() {
-  return getToken(ToLLVMParser::LBRACE, 0);
+tree::TerminalNode* LuxParser::SwitchStmtContext::LBRACE() {
+  return getToken(LuxParser::LBRACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::SwitchStmtContext::RBRACE() {
-  return getToken(ToLLVMParser::RBRACE, 0);
+tree::TerminalNode* LuxParser::SwitchStmtContext::RBRACE() {
+  return getToken(LuxParser::RBRACE, 0);
 }
 
-std::vector<ToLLVMParser::CaseClauseContext *> ToLLVMParser::SwitchStmtContext::caseClause() {
-  return getRuleContexts<ToLLVMParser::CaseClauseContext>();
+std::vector<LuxParser::CaseClauseContext *> LuxParser::SwitchStmtContext::caseClause() {
+  return getRuleContexts<LuxParser::CaseClauseContext>();
 }
 
-ToLLVMParser::CaseClauseContext* ToLLVMParser::SwitchStmtContext::caseClause(size_t i) {
-  return getRuleContext<ToLLVMParser::CaseClauseContext>(i);
+LuxParser::CaseClauseContext* LuxParser::SwitchStmtContext::caseClause(size_t i) {
+  return getRuleContext<LuxParser::CaseClauseContext>(i);
 }
 
-ToLLVMParser::DefaultClauseContext* ToLLVMParser::SwitchStmtContext::defaultClause() {
-  return getRuleContext<ToLLVMParser::DefaultClauseContext>(0);
+LuxParser::DefaultClauseContext* LuxParser::SwitchStmtContext::defaultClause() {
+  return getRuleContext<LuxParser::DefaultClauseContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::SwitchStmtContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::SwitchStmtContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::SwitchStmtContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
-}
-
-
-size_t ToLLVMParser::SwitchStmtContext::getRuleIndex() const {
-  return ToLLVMParser::RuleSwitchStmt;
+tree::TerminalNode* LuxParser::SwitchStmtContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
 
-std::any ToLLVMParser::SwitchStmtContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::SwitchStmtContext::getRuleIndex() const {
+  return LuxParser::RuleSwitchStmt;
+}
+
+
+std::any LuxParser::SwitchStmtContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitSwitchStmt(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::SwitchStmtContext* ToLLVMParser::switchStmt() {
+LuxParser::SwitchStmtContext* LuxParser::switchStmt() {
   SwitchStmtContext *_localctx = _tracker.createInstance<SwitchStmtContext>(_ctx, getState());
-  enterRule(_localctx, 98, ToLLVMParser::RuleSwitchStmt);
+  enterRule(_localctx, 98, LuxParser::RuleSwitchStmt);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -5195,15 +5195,15 @@ ToLLVMParser::SwitchStmtContext* ToLLVMParser::switchStmt() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(616);
-      match(ToLLVMParser::SWITCH);
+      match(LuxParser::SWITCH);
       setState(617);
       expression(0);
       setState(618);
-      match(ToLLVMParser::LBRACE);
+      match(LuxParser::LBRACE);
       setState(622);
       _errHandler->sync(this);
       _la = _input->LA(1);
-      while (_la == ToLLVMParser::CASE) {
+      while (_la == LuxParser::CASE) {
         setState(619);
         caseClause();
         setState(624);
@@ -5214,31 +5214,31 @@ ToLLVMParser::SwitchStmtContext* ToLLVMParser::switchStmt() {
       _errHandler->sync(this);
 
       _la = _input->LA(1);
-      if (_la == ToLLVMParser::DEFAULT) {
+      if (_la == LuxParser::DEFAULT) {
         setState(625);
         defaultClause();
       }
       setState(628);
-      match(ToLLVMParser::RBRACE);
+      match(LuxParser::RBRACE);
       break;
     }
 
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(630);
-      match(ToLLVMParser::SWITCH);
+      match(LuxParser::SWITCH);
       setState(631);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(632);
       expression(0);
       setState(633);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       setState(634);
-      match(ToLLVMParser::LBRACE);
+      match(LuxParser::LBRACE);
       setState(638);
       _errHandler->sync(this);
       _la = _input->LA(1);
-      while (_la == ToLLVMParser::CASE) {
+      while (_la == LuxParser::CASE) {
         setState(635);
         caseClause();
         setState(640);
@@ -5249,12 +5249,12 @@ ToLLVMParser::SwitchStmtContext* ToLLVMParser::switchStmt() {
       _errHandler->sync(this);
 
       _la = _input->LA(1);
-      if (_la == ToLLVMParser::DEFAULT) {
+      if (_la == LuxParser::DEFAULT) {
         setState(641);
         defaultClause();
       }
       setState(644);
-      match(ToLLVMParser::RBRACE);
+      match(LuxParser::RBRACE);
       break;
     }
 
@@ -5274,50 +5274,50 @@ ToLLVMParser::SwitchStmtContext* ToLLVMParser::switchStmt() {
 
 //----------------- CaseClauseContext ------------------------------------------------------------------
 
-ToLLVMParser::CaseClauseContext::CaseClauseContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::CaseClauseContext::CaseClauseContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::CaseClauseContext::CASE() {
-  return getToken(ToLLVMParser::CASE, 0);
+tree::TerminalNode* LuxParser::CaseClauseContext::CASE() {
+  return getToken(LuxParser::CASE, 0);
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::CaseClauseContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::CaseClauseContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::CaseClauseContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::CaseClauseContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::CaseClauseContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
+LuxParser::BlockContext* LuxParser::CaseClauseContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::CaseClauseContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::CaseClauseContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::CaseClauseContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
-}
-
-
-size_t ToLLVMParser::CaseClauseContext::getRuleIndex() const {
-  return ToLLVMParser::RuleCaseClause;
+tree::TerminalNode* LuxParser::CaseClauseContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
 
-std::any ToLLVMParser::CaseClauseContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::CaseClauseContext::getRuleIndex() const {
+  return LuxParser::RuleCaseClause;
+}
+
+
+std::any LuxParser::CaseClauseContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitCaseClause(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::CaseClauseContext* ToLLVMParser::caseClause() {
+LuxParser::CaseClauseContext* LuxParser::caseClause() {
   CaseClauseContext *_localctx = _tracker.createInstance<CaseClauseContext>(_ctx, getState());
-  enterRule(_localctx, 100, ToLLVMParser::RuleCaseClause);
+  enterRule(_localctx, 100, LuxParser::RuleCaseClause);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -5330,15 +5330,15 @@ ToLLVMParser::CaseClauseContext* ToLLVMParser::caseClause() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(648);
-    match(ToLLVMParser::CASE);
+    match(LuxParser::CASE);
     setState(649);
     expression(0);
     setState(654);
     _errHandler->sync(this);
     _la = _input->LA(1);
-    while (_la == ToLLVMParser::COMMA) {
+    while (_la == LuxParser::COMMA) {
       setState(650);
-      match(ToLLVMParser::COMMA);
+      match(LuxParser::COMMA);
       setState(651);
       expression(0);
       setState(656);
@@ -5360,34 +5360,34 @@ ToLLVMParser::CaseClauseContext* ToLLVMParser::caseClause() {
 
 //----------------- DefaultClauseContext ------------------------------------------------------------------
 
-ToLLVMParser::DefaultClauseContext::DefaultClauseContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::DefaultClauseContext::DefaultClauseContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::DefaultClauseContext::DEFAULT() {
-  return getToken(ToLLVMParser::DEFAULT, 0);
+tree::TerminalNode* LuxParser::DefaultClauseContext::DEFAULT() {
+  return getToken(LuxParser::DEFAULT, 0);
 }
 
-ToLLVMParser::BlockContext* ToLLVMParser::DefaultClauseContext::block() {
-  return getRuleContext<ToLLVMParser::BlockContext>(0);
-}
-
-
-size_t ToLLVMParser::DefaultClauseContext::getRuleIndex() const {
-  return ToLLVMParser::RuleDefaultClause;
+LuxParser::BlockContext* LuxParser::DefaultClauseContext::block() {
+  return getRuleContext<LuxParser::BlockContext>(0);
 }
 
 
-std::any ToLLVMParser::DefaultClauseContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::DefaultClauseContext::getRuleIndex() const {
+  return LuxParser::RuleDefaultClause;
+}
+
+
+std::any LuxParser::DefaultClauseContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitDefaultClause(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::DefaultClauseContext* ToLLVMParser::defaultClause() {
+LuxParser::DefaultClauseContext* LuxParser::defaultClause() {
   DefaultClauseContext *_localctx = _tracker.createInstance<DefaultClauseContext>(_ctx, getState());
-  enterRule(_localctx, 102, ToLLVMParser::RuleDefaultClause);
+  enterRule(_localctx, 102, LuxParser::RuleDefaultClause);
 
 #if __cplusplus > 201703L
   auto onExit = finally([=, this] {
@@ -5399,7 +5399,7 @@ ToLLVMParser::DefaultClauseContext* ToLLVMParser::defaultClause() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(659);
-    match(ToLLVMParser::DEFAULT);
+    match(LuxParser::DEFAULT);
     setState(660);
     block();
    
@@ -5415,1210 +5415,1210 @@ ToLLVMParser::DefaultClauseContext* ToLLVMParser::defaultClause() {
 
 //----------------- ExpressionContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext::ExpressionContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::ExpressionContext::ExpressionContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
 
-size_t ToLLVMParser::ExpressionContext::getRuleIndex() const {
-  return ToLLVMParser::RuleExpression;
+size_t LuxParser::ExpressionContext::getRuleIndex() const {
+  return LuxParser::RuleExpression;
 }
 
-void ToLLVMParser::ExpressionContext::copyFrom(ExpressionContext *ctx) {
+void LuxParser::ExpressionContext::copyFrom(ExpressionContext *ctx) {
   ParserRuleContext::copyFrom(ctx);
 }
 
 //----------------- FieldAccessExprContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::FieldAccessExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::FieldAccessExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::FieldAccessExprContext::DOT() {
-  return getToken(ToLLVMParser::DOT, 0);
+tree::TerminalNode* LuxParser::FieldAccessExprContext::DOT() {
+  return getToken(LuxParser::DOT, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::FieldAccessExprContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::FieldAccessExprContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-ToLLVMParser::FieldAccessExprContext::FieldAccessExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::FieldAccessExprContext::FieldAccessExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::FieldAccessExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::FieldAccessExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitFieldAccessExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- TypeofExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::TypeofExprContext::TYPEOF() {
-  return getToken(ToLLVMParser::TYPEOF, 0);
+tree::TerminalNode* LuxParser::TypeofExprContext::TYPEOF() {
+  return getToken(LuxParser::TYPEOF, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeofExprContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::TypeofExprContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::TypeofExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::TypeofExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeofExprContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::TypeofExprContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::TypeofExprContext::TypeofExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::TypeofExprContext::TypeofExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::TypeofExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::TypeofExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitTypeofExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- BitXorExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::BitXorExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::BitXorExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::BitXorExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::BitXorExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::BitXorExprContext::CARET() {
-  return getToken(ToLLVMParser::CARET, 0);
+tree::TerminalNode* LuxParser::BitXorExprContext::CARET() {
+  return getToken(LuxParser::CARET, 0);
 }
 
-ToLLVMParser::BitXorExprContext::BitXorExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::BitXorExprContext::BitXorExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::BitXorExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::BitXorExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitBitXorExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- LogicalNotExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::LogicalNotExprContext::NOT() {
-  return getToken(ToLLVMParser::NOT, 0);
+tree::TerminalNode* LuxParser::LogicalNotExprContext::NOT() {
+  return getToken(LuxParser::NOT, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::LogicalNotExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::LogicalNotExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::LogicalNotExprContext::LogicalNotExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::LogicalNotExprContext::LogicalNotExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::LogicalNotExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::LogicalNotExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitLogicalNotExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- IdentExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::IdentExprContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::IdentExprContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-ToLLVMParser::IdentExprContext::IdentExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::IdentExprContext::IdentExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::IdentExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::IdentExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitIdentExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- PreIncrExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::PreIncrExprContext::INCR() {
-  return getToken(ToLLVMParser::INCR, 0);
+tree::TerminalNode* LuxParser::PreIncrExprContext::INCR() {
+  return getToken(LuxParser::INCR, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::PreIncrExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::PreIncrExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::PreIncrExprContext::PreIncrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::PreIncrExprContext::PreIncrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::PreIncrExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::PreIncrExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitPreIncrExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- TernaryExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::TernaryExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::TernaryExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::TernaryExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::TernaryExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::TernaryExprContext::QUESTION() {
-  return getToken(ToLLVMParser::QUESTION, 0);
+tree::TerminalNode* LuxParser::TernaryExprContext::QUESTION() {
+  return getToken(LuxParser::QUESTION, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::TernaryExprContext::COLON() {
-  return getToken(ToLLVMParser::COLON, 0);
+tree::TerminalNode* LuxParser::TernaryExprContext::COLON() {
+  return getToken(LuxParser::COLON, 0);
 }
 
-ToLLVMParser::TernaryExprContext::TernaryExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::TernaryExprContext::TernaryExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::TernaryExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::TernaryExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitTernaryExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- NullLitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::NullLitExprContext::NULL_LIT() {
-  return getToken(ToLLVMParser::NULL_LIT, 0);
+tree::TerminalNode* LuxParser::NullLitExprContext::NULL_LIT() {
+  return getToken(LuxParser::NULL_LIT, 0);
 }
 
-ToLLVMParser::NullLitExprContext::NullLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::NullLitExprContext::NullLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::NullLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::NullLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitNullLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- MulExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::MulExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::MulExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::MulExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::MulExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::MulExprContext::STAR() {
-  return getToken(ToLLVMParser::STAR, 0);
+tree::TerminalNode* LuxParser::MulExprContext::STAR() {
+  return getToken(LuxParser::STAR, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::MulExprContext::SLASH() {
-  return getToken(ToLLVMParser::SLASH, 0);
+tree::TerminalNode* LuxParser::MulExprContext::SLASH() {
+  return getToken(LuxParser::SLASH, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::MulExprContext::PERCENT() {
-  return getToken(ToLLVMParser::PERCENT, 0);
+tree::TerminalNode* LuxParser::MulExprContext::PERCENT() {
+  return getToken(LuxParser::PERCENT, 0);
 }
 
-ToLLVMParser::MulExprContext::MulExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::MulExprContext::MulExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::MulExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::MulExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitMulExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- BitAndExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::BitAndExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::BitAndExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::BitAndExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::BitAndExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::BitAndExprContext::AMPERSAND() {
-  return getToken(ToLLVMParser::AMPERSAND, 0);
+tree::TerminalNode* LuxParser::BitAndExprContext::AMPERSAND() {
+  return getToken(LuxParser::AMPERSAND, 0);
 }
 
-ToLLVMParser::BitAndExprContext::BitAndExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::BitAndExprContext::BitAndExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::BitAndExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::BitAndExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitBitAndExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- IsExprContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::IsExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::IsExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::IsExprContext::IS() {
-  return getToken(ToLLVMParser::IS, 0);
+tree::TerminalNode* LuxParser::IsExprContext::IS() {
+  return getToken(LuxParser::IS, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::IsExprContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::IsExprContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-ToLLVMParser::IsExprContext::IsExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::IsExprContext::IsExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::IsExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::IsExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitIsExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- AddSubExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::AddSubExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::AddSubExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::AddSubExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::AddSubExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::AddSubExprContext::PLUS() {
-  return getToken(ToLLVMParser::PLUS, 0);
+tree::TerminalNode* LuxParser::AddSubExprContext::PLUS() {
+  return getToken(LuxParser::PLUS, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::AddSubExprContext::MINUS() {
-  return getToken(ToLLVMParser::MINUS, 0);
+tree::TerminalNode* LuxParser::AddSubExprContext::MINUS() {
+  return getToken(LuxParser::MINUS, 0);
 }
 
-ToLLVMParser::AddSubExprContext::AddSubExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::AddSubExprContext::AddSubExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::AddSubExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::AddSubExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitAddSubExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- IntLitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::IntLitExprContext::INT_LIT() {
-  return getToken(ToLLVMParser::INT_LIT, 0);
+tree::TerminalNode* LuxParser::IntLitExprContext::INT_LIT() {
+  return getToken(LuxParser::INT_LIT, 0);
 }
 
-ToLLVMParser::IntLitExprContext::IntLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::IntLitExprContext::IntLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::IntLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::IntLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitIntLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- AddrOfExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::AddrOfExprContext::AMPERSAND() {
-  return getToken(ToLLVMParser::AMPERSAND, 0);
+tree::TerminalNode* LuxParser::AddrOfExprContext::AMPERSAND() {
+  return getToken(LuxParser::AMPERSAND, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::AddrOfExprContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::AddrOfExprContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-ToLLVMParser::AddrOfExprContext::AddrOfExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::AddrOfExprContext::AddrOfExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::AddrOfExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::AddrOfExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitAddrOfExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- FloatLitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::FloatLitExprContext::FLOAT_LIT() {
-  return getToken(ToLLVMParser::FLOAT_LIT, 0);
+tree::TerminalNode* LuxParser::FloatLitExprContext::FLOAT_LIT() {
+  return getToken(LuxParser::FLOAT_LIT, 0);
 }
 
-ToLLVMParser::FloatLitExprContext::FloatLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::FloatLitExprContext::FloatLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::FloatLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::FloatLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitFloatLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- SpawnExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::SpawnExprContext::SPAWN() {
-  return getToken(ToLLVMParser::SPAWN, 0);
+tree::TerminalNode* LuxParser::SpawnExprContext::SPAWN() {
+  return getToken(LuxParser::SPAWN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::SpawnExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::SpawnExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::SpawnExprContext::SpawnExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::SpawnExprContext::SpawnExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::SpawnExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::SpawnExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitSpawnExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- ArrowAccessExprContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ArrowAccessExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::ArrowAccessExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowAccessExprContext::ARROW() {
-  return getToken(ToLLVMParser::ARROW, 0);
+tree::TerminalNode* LuxParser::ArrowAccessExprContext::ARROW() {
+  return getToken(LuxParser::ARROW, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrowAccessExprContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::ArrowAccessExprContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-ToLLVMParser::ArrowAccessExprContext::ArrowAccessExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::ArrowAccessExprContext::ArrowAccessExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::ArrowAccessExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::ArrowAccessExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitArrowAccessExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- ListCompExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::ListCompExprContext::LBRACKET() {
-  return getToken(ToLLVMParser::LBRACKET, 0);
+tree::TerminalNode* LuxParser::ListCompExprContext::LBRACKET() {
+  return getToken(LuxParser::LBRACKET, 0);
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::ListCompExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::ListCompExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ListCompExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::ListCompExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::ListCompExprContext::PIPE() {
-  return getToken(ToLLVMParser::PIPE, 0);
+tree::TerminalNode* LuxParser::ListCompExprContext::PIPE() {
+  return getToken(LuxParser::PIPE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ListCompExprContext::FOR() {
-  return getToken(ToLLVMParser::FOR, 0);
+tree::TerminalNode* LuxParser::ListCompExprContext::FOR() {
+  return getToken(LuxParser::FOR, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::ListCompExprContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::ListCompExprContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ListCompExprContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::ListCompExprContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ListCompExprContext::IN() {
-  return getToken(ToLLVMParser::IN, 0);
+tree::TerminalNode* LuxParser::ListCompExprContext::IN() {
+  return getToken(LuxParser::IN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ListCompExprContext::RBRACKET() {
-  return getToken(ToLLVMParser::RBRACKET, 0);
+tree::TerminalNode* LuxParser::ListCompExprContext::RBRACKET() {
+  return getToken(LuxParser::RBRACKET, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ListCompExprContext::IF() {
-  return getToken(ToLLVMParser::IF, 0);
+tree::TerminalNode* LuxParser::ListCompExprContext::IF() {
+  return getToken(LuxParser::IF, 0);
 }
 
-ToLLVMParser::ListCompExprContext::ListCompExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::ListCompExprContext::ListCompExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::ListCompExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::ListCompExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitListCompExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- ShiftExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::ShiftExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::ShiftExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ShiftExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::ShiftExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::ShiftExprContext::LSHIFT() {
-  return getToken(ToLLVMParser::LSHIFT, 0);
+tree::TerminalNode* LuxParser::ShiftExprContext::LSHIFT() {
+  return getToken(LuxParser::LSHIFT, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ShiftExprContext::RSHIFT() {
-  return getToken(ToLLVMParser::RSHIFT, 0);
+tree::TerminalNode* LuxParser::ShiftExprContext::RSHIFT() {
+  return getToken(LuxParser::RSHIFT, 0);
 }
 
-ToLLVMParser::ShiftExprContext::ShiftExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::ShiftExprContext::ShiftExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::ShiftExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::ShiftExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitShiftExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- IndexExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::IndexExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::IndexExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::IndexExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::IndexExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::IndexExprContext::LBRACKET() {
-  return getToken(ToLLVMParser::LBRACKET, 0);
+tree::TerminalNode* LuxParser::IndexExprContext::LBRACKET() {
+  return getToken(LuxParser::LBRACKET, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::IndexExprContext::RBRACKET() {
-  return getToken(ToLLVMParser::RBRACKET, 0);
+tree::TerminalNode* LuxParser::IndexExprContext::RBRACKET() {
+  return getToken(LuxParser::RBRACKET, 0);
 }
 
-ToLLVMParser::IndexExprContext::IndexExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::IndexExprContext::IndexExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::IndexExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::IndexExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitIndexExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- NegExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::NegExprContext::MINUS() {
-  return getToken(ToLLVMParser::MINUS, 0);
+tree::TerminalNode* LuxParser::NegExprContext::MINUS() {
+  return getToken(LuxParser::MINUS, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::NegExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::NegExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::NegExprContext::NegExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::NegExprContext::NegExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::NegExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::NegExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitNegExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- DerefExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::DerefExprContext::STAR() {
-  return getToken(ToLLVMParser::STAR, 0);
+tree::TerminalNode* LuxParser::DerefExprContext::STAR() {
+  return getToken(LuxParser::STAR, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::DerefExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::DerefExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::DerefExprContext::DerefExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::DerefExprContext::DerefExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::DerefExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::DerefExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitDerefExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- PreDecrExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::PreDecrExprContext::DECR() {
-  return getToken(ToLLVMParser::DECR, 0);
+tree::TerminalNode* LuxParser::PreDecrExprContext::DECR() {
+  return getToken(LuxParser::DECR, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::PreDecrExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::PreDecrExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::PreDecrExprContext::PreDecrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::PreDecrExprContext::PreDecrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::PreDecrExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::PreDecrExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitPreDecrExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- SpreadExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::SpreadExprContext::SPREAD() {
-  return getToken(ToLLVMParser::SPREAD, 0);
+tree::TerminalNode* LuxParser::SpreadExprContext::SPREAD() {
+  return getToken(LuxParser::SPREAD, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::SpreadExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::SpreadExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::SpreadExprContext::SpreadExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::SpreadExprContext::SpreadExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::SpreadExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::SpreadExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitSpreadExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- StaticMethodCallExprContext ------------------------------------------------------------------
 
-std::vector<tree::TerminalNode *> ToLLVMParser::StaticMethodCallExprContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::StaticMethodCallExprContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::StaticMethodCallExprContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::StaticMethodCallExprContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::StaticMethodCallExprContext::SCOPE() {
-  return getToken(ToLLVMParser::SCOPE, 0);
+tree::TerminalNode* LuxParser::StaticMethodCallExprContext::SCOPE() {
+  return getToken(LuxParser::SCOPE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::StaticMethodCallExprContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::StaticMethodCallExprContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::StaticMethodCallExprContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::StaticMethodCallExprContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::ArgListContext* ToLLVMParser::StaticMethodCallExprContext::argList() {
-  return getRuleContext<ToLLVMParser::ArgListContext>(0);
+LuxParser::ArgListContext* LuxParser::StaticMethodCallExprContext::argList() {
+  return getRuleContext<LuxParser::ArgListContext>(0);
 }
 
-ToLLVMParser::StaticMethodCallExprContext::StaticMethodCallExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::StaticMethodCallExprContext::StaticMethodCallExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::StaticMethodCallExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::StaticMethodCallExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitStaticMethodCallExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- NullCoalExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::NullCoalExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::NullCoalExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::NullCoalExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::NullCoalExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::NullCoalExprContext::NULLCOAL() {
-  return getToken(ToLLVMParser::NULLCOAL, 0);
+tree::TerminalNode* LuxParser::NullCoalExprContext::NULLCOAL() {
+  return getToken(LuxParser::NULLCOAL, 0);
 }
 
-ToLLVMParser::NullCoalExprContext::NullCoalExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::NullCoalExprContext::NullCoalExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::NullCoalExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::NullCoalExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitNullCoalExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- CastExprContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::CastExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::CastExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::CastExprContext::AS() {
-  return getToken(ToLLVMParser::AS, 0);
+tree::TerminalNode* LuxParser::CastExprContext::AS() {
+  return getToken(LuxParser::AS, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::CastExprContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::CastExprContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-ToLLVMParser::CastExprContext::CastExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::CastExprContext::CastExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::CastExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::CastExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitCastExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- EnumAccessExprContext ------------------------------------------------------------------
 
-std::vector<tree::TerminalNode *> ToLLVMParser::EnumAccessExprContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::EnumAccessExprContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::EnumAccessExprContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::EnumAccessExprContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::EnumAccessExprContext::SCOPE() {
-  return getToken(ToLLVMParser::SCOPE, 0);
+tree::TerminalNode* LuxParser::EnumAccessExprContext::SCOPE() {
+  return getToken(LuxParser::SCOPE, 0);
 }
 
-ToLLVMParser::EnumAccessExprContext::EnumAccessExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::EnumAccessExprContext::EnumAccessExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::EnumAccessExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::EnumAccessExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitEnumAccessExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- ParenExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::ParenExprContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::ParenExprContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ParenExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::ParenExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::ParenExprContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::ParenExprContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::ParenExprContext::ParenExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::ParenExprContext::ParenExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::ParenExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::ParenExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitParenExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- BitNotExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::BitNotExprContext::TILDE() {
-  return getToken(ToLLVMParser::TILDE, 0);
+tree::TerminalNode* LuxParser::BitNotExprContext::TILDE() {
+  return getToken(LuxParser::TILDE, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::BitNotExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::BitNotExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::BitNotExprContext::BitNotExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::BitNotExprContext::BitNotExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::BitNotExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::BitNotExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitBitNotExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- ArrayLitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::ArrayLitExprContext::LBRACKET() {
-  return getToken(ToLLVMParser::LBRACKET, 0);
+tree::TerminalNode* LuxParser::ArrayLitExprContext::LBRACKET() {
+  return getToken(LuxParser::LBRACKET, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrayLitExprContext::RBRACKET() {
-  return getToken(ToLLVMParser::RBRACKET, 0);
+tree::TerminalNode* LuxParser::ArrayLitExprContext::RBRACKET() {
+  return getToken(LuxParser::RBRACKET, 0);
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::ArrayLitExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::ArrayLitExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::ArrayLitExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::ArrayLitExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::ArrayLitExprContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::ArrayLitExprContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::ArrayLitExprContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
+tree::TerminalNode* LuxParser::ArrayLitExprContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
-ToLLVMParser::ArrayLitExprContext::ArrayLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::ArrayLitExprContext::ArrayLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::ArrayLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::ArrayLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitArrayLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- MethodCallExprContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::MethodCallExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::MethodCallExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::MethodCallExprContext::DOT() {
-  return getToken(ToLLVMParser::DOT, 0);
+tree::TerminalNode* LuxParser::MethodCallExprContext::DOT() {
+  return getToken(LuxParser::DOT, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::MethodCallExprContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::MethodCallExprContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::MethodCallExprContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::MethodCallExprContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::MethodCallExprContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::MethodCallExprContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::ArgListContext* ToLLVMParser::MethodCallExprContext::argList() {
-  return getRuleContext<ToLLVMParser::ArgListContext>(0);
+LuxParser::ArgListContext* LuxParser::MethodCallExprContext::argList() {
+  return getRuleContext<LuxParser::ArgListContext>(0);
 }
 
-ToLLVMParser::MethodCallExprContext::MethodCallExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::MethodCallExprContext::MethodCallExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::MethodCallExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::MethodCallExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitMethodCallExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- StructLitExprContext ------------------------------------------------------------------
 
-std::vector<tree::TerminalNode *> ToLLVMParser::StructLitExprContext::IDENTIFIER() {
-  return getTokens(ToLLVMParser::IDENTIFIER);
+std::vector<tree::TerminalNode *> LuxParser::StructLitExprContext::IDENTIFIER() {
+  return getTokens(LuxParser::IDENTIFIER);
 }
 
-tree::TerminalNode* ToLLVMParser::StructLitExprContext::IDENTIFIER(size_t i) {
-  return getToken(ToLLVMParser::IDENTIFIER, i);
+tree::TerminalNode* LuxParser::StructLitExprContext::IDENTIFIER(size_t i) {
+  return getToken(LuxParser::IDENTIFIER, i);
 }
 
-tree::TerminalNode* ToLLVMParser::StructLitExprContext::LBRACE() {
-  return getToken(ToLLVMParser::LBRACE, 0);
+tree::TerminalNode* LuxParser::StructLitExprContext::LBRACE() {
+  return getToken(LuxParser::LBRACE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::StructLitExprContext::RBRACE() {
-  return getToken(ToLLVMParser::RBRACE, 0);
+tree::TerminalNode* LuxParser::StructLitExprContext::RBRACE() {
+  return getToken(LuxParser::RBRACE, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::StructLitExprContext::COLON() {
-  return getTokens(ToLLVMParser::COLON);
+std::vector<tree::TerminalNode *> LuxParser::StructLitExprContext::COLON() {
+  return getTokens(LuxParser::COLON);
 }
 
-tree::TerminalNode* ToLLVMParser::StructLitExprContext::COLON(size_t i) {
-  return getToken(ToLLVMParser::COLON, i);
+tree::TerminalNode* LuxParser::StructLitExprContext::COLON(size_t i) {
+  return getToken(LuxParser::COLON, i);
 }
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::StructLitExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::StructLitExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::StructLitExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::StructLitExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::StructLitExprContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::StructLitExprContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::StructLitExprContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
+tree::TerminalNode* LuxParser::StructLitExprContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
-ToLLVMParser::StructLitExprContext::StructLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::StructLitExprContext::StructLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::StructLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::StructLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitStructLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- PostDecrExprContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::PostDecrExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::PostDecrExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::PostDecrExprContext::DECR() {
-  return getToken(ToLLVMParser::DECR, 0);
+tree::TerminalNode* LuxParser::PostDecrExprContext::DECR() {
+  return getToken(LuxParser::DECR, 0);
 }
 
-ToLLVMParser::PostDecrExprContext::PostDecrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::PostDecrExprContext::PostDecrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::PostDecrExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::PostDecrExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitPostDecrExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- RelExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::RelExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::RelExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::RelExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::RelExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::RelExprContext::LT() {
-  return getToken(ToLLVMParser::LT, 0);
+tree::TerminalNode* LuxParser::RelExprContext::LT() {
+  return getToken(LuxParser::LT, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::RelExprContext::GT() {
-  return getToken(ToLLVMParser::GT, 0);
+tree::TerminalNode* LuxParser::RelExprContext::GT() {
+  return getToken(LuxParser::GT, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::RelExprContext::LTE() {
-  return getToken(ToLLVMParser::LTE, 0);
+tree::TerminalNode* LuxParser::RelExprContext::LTE() {
+  return getToken(LuxParser::LTE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::RelExprContext::GTE() {
-  return getToken(ToLLVMParser::GTE, 0);
+tree::TerminalNode* LuxParser::RelExprContext::GTE() {
+  return getToken(LuxParser::GTE, 0);
 }
 
-ToLLVMParser::RelExprContext::RelExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::RelExprContext::RelExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::RelExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::RelExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitRelExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- RangeInclExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::RangeInclExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::RangeInclExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::RangeInclExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::RangeInclExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::RangeInclExprContext::RANGE_INCL() {
-  return getToken(ToLLVMParser::RANGE_INCL, 0);
+tree::TerminalNode* LuxParser::RangeInclExprContext::RANGE_INCL() {
+  return getToken(LuxParser::RANGE_INCL, 0);
 }
 
-ToLLVMParser::RangeInclExprContext::RangeInclExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::RangeInclExprContext::RangeInclExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::RangeInclExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::RangeInclExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitRangeInclExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- LogicalAndExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::LogicalAndExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::LogicalAndExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::LogicalAndExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::LogicalAndExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::LogicalAndExprContext::LAND() {
-  return getToken(ToLLVMParser::LAND, 0);
+tree::TerminalNode* LuxParser::LogicalAndExprContext::LAND() {
+  return getToken(LuxParser::LAND, 0);
 }
 
-ToLLVMParser::LogicalAndExprContext::LogicalAndExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::LogicalAndExprContext::LogicalAndExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::LogicalAndExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::LogicalAndExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitLogicalAndExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- StrLitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::StrLitExprContext::STR_LIT() {
-  return getToken(ToLLVMParser::STR_LIT, 0);
+tree::TerminalNode* LuxParser::StrLitExprContext::STR_LIT() {
+  return getToken(LuxParser::STR_LIT, 0);
 }
 
-ToLLVMParser::StrLitExprContext::StrLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::StrLitExprContext::StrLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::StrLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::StrLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitStrLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- AwaitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::AwaitExprContext::AWAIT() {
-  return getToken(ToLLVMParser::AWAIT, 0);
+tree::TerminalNode* LuxParser::AwaitExprContext::AWAIT() {
+  return getToken(LuxParser::AWAIT, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::AwaitExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::AwaitExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::AwaitExprContext::AwaitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::AwaitExprContext::AwaitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::AwaitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::AwaitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitAwaitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- CStrLitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::CStrLitExprContext::C_STR_LIT() {
-  return getToken(ToLLVMParser::C_STR_LIT, 0);
+tree::TerminalNode* LuxParser::CStrLitExprContext::C_STR_LIT() {
+  return getToken(LuxParser::C_STR_LIT, 0);
 }
 
-ToLLVMParser::CStrLitExprContext::CStrLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::CStrLitExprContext::CStrLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::CStrLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::CStrLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitCStrLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- FnCallExprContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::FnCallExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::FnCallExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::FnCallExprContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::FnCallExprContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::FnCallExprContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::FnCallExprContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::ArgListContext* ToLLVMParser::FnCallExprContext::argList() {
-  return getRuleContext<ToLLVMParser::ArgListContext>(0);
+LuxParser::ArgListContext* LuxParser::FnCallExprContext::argList() {
+  return getRuleContext<LuxParser::ArgListContext>(0);
 }
 
-ToLLVMParser::FnCallExprContext::FnCallExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::FnCallExprContext::FnCallExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::FnCallExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::FnCallExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitFnCallExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- LogicalOrExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::LogicalOrExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::LogicalOrExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::LogicalOrExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::LogicalOrExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::LogicalOrExprContext::LOR() {
-  return getToken(ToLLVMParser::LOR, 0);
+tree::TerminalNode* LuxParser::LogicalOrExprContext::LOR() {
+  return getToken(LuxParser::LOR, 0);
 }
 
-ToLLVMParser::LogicalOrExprContext::LogicalOrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::LogicalOrExprContext::LogicalOrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::LogicalOrExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::LogicalOrExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitLogicalOrExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- SizeofExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::SizeofExprContext::SIZEOF() {
-  return getToken(ToLLVMParser::SIZEOF, 0);
+tree::TerminalNode* LuxParser::SizeofExprContext::SIZEOF() {
+  return getToken(LuxParser::SIZEOF, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::SizeofExprContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::SizeofExprContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::SizeofExprContext::typeSpec() {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(0);
+LuxParser::TypeSpecContext* LuxParser::SizeofExprContext::typeSpec() {
+  return getRuleContext<LuxParser::TypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::SizeofExprContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::SizeofExprContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-ToLLVMParser::SizeofExprContext::SizeofExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::SizeofExprContext::SizeofExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::SizeofExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::SizeofExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitSizeofExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- EqExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::EqExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::EqExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::EqExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::EqExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::EqExprContext::EQ() {
-  return getToken(ToLLVMParser::EQ, 0);
+tree::TerminalNode* LuxParser::EqExprContext::EQ() {
+  return getToken(LuxParser::EQ, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::EqExprContext::NEQ() {
-  return getToken(ToLLVMParser::NEQ, 0);
+tree::TerminalNode* LuxParser::EqExprContext::NEQ() {
+  return getToken(LuxParser::NEQ, 0);
 }
 
-ToLLVMParser::EqExprContext::EqExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::EqExprContext::EqExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::EqExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::EqExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitEqExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- BitOrExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::BitOrExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::BitOrExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::BitOrExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::BitOrExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::BitOrExprContext::PIPE() {
-  return getToken(ToLLVMParser::PIPE, 0);
+tree::TerminalNode* LuxParser::BitOrExprContext::PIPE() {
+  return getToken(LuxParser::PIPE, 0);
 }
 
-ToLLVMParser::BitOrExprContext::BitOrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::BitOrExprContext::BitOrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::BitOrExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::BitOrExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitBitOrExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- CharLitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::CharLitExprContext::CHAR_LIT() {
-  return getToken(ToLLVMParser::CHAR_LIT, 0);
+tree::TerminalNode* LuxParser::CharLitExprContext::CHAR_LIT() {
+  return getToken(LuxParser::CHAR_LIT, 0);
 }
 
-ToLLVMParser::CharLitExprContext::CharLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::CharLitExprContext::CharLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::CharLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::CharLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitCharLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- TryExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::TryExprContext::TRY() {
-  return getToken(ToLLVMParser::TRY, 0);
+tree::TerminalNode* LuxParser::TryExprContext::TRY() {
+  return getToken(LuxParser::TRY, 0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::TryExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::TryExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-ToLLVMParser::TryExprContext::TryExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::TryExprContext::TryExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::TryExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::TryExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitTryExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- PostIncrExprContext ------------------------------------------------------------------
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::PostIncrExprContext::expression() {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(0);
+LuxParser::ExpressionContext* LuxParser::PostIncrExprContext::expression() {
+  return getRuleContext<LuxParser::ExpressionContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::PostIncrExprContext::INCR() {
-  return getToken(ToLLVMParser::INCR, 0);
+tree::TerminalNode* LuxParser::PostIncrExprContext::INCR() {
+  return getToken(LuxParser::INCR, 0);
 }
 
-ToLLVMParser::PostIncrExprContext::PostIncrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::PostIncrExprContext::PostIncrExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::PostIncrExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::PostIncrExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitPostIncrExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- BoolLitExprContext ------------------------------------------------------------------
 
-tree::TerminalNode* ToLLVMParser::BoolLitExprContext::BOOL_LIT() {
-  return getToken(ToLLVMParser::BOOL_LIT, 0);
+tree::TerminalNode* LuxParser::BoolLitExprContext::BOOL_LIT() {
+  return getToken(LuxParser::BOOL_LIT, 0);
 }
 
-ToLLVMParser::BoolLitExprContext::BoolLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::BoolLitExprContext::BoolLitExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::BoolLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::BoolLitExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitBoolLitExpr(this);
   else
     return visitor->visitChildren(this);
 }
 //----------------- RangeExprContext ------------------------------------------------------------------
 
-std::vector<ToLLVMParser::ExpressionContext *> ToLLVMParser::RangeExprContext::expression() {
-  return getRuleContexts<ToLLVMParser::ExpressionContext>();
+std::vector<LuxParser::ExpressionContext *> LuxParser::RangeExprContext::expression() {
+  return getRuleContexts<LuxParser::ExpressionContext>();
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::RangeExprContext::expression(size_t i) {
-  return getRuleContext<ToLLVMParser::ExpressionContext>(i);
+LuxParser::ExpressionContext* LuxParser::RangeExprContext::expression(size_t i) {
+  return getRuleContext<LuxParser::ExpressionContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::RangeExprContext::RANGE() {
-  return getToken(ToLLVMParser::RANGE, 0);
+tree::TerminalNode* LuxParser::RangeExprContext::RANGE() {
+  return getToken(LuxParser::RANGE, 0);
 }
 
-ToLLVMParser::RangeExprContext::RangeExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
+LuxParser::RangeExprContext::RangeExprContext(ExpressionContext *ctx) { copyFrom(ctx); }
 
 
-std::any ToLLVMParser::RangeExprContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+std::any LuxParser::RangeExprContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitRangeExpr(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::expression() {
+LuxParser::ExpressionContext* LuxParser::expression() {
    return expression(0);
 }
 
-ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
+LuxParser::ExpressionContext* LuxParser::expression(int precedence) {
   ParserRuleContext *parentContext = _ctx;
   size_t parentState = getState();
-  ToLLVMParser::ExpressionContext *_localctx = _tracker.createInstance<ExpressionContext>(_ctx, parentState);
-  ToLLVMParser::ExpressionContext *previousContext = _localctx;
+  LuxParser::ExpressionContext *_localctx = _tracker.createInstance<ExpressionContext>(_ctx, parentState);
+  LuxParser::ExpressionContext *previousContext = _localctx;
   (void)previousContext; // Silence compiler, in case the context is not used by generated code.
   size_t startState = 104;
-  enterRecursionRule(_localctx, 104, ToLLVMParser::RuleExpression, precedence);
+  enterRecursionRule(_localctx, 104, LuxParser::RuleExpression, precedence);
 
     size_t _la = 0;
 
@@ -6641,30 +6641,30 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       previousContext = _localctx;
 
       setState(663);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(664);
-      match(ToLLVMParser::LBRACE);
+      match(LuxParser::LBRACE);
       setState(677);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
-      if (_la == ToLLVMParser::IDENTIFIER) {
+      if (_la == LuxParser::IDENTIFIER) {
         setState(665);
-        match(ToLLVMParser::IDENTIFIER);
+        match(LuxParser::IDENTIFIER);
         setState(666);
-        match(ToLLVMParser::COLON);
+        match(LuxParser::COLON);
         setState(667);
         expression(0);
         setState(674);
         _errHandler->sync(this);
         _la = _input->LA(1);
-        while (_la == ToLLVMParser::COMMA) {
+        while (_la == LuxParser::COMMA) {
           setState(668);
-          match(ToLLVMParser::COMMA);
+          match(LuxParser::COMMA);
           setState(669);
-          match(ToLLVMParser::IDENTIFIER);
+          match(LuxParser::IDENTIFIER);
           setState(670);
-          match(ToLLVMParser::COLON);
+          match(LuxParser::COLON);
           setState(671);
           expression(0);
           setState(676);
@@ -6673,7 +6673,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
         }
       }
       setState(679);
-      match(ToLLVMParser::RBRACE);
+      match(LuxParser::RBRACE);
       break;
     }
 
@@ -6682,13 +6682,13 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(680);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(681);
-      match(ToLLVMParser::SCOPE);
+      match(LuxParser::SCOPE);
       setState(682);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(683);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(685);
       _errHandler->sync(this);
 
@@ -6700,7 +6700,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
         argList();
       }
       setState(687);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       break;
     }
 
@@ -6709,11 +6709,11 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(688);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(689);
-      match(ToLLVMParser::SCOPE);
+      match(LuxParser::SCOPE);
       setState(690);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       break;
     }
 
@@ -6722,7 +6722,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(691);
-      match(ToLLVMParser::STAR);
+      match(LuxParser::STAR);
       setState(692);
       expression(38);
       break;
@@ -6733,9 +6733,9 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(693);
-      match(ToLLVMParser::AMPERSAND);
+      match(LuxParser::AMPERSAND);
       setState(694);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       break;
     }
 
@@ -6744,7 +6744,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(695);
-      match(ToLLVMParser::MINUS);
+      match(LuxParser::MINUS);
       setState(696);
       expression(36);
       break;
@@ -6755,7 +6755,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(697);
-      match(ToLLVMParser::SPAWN);
+      match(LuxParser::SPAWN);
       setState(698);
       expression(35);
       break;
@@ -6766,7 +6766,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(699);
-      match(ToLLVMParser::AWAIT);
+      match(LuxParser::AWAIT);
       setState(700);
       expression(34);
       break;
@@ -6777,7 +6777,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(701);
-      match(ToLLVMParser::NOT);
+      match(LuxParser::NOT);
       setState(702);
       expression(33);
       break;
@@ -6788,7 +6788,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(703);
-      match(ToLLVMParser::TILDE);
+      match(LuxParser::TILDE);
       setState(704);
       expression(32);
       break;
@@ -6799,7 +6799,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(705);
-      match(ToLLVMParser::INCR);
+      match(LuxParser::INCR);
       setState(706);
       expression(31);
       break;
@@ -6810,7 +6810,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(707);
-      match(ToLLVMParser::DECR);
+      match(LuxParser::DECR);
       setState(708);
       expression(30);
       break;
@@ -6821,13 +6821,13 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(709);
-      match(ToLLVMParser::SIZEOF);
+      match(LuxParser::SIZEOF);
       setState(710);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(711);
       typeSpec();
       setState(712);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       break;
     }
 
@@ -6836,13 +6836,13 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(714);
-      match(ToLLVMParser::TYPEOF);
+      match(LuxParser::TYPEOF);
       setState(715);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(716);
       expression(0);
       setState(717);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       break;
     }
 
@@ -6851,7 +6851,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(719);
-      match(ToLLVMParser::TRY);
+      match(LuxParser::TRY);
       setState(720);
       expression(13);
       break;
@@ -6862,11 +6862,11 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(721);
-      match(ToLLVMParser::LPAREN);
+      match(LuxParser::LPAREN);
       setState(722);
       expression(0);
       setState(723);
-      match(ToLLVMParser::RPAREN);
+      match(LuxParser::RPAREN);
       break;
     }
 
@@ -6875,7 +6875,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(725);
-      match(ToLLVMParser::SPREAD);
+      match(LuxParser::SPREAD);
       setState(726);
       expression(11);
       break;
@@ -6886,33 +6886,33 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(727);
-      match(ToLLVMParser::LBRACKET);
+      match(LuxParser::LBRACKET);
       setState(728);
       expression(0);
       setState(729);
-      match(ToLLVMParser::PIPE);
+      match(LuxParser::PIPE);
       setState(730);
-      match(ToLLVMParser::FOR);
+      match(LuxParser::FOR);
       setState(731);
       typeSpec();
       setState(732);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(733);
-      match(ToLLVMParser::IN);
+      match(LuxParser::IN);
       setState(734);
       expression(0);
       setState(737);
       _errHandler->sync(this);
 
       _la = _input->LA(1);
-      if (_la == ToLLVMParser::IF) {
+      if (_la == LuxParser::IF) {
         setState(735);
-        match(ToLLVMParser::IF);
+        match(LuxParser::IF);
         setState(736);
         expression(0);
       }
       setState(739);
-      match(ToLLVMParser::RBRACKET);
+      match(LuxParser::RBRACKET);
       break;
     }
 
@@ -6921,7 +6921,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(741);
-      match(ToLLVMParser::LBRACKET);
+      match(LuxParser::LBRACKET);
       setState(750);
       _errHandler->sync(this);
 
@@ -6934,9 +6934,9 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
         setState(747);
         _errHandler->sync(this);
         _la = _input->LA(1);
-        while (_la == ToLLVMParser::COMMA) {
+        while (_la == LuxParser::COMMA) {
           setState(743);
-          match(ToLLVMParser::COMMA);
+          match(LuxParser::COMMA);
           setState(744);
           expression(0);
           setState(749);
@@ -6945,7 +6945,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
         }
       }
       setState(752);
-      match(ToLLVMParser::RBRACKET);
+      match(LuxParser::RBRACKET);
       break;
     }
 
@@ -6954,7 +6954,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(753);
-      match(ToLLVMParser::NULL_LIT);
+      match(LuxParser::NULL_LIT);
       break;
     }
 
@@ -6963,7 +6963,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(754);
-      match(ToLLVMParser::INT_LIT);
+      match(LuxParser::INT_LIT);
       break;
     }
 
@@ -6972,7 +6972,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(755);
-      match(ToLLVMParser::FLOAT_LIT);
+      match(LuxParser::FLOAT_LIT);
       break;
     }
 
@@ -6981,7 +6981,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(756);
-      match(ToLLVMParser::BOOL_LIT);
+      match(LuxParser::BOOL_LIT);
       break;
     }
 
@@ -6990,7 +6990,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(757);
-      match(ToLLVMParser::CHAR_LIT);
+      match(LuxParser::CHAR_LIT);
       break;
     }
 
@@ -6999,7 +6999,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(758);
-      match(ToLLVMParser::STR_LIT);
+      match(LuxParser::STR_LIT);
       break;
     }
 
@@ -7008,7 +7008,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(759);
-      match(ToLLVMParser::C_STR_LIT);
+      match(LuxParser::C_STR_LIT);
       break;
     }
 
@@ -7017,7 +7017,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
       _ctx = _localctx;
       previousContext = _localctx;
       setState(760);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       break;
     }
 
@@ -7069,9 +7069,9 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
           setState(767);
           antlrcpp::downCast<AddSubExprContext *>(_localctx)->op = _input->LT(1);
           _la = _input->LA(1);
-          if (!(_la == ToLLVMParser::MINUS
+          if (!(_la == LuxParser::MINUS
 
-          || _la == ToLLVMParser::PLUS)) {
+          || _la == LuxParser::PLUS)) {
             antlrcpp::downCast<AddSubExprContext *>(_localctx)->op = _errHandler->recoverInline(this);
           }
           else {
@@ -7093,9 +7093,9 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
           setState(770);
           antlrcpp::downCast<ShiftExprContext *>(_localctx)->op = _input->LT(1);
           _la = _input->LA(1);
-          if (!(_la == ToLLVMParser::LSHIFT
+          if (!(_la == LuxParser::LSHIFT
 
-          || _la == ToLLVMParser::RSHIFT)) {
+          || _la == LuxParser::RSHIFT)) {
             antlrcpp::downCast<ShiftExprContext *>(_localctx)->op = _errHandler->recoverInline(this);
           }
           else {
@@ -7140,9 +7140,9 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
           setState(776);
           antlrcpp::downCast<EqExprContext *>(_localctx)->op = _input->LT(1);
           _la = _input->LA(1);
-          if (!(_la == ToLLVMParser::EQ
+          if (!(_la == LuxParser::EQ
 
-          || _la == ToLLVMParser::NEQ)) {
+          || _la == LuxParser::NEQ)) {
             antlrcpp::downCast<EqExprContext *>(_localctx)->op = _errHandler->recoverInline(this);
           }
           else {
@@ -7162,7 +7162,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 22))) throw FailedPredicateException(this, "precpred(_ctx, 22)");
           setState(779);
-          match(ToLLVMParser::AMPERSAND);
+          match(LuxParser::AMPERSAND);
           setState(780);
           expression(23);
           break;
@@ -7176,7 +7176,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 21))) throw FailedPredicateException(this, "precpred(_ctx, 21)");
           setState(782);
-          match(ToLLVMParser::CARET);
+          match(LuxParser::CARET);
           setState(783);
           expression(22);
           break;
@@ -7190,7 +7190,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 20))) throw FailedPredicateException(this, "precpred(_ctx, 20)");
           setState(785);
-          match(ToLLVMParser::PIPE);
+          match(LuxParser::PIPE);
           setState(786);
           expression(21);
           break;
@@ -7204,7 +7204,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 19))) throw FailedPredicateException(this, "precpred(_ctx, 19)");
           setState(788);
-          match(ToLLVMParser::LAND);
+          match(LuxParser::LAND);
           setState(789);
           expression(20);
           break;
@@ -7218,7 +7218,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 18))) throw FailedPredicateException(this, "precpred(_ctx, 18)");
           setState(791);
-          match(ToLLVMParser::LOR);
+          match(LuxParser::LOR);
           setState(792);
           expression(19);
           break;
@@ -7232,7 +7232,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 17))) throw FailedPredicateException(this, "precpred(_ctx, 17)");
           setState(794);
-          match(ToLLVMParser::NULLCOAL);
+          match(LuxParser::NULLCOAL);
           setState(795);
           expression(18);
           break;
@@ -7246,7 +7246,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 16))) throw FailedPredicateException(this, "precpred(_ctx, 16)");
           setState(797);
-          match(ToLLVMParser::RANGE);
+          match(LuxParser::RANGE);
           setState(798);
           expression(17);
           break;
@@ -7260,7 +7260,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 15))) throw FailedPredicateException(this, "precpred(_ctx, 15)");
           setState(800);
-          match(ToLLVMParser::RANGE_INCL);
+          match(LuxParser::RANGE_INCL);
           setState(801);
           expression(16);
           break;
@@ -7274,11 +7274,11 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 14))) throw FailedPredicateException(this, "precpred(_ctx, 14)");
           setState(803);
-          match(ToLLVMParser::QUESTION);
+          match(LuxParser::QUESTION);
           setState(804);
           expression(0);
           setState(805);
-          match(ToLLVMParser::COLON);
+          match(LuxParser::COLON);
           setState(806);
           expression(15);
           break;
@@ -7292,11 +7292,11 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 50))) throw FailedPredicateException(this, "precpred(_ctx, 50)");
           setState(809);
-          match(ToLLVMParser::DOT);
+          match(LuxParser::DOT);
           setState(810);
-          match(ToLLVMParser::IDENTIFIER);
+          match(LuxParser::IDENTIFIER);
           setState(811);
-          match(ToLLVMParser::LPAREN);
+          match(LuxParser::LPAREN);
           setState(813);
           _errHandler->sync(this);
 
@@ -7308,7 +7308,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
             argList();
           }
           setState(815);
-          match(ToLLVMParser::RPAREN);
+          match(LuxParser::RPAREN);
           break;
         }
 
@@ -7320,7 +7320,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 49))) throw FailedPredicateException(this, "precpred(_ctx, 49)");
           setState(817);
-          match(ToLLVMParser::LPAREN);
+          match(LuxParser::LPAREN);
           setState(819);
           _errHandler->sync(this);
 
@@ -7332,7 +7332,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
             argList();
           }
           setState(821);
-          match(ToLLVMParser::RPAREN);
+          match(LuxParser::RPAREN);
           break;
         }
 
@@ -7344,9 +7344,9 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 48))) throw FailedPredicateException(this, "precpred(_ctx, 48)");
           setState(823);
-          match(ToLLVMParser::DOT);
+          match(LuxParser::DOT);
           setState(824);
-          match(ToLLVMParser::IDENTIFIER);
+          match(LuxParser::IDENTIFIER);
           break;
         }
 
@@ -7358,9 +7358,9 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 47))) throw FailedPredicateException(this, "precpred(_ctx, 47)");
           setState(826);
-          match(ToLLVMParser::ARROW);
+          match(LuxParser::ARROW);
           setState(827);
-          match(ToLLVMParser::IDENTIFIER);
+          match(LuxParser::IDENTIFIER);
           break;
         }
 
@@ -7372,11 +7372,11 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 46))) throw FailedPredicateException(this, "precpred(_ctx, 46)");
           setState(829);
-          match(ToLLVMParser::LBRACKET);
+          match(LuxParser::LBRACKET);
           setState(830);
           expression(0);
           setState(831);
-          match(ToLLVMParser::RBRACKET);
+          match(LuxParser::RBRACKET);
           break;
         }
 
@@ -7388,7 +7388,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 45))) throw FailedPredicateException(this, "precpred(_ctx, 45)");
           setState(834);
-          match(ToLLVMParser::AS);
+          match(LuxParser::AS);
           setState(835);
           typeSpec();
           break;
@@ -7402,7 +7402,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 44))) throw FailedPredicateException(this, "precpred(_ctx, 44)");
           setState(837);
-          match(ToLLVMParser::IS);
+          match(LuxParser::IS);
           setState(838);
           typeSpec();
           break;
@@ -7416,7 +7416,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 43))) throw FailedPredicateException(this, "precpred(_ctx, 43)");
           setState(840);
-          match(ToLLVMParser::INCR);
+          match(LuxParser::INCR);
           break;
         }
 
@@ -7428,7 +7428,7 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
           if (!(precpred(_ctx, 42))) throw FailedPredicateException(this, "precpred(_ctx, 42)");
           setState(842);
-          match(ToLLVMParser::DECR);
+          match(LuxParser::DECR);
           break;
         }
 
@@ -7451,78 +7451,78 @@ ToLLVMParser::ExpressionContext* ToLLVMParser::expression(int precedence) {
 
 //----------------- TypeSpecContext ------------------------------------------------------------------
 
-ToLLVMParser::TypeSpecContext::TypeSpecContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::TypeSpecContext::TypeSpecContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::TypeSpecContext::STAR() {
-  return getToken(ToLLVMParser::STAR, 0);
+tree::TerminalNode* LuxParser::TypeSpecContext::STAR() {
+  return getToken(LuxParser::STAR, 0);
 }
 
-std::vector<ToLLVMParser::TypeSpecContext *> ToLLVMParser::TypeSpecContext::typeSpec() {
-  return getRuleContexts<ToLLVMParser::TypeSpecContext>();
+std::vector<LuxParser::TypeSpecContext *> LuxParser::TypeSpecContext::typeSpec() {
+  return getRuleContexts<LuxParser::TypeSpecContext>();
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::TypeSpecContext::typeSpec(size_t i) {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(i);
+LuxParser::TypeSpecContext* LuxParser::TypeSpecContext::typeSpec(size_t i) {
+  return getRuleContext<LuxParser::TypeSpecContext>(i);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeSpecContext::LBRACKET() {
-  return getToken(ToLLVMParser::LBRACKET, 0);
+tree::TerminalNode* LuxParser::TypeSpecContext::LBRACKET() {
+  return getToken(LuxParser::LBRACKET, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeSpecContext::INT_LIT() {
-  return getToken(ToLLVMParser::INT_LIT, 0);
+tree::TerminalNode* LuxParser::TypeSpecContext::INT_LIT() {
+  return getToken(LuxParser::INT_LIT, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeSpecContext::RBRACKET() {
-  return getToken(ToLLVMParser::RBRACKET, 0);
+tree::TerminalNode* LuxParser::TypeSpecContext::RBRACKET() {
+  return getToken(LuxParser::RBRACKET, 0);
 }
 
-ToLLVMParser::FnTypeSpecContext* ToLLVMParser::TypeSpecContext::fnTypeSpec() {
-  return getRuleContext<ToLLVMParser::FnTypeSpecContext>(0);
+LuxParser::FnTypeSpecContext* LuxParser::TypeSpecContext::fnTypeSpec() {
+  return getRuleContext<LuxParser::FnTypeSpecContext>(0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeSpecContext::IDENTIFIER() {
-  return getToken(ToLLVMParser::IDENTIFIER, 0);
+tree::TerminalNode* LuxParser::TypeSpecContext::IDENTIFIER() {
+  return getToken(LuxParser::IDENTIFIER, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeSpecContext::LT() {
-  return getToken(ToLLVMParser::LT, 0);
+tree::TerminalNode* LuxParser::TypeSpecContext::LT() {
+  return getToken(LuxParser::LT, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeSpecContext::GT() {
-  return getToken(ToLLVMParser::GT, 0);
+tree::TerminalNode* LuxParser::TypeSpecContext::GT() {
+  return getToken(LuxParser::GT, 0);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::TypeSpecContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::TypeSpecContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::TypeSpecContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
+tree::TerminalNode* LuxParser::TypeSpecContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
-ToLLVMParser::PrimitiveTypeContext* ToLLVMParser::TypeSpecContext::primitiveType() {
-  return getRuleContext<ToLLVMParser::PrimitiveTypeContext>(0);
-}
-
-
-size_t ToLLVMParser::TypeSpecContext::getRuleIndex() const {
-  return ToLLVMParser::RuleTypeSpec;
+LuxParser::PrimitiveTypeContext* LuxParser::TypeSpecContext::primitiveType() {
+  return getRuleContext<LuxParser::PrimitiveTypeContext>(0);
 }
 
 
-std::any ToLLVMParser::TypeSpecContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::TypeSpecContext::getRuleIndex() const {
+  return LuxParser::RuleTypeSpec;
+}
+
+
+std::any LuxParser::TypeSpecContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitTypeSpec(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::typeSpec() {
+LuxParser::TypeSpecContext* LuxParser::typeSpec() {
   TypeSpecContext *_localctx = _tracker.createInstance<TypeSpecContext>(_ctx, getState());
-  enterRule(_localctx, 106, ToLLVMParser::RuleTypeSpec);
+  enterRule(_localctx, 106, LuxParser::RuleTypeSpec);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -7539,7 +7539,7 @@ ToLLVMParser::TypeSpecContext* ToLLVMParser::typeSpec() {
     case 1: {
       enterOuterAlt(_localctx, 1);
       setState(848);
-      match(ToLLVMParser::STAR);
+      match(LuxParser::STAR);
       setState(849);
       typeSpec();
       break;
@@ -7548,11 +7548,11 @@ ToLLVMParser::TypeSpecContext* ToLLVMParser::typeSpec() {
     case 2: {
       enterOuterAlt(_localctx, 2);
       setState(850);
-      match(ToLLVMParser::LBRACKET);
+      match(LuxParser::LBRACKET);
       setState(851);
-      match(ToLLVMParser::INT_LIT);
+      match(LuxParser::INT_LIT);
       setState(852);
-      match(ToLLVMParser::RBRACKET);
+      match(LuxParser::RBRACKET);
       setState(853);
       typeSpec();
       break;
@@ -7561,9 +7561,9 @@ ToLLVMParser::TypeSpecContext* ToLLVMParser::typeSpec() {
     case 3: {
       enterOuterAlt(_localctx, 3);
       setState(854);
-      match(ToLLVMParser::LBRACKET);
+      match(LuxParser::LBRACKET);
       setState(855);
-      match(ToLLVMParser::RBRACKET);
+      match(LuxParser::RBRACKET);
       setState(856);
       typeSpec();
       break;
@@ -7579,17 +7579,17 @@ ToLLVMParser::TypeSpecContext* ToLLVMParser::typeSpec() {
     case 5: {
       enterOuterAlt(_localctx, 5);
       setState(858);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       setState(859);
-      match(ToLLVMParser::LT);
+      match(LuxParser::LT);
       setState(860);
       typeSpec();
       setState(865);
       _errHandler->sync(this);
       _la = _input->LA(1);
-      while (_la == ToLLVMParser::COMMA) {
+      while (_la == LuxParser::COMMA) {
         setState(861);
-        match(ToLLVMParser::COMMA);
+        match(LuxParser::COMMA);
         setState(862);
         typeSpec();
         setState(867);
@@ -7597,7 +7597,7 @@ ToLLVMParser::TypeSpecContext* ToLLVMParser::typeSpec() {
         _la = _input->LA(1);
       }
       setState(868);
-      match(ToLLVMParser::GT);
+      match(LuxParser::GT);
       break;
     }
 
@@ -7611,7 +7611,7 @@ ToLLVMParser::TypeSpecContext* ToLLVMParser::typeSpec() {
     case 7: {
       enterOuterAlt(_localctx, 7);
       setState(871);
-      match(ToLLVMParser::IDENTIFIER);
+      match(LuxParser::IDENTIFIER);
       break;
     }
 
@@ -7631,58 +7631,58 @@ ToLLVMParser::TypeSpecContext* ToLLVMParser::typeSpec() {
 
 //----------------- FnTypeSpecContext ------------------------------------------------------------------
 
-ToLLVMParser::FnTypeSpecContext::FnTypeSpecContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::FnTypeSpecContext::FnTypeSpecContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::FnTypeSpecContext::FN() {
-  return getToken(ToLLVMParser::FN, 0);
+tree::TerminalNode* LuxParser::FnTypeSpecContext::FN() {
+  return getToken(LuxParser::FN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::FnTypeSpecContext::LPAREN() {
-  return getToken(ToLLVMParser::LPAREN, 0);
+tree::TerminalNode* LuxParser::FnTypeSpecContext::LPAREN() {
+  return getToken(LuxParser::LPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::FnTypeSpecContext::RPAREN() {
-  return getToken(ToLLVMParser::RPAREN, 0);
+tree::TerminalNode* LuxParser::FnTypeSpecContext::RPAREN() {
+  return getToken(LuxParser::RPAREN, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::FnTypeSpecContext::ARROW() {
-  return getToken(ToLLVMParser::ARROW, 0);
+tree::TerminalNode* LuxParser::FnTypeSpecContext::ARROW() {
+  return getToken(LuxParser::ARROW, 0);
 }
 
-std::vector<ToLLVMParser::TypeSpecContext *> ToLLVMParser::FnTypeSpecContext::typeSpec() {
-  return getRuleContexts<ToLLVMParser::TypeSpecContext>();
+std::vector<LuxParser::TypeSpecContext *> LuxParser::FnTypeSpecContext::typeSpec() {
+  return getRuleContexts<LuxParser::TypeSpecContext>();
 }
 
-ToLLVMParser::TypeSpecContext* ToLLVMParser::FnTypeSpecContext::typeSpec(size_t i) {
-  return getRuleContext<ToLLVMParser::TypeSpecContext>(i);
+LuxParser::TypeSpecContext* LuxParser::FnTypeSpecContext::typeSpec(size_t i) {
+  return getRuleContext<LuxParser::TypeSpecContext>(i);
 }
 
-std::vector<tree::TerminalNode *> ToLLVMParser::FnTypeSpecContext::COMMA() {
-  return getTokens(ToLLVMParser::COMMA);
+std::vector<tree::TerminalNode *> LuxParser::FnTypeSpecContext::COMMA() {
+  return getTokens(LuxParser::COMMA);
 }
 
-tree::TerminalNode* ToLLVMParser::FnTypeSpecContext::COMMA(size_t i) {
-  return getToken(ToLLVMParser::COMMA, i);
-}
-
-
-size_t ToLLVMParser::FnTypeSpecContext::getRuleIndex() const {
-  return ToLLVMParser::RuleFnTypeSpec;
+tree::TerminalNode* LuxParser::FnTypeSpecContext::COMMA(size_t i) {
+  return getToken(LuxParser::COMMA, i);
 }
 
 
-std::any ToLLVMParser::FnTypeSpecContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::FnTypeSpecContext::getRuleIndex() const {
+  return LuxParser::RuleFnTypeSpec;
+}
+
+
+std::any LuxParser::FnTypeSpecContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitFnTypeSpec(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::FnTypeSpecContext* ToLLVMParser::fnTypeSpec() {
+LuxParser::FnTypeSpecContext* LuxParser::fnTypeSpec() {
   FnTypeSpecContext *_localctx = _tracker.createInstance<FnTypeSpecContext>(_ctx, getState());
-  enterRule(_localctx, 108, ToLLVMParser::RuleFnTypeSpec);
+  enterRule(_localctx, 108, LuxParser::RuleFnTypeSpec);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -7695,9 +7695,9 @@ ToLLVMParser::FnTypeSpecContext* ToLLVMParser::fnTypeSpec() {
   try {
     enterOuterAlt(_localctx, 1);
     setState(874);
-    match(ToLLVMParser::FN);
+    match(LuxParser::FN);
     setState(875);
-    match(ToLLVMParser::LPAREN);
+    match(LuxParser::LPAREN);
     setState(884);
     _errHandler->sync(this);
 
@@ -7710,9 +7710,9 @@ ToLLVMParser::FnTypeSpecContext* ToLLVMParser::fnTypeSpec() {
       setState(881);
       _errHandler->sync(this);
       _la = _input->LA(1);
-      while (_la == ToLLVMParser::COMMA) {
+      while (_la == LuxParser::COMMA) {
         setState(877);
-        match(ToLLVMParser::COMMA);
+        match(LuxParser::COMMA);
         setState(878);
         typeSpec();
         setState(883);
@@ -7721,9 +7721,9 @@ ToLLVMParser::FnTypeSpecContext* ToLLVMParser::fnTypeSpec() {
       }
     }
     setState(886);
-    match(ToLLVMParser::RPAREN);
+    match(LuxParser::RPAREN);
     setState(887);
-    match(ToLLVMParser::ARROW);
+    match(LuxParser::ARROW);
     setState(888);
     typeSpec();
    
@@ -7739,126 +7739,126 @@ ToLLVMParser::FnTypeSpecContext* ToLLVMParser::fnTypeSpec() {
 
 //----------------- PrimitiveTypeContext ------------------------------------------------------------------
 
-ToLLVMParser::PrimitiveTypeContext::PrimitiveTypeContext(ParserRuleContext *parent, size_t invokingState)
+LuxParser::PrimitiveTypeContext::PrimitiveTypeContext(ParserRuleContext *parent, size_t invokingState)
   : ParserRuleContext(parent, invokingState) {
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::INT1() {
-  return getToken(ToLLVMParser::INT1, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::INT1() {
+  return getToken(LuxParser::INT1, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::INT8() {
-  return getToken(ToLLVMParser::INT8, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::INT8() {
+  return getToken(LuxParser::INT8, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::INT16() {
-  return getToken(ToLLVMParser::INT16, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::INT16() {
+  return getToken(LuxParser::INT16, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::INT32() {
-  return getToken(ToLLVMParser::INT32, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::INT32() {
+  return getToken(LuxParser::INT32, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::INT64() {
-  return getToken(ToLLVMParser::INT64, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::INT64() {
+  return getToken(LuxParser::INT64, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::INT128() {
-  return getToken(ToLLVMParser::INT128, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::INT128() {
+  return getToken(LuxParser::INT128, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::INTINF() {
-  return getToken(ToLLVMParser::INTINF, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::INTINF() {
+  return getToken(LuxParser::INTINF, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::ISIZE() {
-  return getToken(ToLLVMParser::ISIZE, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::ISIZE() {
+  return getToken(LuxParser::ISIZE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::UINT1() {
-  return getToken(ToLLVMParser::UINT1, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::UINT1() {
+  return getToken(LuxParser::UINT1, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::UINT8() {
-  return getToken(ToLLVMParser::UINT8, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::UINT8() {
+  return getToken(LuxParser::UINT8, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::UINT16() {
-  return getToken(ToLLVMParser::UINT16, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::UINT16() {
+  return getToken(LuxParser::UINT16, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::UINT32() {
-  return getToken(ToLLVMParser::UINT32, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::UINT32() {
+  return getToken(LuxParser::UINT32, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::UINT64() {
-  return getToken(ToLLVMParser::UINT64, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::UINT64() {
+  return getToken(LuxParser::UINT64, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::UINT128() {
-  return getToken(ToLLVMParser::UINT128, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::UINT128() {
+  return getToken(LuxParser::UINT128, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::USIZE() {
-  return getToken(ToLLVMParser::USIZE, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::USIZE() {
+  return getToken(LuxParser::USIZE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::FLOAT32() {
-  return getToken(ToLLVMParser::FLOAT32, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::FLOAT32() {
+  return getToken(LuxParser::FLOAT32, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::FLOAT64() {
-  return getToken(ToLLVMParser::FLOAT64, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::FLOAT64() {
+  return getToken(LuxParser::FLOAT64, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::FLOAT80() {
-  return getToken(ToLLVMParser::FLOAT80, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::FLOAT80() {
+  return getToken(LuxParser::FLOAT80, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::FLOAT128() {
-  return getToken(ToLLVMParser::FLOAT128, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::FLOAT128() {
+  return getToken(LuxParser::FLOAT128, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::DOUBLE() {
-  return getToken(ToLLVMParser::DOUBLE, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::DOUBLE() {
+  return getToken(LuxParser::DOUBLE, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::BOOL() {
-  return getToken(ToLLVMParser::BOOL, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::BOOL() {
+  return getToken(LuxParser::BOOL, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::CHAR() {
-  return getToken(ToLLVMParser::CHAR, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::CHAR() {
+  return getToken(LuxParser::CHAR, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::VOID() {
-  return getToken(ToLLVMParser::VOID, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::VOID() {
+  return getToken(LuxParser::VOID, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::STRING() {
-  return getToken(ToLLVMParser::STRING, 0);
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::STRING() {
+  return getToken(LuxParser::STRING, 0);
 }
 
-tree::TerminalNode* ToLLVMParser::PrimitiveTypeContext::CSTRING() {
-  return getToken(ToLLVMParser::CSTRING, 0);
-}
-
-
-size_t ToLLVMParser::PrimitiveTypeContext::getRuleIndex() const {
-  return ToLLVMParser::RulePrimitiveType;
+tree::TerminalNode* LuxParser::PrimitiveTypeContext::CSTRING() {
+  return getToken(LuxParser::CSTRING, 0);
 }
 
 
-std::any ToLLVMParser::PrimitiveTypeContext::accept(tree::ParseTreeVisitor *visitor) {
-  if (auto parserVisitor = dynamic_cast<ToLLVMParserVisitor*>(visitor))
+size_t LuxParser::PrimitiveTypeContext::getRuleIndex() const {
+  return LuxParser::RulePrimitiveType;
+}
+
+
+std::any LuxParser::PrimitiveTypeContext::accept(tree::ParseTreeVisitor *visitor) {
+  if (auto parserVisitor = dynamic_cast<LuxParserVisitor*>(visitor))
     return parserVisitor->visitPrimitiveType(this);
   else
     return visitor->visitChildren(this);
 }
 
-ToLLVMParser::PrimitiveTypeContext* ToLLVMParser::primitiveType() {
+LuxParser::PrimitiveTypeContext* LuxParser::primitiveType() {
   PrimitiveTypeContext *_localctx = _tracker.createInstance<PrimitiveTypeContext>(_ctx, getState());
-  enterRule(_localctx, 110, ToLLVMParser::RulePrimitiveType);
+  enterRule(_localctx, 110, LuxParser::RulePrimitiveType);
   size_t _la = 0;
 
 #if __cplusplus > 201703L
@@ -7891,7 +7891,7 @@ ToLLVMParser::PrimitiveTypeContext* ToLLVMParser::primitiveType() {
   return _localctx;
 }
 
-bool ToLLVMParser::sempred(RuleContext *context, size_t ruleIndex, size_t predicateIndex) {
+bool LuxParser::sempred(RuleContext *context, size_t ruleIndex, size_t predicateIndex) {
   switch (ruleIndex) {
     case 52: return expressionSempred(antlrcpp::downCast<ExpressionContext *>(context), predicateIndex);
 
@@ -7901,7 +7901,7 @@ bool ToLLVMParser::sempred(RuleContext *context, size_t ruleIndex, size_t predic
   return true;
 }
 
-bool ToLLVMParser::expressionSempred(ExpressionContext *_localctx, size_t predicateIndex) {
+bool LuxParser::expressionSempred(ExpressionContext *_localctx, size_t predicateIndex) {
   switch (predicateIndex) {
     case 0: return precpred(_ctx, 27);
     case 1: return precpred(_ctx, 26);
@@ -7933,10 +7933,10 @@ bool ToLLVMParser::expressionSempred(ExpressionContext *_localctx, size_t predic
   return true;
 }
 
-void ToLLVMParser::initialize() {
+void LuxParser::initialize() {
 #if ANTLR4_USE_THREAD_LOCAL_CACHE
-  tollvmparserParserInitialize();
+  luxparserParserInitialize();
 #else
-  ::antlr4::internal::call_once(tollvmparserParserOnceFlag, tollvmparserParserInitialize);
+  ::antlr4::internal::call_once(luxparserParserOnceFlag, luxparserParserInitialize);
 #endif
 }

@@ -1,10 +1,10 @@
 # Types
 
-This page documents all built-in types in T, including their sizes, ranges, methods, and conversion rules.
+This page documents all built-in types in Lux, including their sizes, ranges, methods, and conversion rules.
 
 ## Overview
 
-T has a rich set of primitive types with explicit sizes. There is no implicit type coercion — all conversions must use the `as` keyword.
+Lux has a rich set of primitive types with explicit sizes. There is no implicit type coercion — all conversions must use the `as` keyword.
 
 ## Integer Types
 
@@ -347,7 +347,7 @@ int32 main() {
 |---|---|---|
 | `string` | pointer + length | Length-tracked byte string (`[]uint8` internally) |
 
-Strings in T are **not** null-terminated. They carry their length and are backed by a `uint8` array. For null-terminated C strings, use [`cstring`](#c-string-type) or `c"..."` literals.
+Strings in Lux are **not** null-terminated. They carry their length and are backed by a `uint8` array. For null-terminated C strings, use [`cstring`](#c-string-type) or `c"..."` literals.
 
 ```t
 namespace StringDemo;
@@ -460,11 +460,11 @@ int32 main() {
     // C string literal — produces *char directly
     cstring greeting = c"Hello from C";
 
-    // Convert T string to C string
-    string t_str = "Hello from T";
+    // Convert Lux string to C string
+    string t_str = "Hello from Lux";
     cstring c_str = cstr(t_str);
 
-    // Convert C string back to T string
+    // Convert C string back to Lux string
     string back = fromCStr(c_str);
     println(back);
 

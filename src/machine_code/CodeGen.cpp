@@ -17,9 +17,9 @@
 
 // CodeGenFileType enum was renamed in LLVM 18
 #ifdef LLVM_VERSION_18_OR_NEWER
-#  define TOLLVM_CGFT_OBJECT llvm::CodeGenFileType::ObjectFile
+#  define LUX_CGFT_OBJECT llvm::CodeGenFileType::ObjectFile
 #else
-#  define TOLLVM_CGFT_OBJECT llvm::CGFT_ObjectFile
+#  define LUX_CGFT_OBJECT llvm::CGFT_ObjectFile
 #endif
 
 #include <iostream>
@@ -94,7 +94,7 @@ static bool tryLinkMulti(const char*                      linker,
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
-// Locate the builtins static library next to the tollvm executable.
+// Locate the builtins static library next to the lux executable.
 static std::string findBuiltinsPath() {
     char selfPath[4096];
     ssize_t len = ::readlink("/proc/self/exe", selfPath, sizeof(selfPath) - 1);
@@ -102,9 +102,9 @@ static std::string findBuiltinsPath() {
         selfPath[len] = '\0';
         std::string dir(selfPath);
         dir = dir.substr(0, dir.rfind('/'));
-        return dir + "/libtollvm_builtins.a";
+        return dir + "/liblux_builtins.a";
     }
-    return "libtollvm_builtins.a"; // fallback
+    return "liblux_builtins.a"; // fallback
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ bool CodeGen::compileCSource(const std::string& cSourcePath,
             return true;
     }
 
-    std::cerr << "tollvm: failed to compile C source '"
+    std::cerr << "lux: failed to compile C source '"
               << cSourcePath << "' — ensure cc, clang or gcc is installed\n";
     return false;
 }
@@ -161,7 +161,7 @@ bool CodeGen::emitBinary(IRModule& irModule, const std::string& outputPath) {
     llvm::sys::fs::remove(objectPath);
 
     if (!linked) {
-        std::cerr << "tollvm: linking failed — ensure clang or gcc is installed\n";
+        std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
     }
     return linked;
 }
@@ -178,7 +178,7 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
                                extraLinkerFlags, extraLibPaths);
 
     if (!linked) {
-        std::cerr << "tollvm: linking failed — ensure clang or gcc is installed\n";
+        std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
     }
     return linked;
 }
@@ -198,7 +198,7 @@ bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath
     std::string lookupError;
     const auto* target = llvm::TargetRegistry::lookupTarget(targetTriple, lookupError);
     if (!target) {
-        std::cerr << "tollvm: target lookup failed: " << lookupError << "\n";
+        std::cerr << "lux: target lookup failed: " << lookupError << "\n";
         return false;
     }
 
@@ -214,14 +214,14 @@ bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath
     std::error_code ec;
     llvm::raw_fd_ostream dest(objectPath, ec, llvm::sys::fs::OF_None);
     if (ec) {
-        std::cerr << "tollvm: could not open '" << objectPath << "': "
+        std::cerr << "lux: could not open '" << objectPath << "': "
                   << ec.message() << "\n";
         return false;
     }
 
     llvm::legacy::PassManager passManager;
-    if (machine->addPassesToEmitFile(passManager, dest, nullptr, TOLLVM_CGFT_OBJECT)) {
-        std::cerr << "tollvm: target machine cannot emit object files\n";
+    if (machine->addPassesToEmitFile(passManager, dest, nullptr, LUX_CGFT_OBJECT)) {
+        std::cerr << "lux: target machine cannot emit object files\n";
         return false;
     }
 

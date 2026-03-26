@@ -6,7 +6,7 @@
 #include <initializer_list>
 
 // Describes a single builtin function signature for the checker.
-// Types use tollvm-level names: "int32", "int64", "float64", "string", "bool",
+// Types use lux-level names: "int32", "int64", "float64", "string", "bool",
 // "char", "void", "usize", "*void", etc.
 // Special placeholders:
 //   "_any"     — accepts any single type (polymorphic arg)
@@ -16,8 +16,8 @@
 
 struct BuiltinSignature {
     std::string              name;
-    std::string              returnType;  // tollvm type name
-    std::vector<std::string> paramTypes;  // tollvm type names (fixed params only)
+    std::string              returnType;  // lux type name
+    std::vector<std::string> paramTypes;  // lux type names (fixed params only)
     bool isPolymorphic = false; // return type depends on argument type
     bool isVariadic    = false; // accepts extra args beyond paramTypes
 };
@@ -29,7 +29,7 @@ class BuiltinRegistry {
 public:
     BuiltinRegistry();
 
-    // Look up a function by its tollvm-level name (e.g. "println", "sqrt").
+    // Look up a function by its lux-level name (e.g. "println", "sqrt").
     // Returns nullptr if not found.
     const BuiltinSignature* lookup(const std::string& name) const;
 

@@ -18,17 +18,17 @@ use std::fs::tempDir;
 use std::log::println;
 
 int32 main() {
-    string testDir = "/tmp/tollvm_fs_test";
-    string testFile = "/tmp/tollvm_fs_test/hello.txt";
-    string testFile2 = "/tmp/tollvm_fs_test/renamed.txt";
-    string subDir = "/tmp/tollvm_fs_test/a/b/c";
+    string testDir = "/tmp/lux_fs_test";
+    string testFile = "/tmp/lux_fs_test/hello.txt";
+    string testFile2 = "/tmp/lux_fs_test/renamed.txt";
+    string subDir = "/tmp/lux_fs_test/a/b/c";
 
     /* cleanup from previous runs */
     remove(testFile);
     remove(testFile2);
-    removeDir("/tmp/tollvm_fs_test/a/b/c");
-    removeDir("/tmp/tollvm_fs_test/a/b");
-    removeDir("/tmp/tollvm_fs_test/a");
+    removeDir("/tmp/lux_fs_test/a/b/c");
+    removeDir("/tmp/lux_fs_test/a/b");
+    removeDir("/tmp/lux_fs_test/a");
     removeDir(testDir);
 
     /* mkdir */
@@ -94,8 +94,8 @@ int32 main() {
 
     /* cleanup */
     removeDir(subDir);
-    removeDir("/tmp/tollvm_fs_test/a/b");
-    removeDir("/tmp/tollvm_fs_test/a");
+    removeDir("/tmp/lux_fs_test/a/b");
+    removeDir("/tmp/lux_fs_test/a");
     removeDir(testDir);
 
     println("all fs tests passed");

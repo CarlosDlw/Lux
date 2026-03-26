@@ -6,7 +6,7 @@
 
 // ── Search & Match ──────────────────────────────────────────────────────────
 
-int tollvm_contains(const char* s, size_t sLen,
+int lux_contains(const char* s, size_t sLen,
                     const char* sub, size_t subLen) {
     if (subLen == 0) return 1;
     if (subLen > sLen) return 0;
@@ -17,19 +17,19 @@ int tollvm_contains(const char* s, size_t sLen,
     return 0;
 }
 
-int tollvm_startsWith(const char* s, size_t sLen,
+int lux_startsWith(const char* s, size_t sLen,
                       const char* prefix, size_t prefixLen) {
     if (prefixLen > sLen) return 0;
     return memcmp(s, prefix, prefixLen) == 0;
 }
 
-int tollvm_endsWith(const char* s, size_t sLen,
+int lux_endsWith(const char* s, size_t sLen,
                     const char* suffix, size_t suffixLen) {
     if (suffixLen > sLen) return 0;
     return memcmp(s + sLen - suffixLen, suffix, suffixLen) == 0;
 }
 
-int64_t tollvm_indexOf(const char* s, size_t sLen,
+int64_t lux_indexOf(const char* s, size_t sLen,
                        const char* sub, size_t subLen) {
     if (subLen == 0) return 0;
     if (subLen > sLen) return -1;
@@ -41,7 +41,7 @@ int64_t tollvm_indexOf(const char* s, size_t sLen,
     return -1;
 }
 
-int64_t tollvm_lastIndexOf(const char* s, size_t sLen,
+int64_t lux_lastIndexOf(const char* s, size_t sLen,
                            const char* sub, size_t subLen) {
     if (subLen == 0) return (int64_t)sLen;
     if (subLen > sLen) return -1;
@@ -54,7 +54,7 @@ int64_t tollvm_lastIndexOf(const char* s, size_t sLen,
     return -1;
 }
 
-size_t tollvm_count(const char* s, size_t sLen,
+size_t lux_count(const char* s, size_t sLen,
                     const char* sub, size_t subLen) {
     if (subLen == 0) return 0;
     if (subLen > sLen) return 0;
@@ -71,23 +71,23 @@ size_t tollvm_count(const char* s, size_t sLen,
 
 // ── Transformation ──────────────────────────────────────────────────────────
 
-tollvm_str_result tollvm_toUpper(const char* s, size_t sLen) {
+lux_str_result lux_toUpper(const char* s, size_t sLen) {
     char* buf = (char*)malloc(sLen + 1);
     for (size_t i = 0; i < sLen; i++)
         buf[i] = (char)toupper((unsigned char)s[i]);
     buf[sLen] = '\0';
-    return (tollvm_str_result){ buf, sLen };
+    return (lux_str_result){ buf, sLen };
 }
 
-tollvm_str_result tollvm_toLower(const char* s, size_t sLen) {
+lux_str_result lux_toLower(const char* s, size_t sLen) {
     char* buf = (char*)malloc(sLen + 1);
     for (size_t i = 0; i < sLen; i++)
         buf[i] = (char)tolower((unsigned char)s[i]);
     buf[sLen] = '\0';
-    return (tollvm_str_result){ buf, sLen };
+    return (lux_str_result){ buf, sLen };
 }
 
-tollvm_str_result tollvm_trim(const char* s, size_t sLen) {
+lux_str_result lux_trim(const char* s, size_t sLen) {
     size_t start = 0;
     while (start < sLen && isspace((unsigned char)s[start])) start++;
     size_t end = sLen;
@@ -97,10 +97,10 @@ tollvm_str_result tollvm_trim(const char* s, size_t sLen) {
     char* buf = (char*)malloc(newLen + 1);
     memcpy(buf, s + start, newLen);
     buf[newLen] = '\0';
-    return (tollvm_str_result){ buf, newLen };
+    return (lux_str_result){ buf, newLen };
 }
 
-tollvm_str_result tollvm_trimLeft(const char* s, size_t sLen) {
+lux_str_result lux_trimLeft(const char* s, size_t sLen) {
     size_t start = 0;
     while (start < sLen && isspace((unsigned char)s[start])) start++;
 
@@ -108,27 +108,27 @@ tollvm_str_result tollvm_trimLeft(const char* s, size_t sLen) {
     char* buf = (char*)malloc(newLen + 1);
     memcpy(buf, s + start, newLen);
     buf[newLen] = '\0';
-    return (tollvm_str_result){ buf, newLen };
+    return (lux_str_result){ buf, newLen };
 }
 
-tollvm_str_result tollvm_trimRight(const char* s, size_t sLen) {
+lux_str_result lux_trimRight(const char* s, size_t sLen) {
     size_t end = sLen;
     while (end > 0 && isspace((unsigned char)s[end - 1])) end--;
 
     char* buf = (char*)malloc(end + 1);
     memcpy(buf, s, end);
     buf[end] = '\0';
-    return (tollvm_str_result){ buf, end };
+    return (lux_str_result){ buf, end };
 }
 
-tollvm_str_result tollvm_replace(const char* s, size_t sLen,
+lux_str_result lux_replace(const char* s, size_t sLen,
                                  const char* old, size_t oldLen,
                                  const char* rep, size_t repLen) {
     if (oldLen == 0) {
         char* buf = (char*)malloc(sLen + 1);
         memcpy(buf, s, sLen);
         buf[sLen] = '\0';
-        return (tollvm_str_result){ buf, sLen };
+        return (lux_str_result){ buf, sLen };
     }
 
     // Count occurrences first
@@ -144,7 +144,7 @@ tollvm_str_result tollvm_replace(const char* s, size_t sLen,
         char* buf = (char*)malloc(sLen + 1);
         memcpy(buf, s, sLen);
         buf[sLen] = '\0';
-        return (tollvm_str_result){ buf, sLen };
+        return (lux_str_result){ buf, sLen };
     }
 
     size_t newLen = sLen + cnt * (repLen - oldLen);
@@ -162,17 +162,17 @@ tollvm_str_result tollvm_replace(const char* s, size_t sLen,
     }
 
     buf[newLen] = '\0';
-    return (tollvm_str_result){ buf, newLen };
+    return (lux_str_result){ buf, newLen };
 }
 
-tollvm_str_result tollvm_replaceFirst(const char* s, size_t sLen,
+lux_str_result lux_replaceFirst(const char* s, size_t sLen,
                                       const char* old, size_t oldLen,
                                       const char* rep, size_t repLen) {
     if (oldLen == 0 || oldLen > sLen) {
         char* buf = (char*)malloc(sLen + 1);
         memcpy(buf, s, sLen);
         buf[sLen] = '\0';
-        return (tollvm_str_result){ buf, sLen };
+        return (lux_str_result){ buf, sLen };
     }
 
     // Find first occurrence
@@ -188,7 +188,7 @@ tollvm_str_result tollvm_replaceFirst(const char* s, size_t sLen,
         char* buf = (char*)malloc(sLen + 1);
         memcpy(buf, s, sLen);
         buf[sLen] = '\0';
-        return (tollvm_str_result){ buf, sLen };
+        return (lux_str_result){ buf, sLen };
     }
 
     size_t newLen = sLen - oldLen + repLen;
@@ -197,35 +197,35 @@ tollvm_str_result tollvm_replaceFirst(const char* s, size_t sLen,
     memcpy(buf + pos, rep, repLen);
     memcpy(buf + pos + repLen, s + pos + oldLen, sLen - (size_t)pos - oldLen);
     buf[newLen] = '\0';
-    return (tollvm_str_result){ buf, newLen };
+    return (lux_str_result){ buf, newLen };
 }
 
-tollvm_str_result tollvm_repeat(const char* s, size_t sLen, size_t n) {
+lux_str_result lux_repeat(const char* s, size_t sLen, size_t n) {
     size_t newLen = sLen * n;
     char* buf = (char*)malloc(newLen + 1);
     for (size_t i = 0; i < n; i++)
         memcpy(buf + i * sLen, s, sLen);
     buf[newLen] = '\0';
-    return (tollvm_str_result){ buf, newLen };
+    return (lux_str_result){ buf, newLen };
 }
 
-tollvm_str_result tollvm_reverse(const char* s, size_t sLen) {
+lux_str_result lux_reverse(const char* s, size_t sLen) {
     char* buf = (char*)malloc(sLen + 1);
     for (size_t i = 0; i < sLen; i++)
         buf[i] = s[sLen - 1 - i];
     buf[sLen] = '\0';
-    return (tollvm_str_result){ buf, sLen };
+    return (lux_str_result){ buf, sLen };
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────
 
-tollvm_str_result tollvm_padLeft(const char* s, size_t sLen,
+lux_str_result lux_padLeft(const char* s, size_t sLen,
                                  size_t width, char fill) {
     if (sLen >= width) {
         char* buf = (char*)malloc(sLen + 1);
         memcpy(buf, s, sLen);
         buf[sLen] = '\0';
-        return (tollvm_str_result){ buf, sLen };
+        return (lux_str_result){ buf, sLen };
     }
 
     char* buf = (char*)malloc(width + 1);
@@ -233,33 +233,33 @@ tollvm_str_result tollvm_padLeft(const char* s, size_t sLen,
     memset(buf, fill, pad);
     memcpy(buf + pad, s, sLen);
     buf[width] = '\0';
-    return (tollvm_str_result){ buf, width };
+    return (lux_str_result){ buf, width };
 }
 
-tollvm_str_result tollvm_padRight(const char* s, size_t sLen,
+lux_str_result lux_padRight(const char* s, size_t sLen,
                                   size_t width, char fill) {
     if (sLen >= width) {
         char* buf = (char*)malloc(sLen + 1);
         memcpy(buf, s, sLen);
         buf[sLen] = '\0';
-        return (tollvm_str_result){ buf, sLen };
+        return (lux_str_result){ buf, sLen };
     }
 
     char* buf = (char*)malloc(width + 1);
     memcpy(buf, s, sLen);
     memset(buf + sLen, fill, width - sLen);
     buf[width] = '\0';
-    return (tollvm_str_result){ buf, width };
+    return (lux_str_result){ buf, width };
 }
 
 // ── Extraction ──────────────────────────────────────────────────────────────
 
-tollvm_str_result tollvm_substring(const char* s, size_t sLen,
+lux_str_result lux_substring(const char* s, size_t sLen,
                                    size_t start, size_t length) {
     if (start >= sLen) {
         char* buf = (char*)malloc(1);
         buf[0] = '\0';
-        return (tollvm_str_result){ buf, 0 };
+        return (lux_str_result){ buf, 0 };
     }
 
     if (start + length > sLen)
@@ -268,15 +268,15 @@ tollvm_str_result tollvm_substring(const char* s, size_t sLen,
     char* buf = (char*)malloc(length + 1);
     memcpy(buf, s + start, length);
     buf[length] = '\0';
-    return (tollvm_str_result){ buf, length };
+    return (lux_str_result){ buf, length };
 }
 
-char tollvm_charAt(const char* s, size_t sLen, size_t index) {
+char lux_charAt(const char* s, size_t sLen, size_t index) {
     if (index >= sLen) return '\0';
     return s[index];
 }
 
-tollvm_str_result tollvm_slice(const char* s, size_t sLen,
+lux_str_result lux_slice(const char* s, size_t sLen,
                                int64_t start, int64_t end) {
     // Resolve negative indices
     if (start < 0) start = (int64_t)sLen + start;
@@ -288,19 +288,19 @@ tollvm_str_result tollvm_slice(const char* s, size_t sLen,
     if (start >= end) {
         char* buf = (char*)malloc(1);
         buf[0] = '\0';
-        return (tollvm_str_result){ buf, 0 };
+        return (lux_str_result){ buf, 0 };
     }
 
     size_t newLen = (size_t)(end - start);
     char* buf = (char*)malloc(newLen + 1);
     memcpy(buf, s + start, newLen);
     buf[newLen] = '\0';
-    return (tollvm_str_result){ buf, newLen };
+    return (lux_str_result){ buf, newLen };
 }
 
 // ── Parsing ─────────────────────────────────────────────────────────────────
 
-int64_t tollvm_parseInt(const char* s, size_t sLen) {
+int64_t lux_parseInt(const char* s, size_t sLen) {
     // Create null-terminated copy for strtoll
     char* tmp = (char*)malloc(sLen + 1);
     memcpy(tmp, s, sLen);
@@ -310,7 +310,7 @@ int64_t tollvm_parseInt(const char* s, size_t sLen) {
     return result;
 }
 
-int64_t tollvm_parseIntRadix(const char* s, size_t sLen, uint32_t radix) {
+int64_t lux_parseIntRadix(const char* s, size_t sLen, uint32_t radix) {
     char* tmp = (char*)malloc(sLen + 1);
     memcpy(tmp, s, sLen);
     tmp[sLen] = '\0';
@@ -319,7 +319,7 @@ int64_t tollvm_parseIntRadix(const char* s, size_t sLen, uint32_t radix) {
     return result;
 }
 
-double tollvm_parseFloat(const char* s, size_t sLen) {
+double lux_parseFloat(const char* s, size_t sLen) {
     char* tmp = (char*)malloc(sLen + 1);
     memcpy(tmp, s, sLen);
     tmp[sLen] = '\0';
@@ -330,14 +330,14 @@ double tollvm_parseFloat(const char* s, size_t sLen) {
 
 // ── Conversion ──────────────────────────────────────────────────────────────
 
-char tollvm_fromCharCode(int32_t code) {
+char lux_fromCharCode(int32_t code) {
     if (code < 0 || code > 127) return '\0';
     return (char)code;
 }
 
 // ── Vec-returning functions ─────────────────────────────────────────────────
 
-void tollvm_split(tollvm_str_vec_header* out,
+void lux_split(lux_str_vec_header* out,
                   const char* s, size_t sLen,
                   const char* delim, size_t delimLen) {
     typedef struct { const char* ptr; size_t len; } str_elem;
@@ -394,7 +394,7 @@ void tollvm_split(tollvm_str_vec_header* out,
     out->cap = cap;
 }
 
-void tollvm_splitN(tollvm_str_vec_header* out,
+void lux_splitN(lux_str_vec_header* out,
                    const char* s, size_t sLen,
                    const char* delim, size_t delimLen, size_t maxParts) {
     typedef struct { const char* ptr; size_t len; } str_elem;
@@ -450,7 +450,7 @@ void tollvm_splitN(tollvm_str_vec_header* out,
     out->cap = cap;
 }
 
-tollvm_str_result tollvm_joinVec(const tollvm_str_vec_header* vec,
+lux_str_result lux_joinVec(const lux_str_vec_header* vec,
                                  const char* sep, size_t sepLen) {
     typedef struct { const char* ptr; size_t len; } str_elem;
     str_elem* arr = (str_elem*)vec->ptr;
@@ -459,7 +459,7 @@ tollvm_str_result tollvm_joinVec(const tollvm_str_vec_header* vec,
     if (count == 0) {
         char* r = (char*)malloc(1);
         r[0] = '\0';
-        return (tollvm_str_result){ r, 0 };
+        return (lux_str_result){ r, 0 };
     }
 
     // Calculate total length
@@ -481,10 +481,10 @@ tollvm_str_result tollvm_joinVec(const tollvm_str_vec_header* vec,
     }
     buf[total] = '\0';
 
-    return (tollvm_str_result){ buf, total };
+    return (lux_str_result){ buf, total };
 }
 
-void tollvm_lines(tollvm_str_vec_header* out, const char* s, size_t sLen) {
+void lux_lines(lux_str_vec_header* out, const char* s, size_t sLen) {
     typedef struct { const char* ptr; size_t len; } str_elem;
 
     out->ptr = NULL;
@@ -520,7 +520,7 @@ void tollvm_lines(tollvm_str_vec_header* out, const char* s, size_t sLen) {
     out->cap = cap;
 }
 
-void tollvm_chars(tollvm_str_vec_header* out, const char* s, size_t sLen) {
+void lux_chars(lux_str_vec_header* out, const char* s, size_t sLen) {
     out->ptr = NULL;
     out->len = 0;
     out->cap = 0;
@@ -535,7 +535,7 @@ void tollvm_chars(tollvm_str_vec_header* out, const char* s, size_t sLen) {
     out->cap = sLen;
 }
 
-tollvm_str_result tollvm_fromCharsVec(const tollvm_str_vec_header* vec) {
+lux_str_result lux_fromCharsVec(const lux_str_vec_header* vec) {
     uint8_t* arr = (uint8_t*)vec->ptr;
     size_t count = vec->len;
 
@@ -545,10 +545,10 @@ tollvm_str_result tollvm_fromCharsVec(const tollvm_str_vec_header* vec) {
     }
     buf[count] = '\0';
 
-    return (tollvm_str_result){ buf, count };
+    return (lux_str_result){ buf, count };
 }
 
-void tollvm_toBytes(tollvm_str_vec_header* out, const char* s, size_t sLen) {
+void lux_toBytes(lux_str_vec_header* out, const char* s, size_t sLen) {
     out->ptr = NULL;
     out->len = 0;
     out->cap = 0;
@@ -561,7 +561,7 @@ void tollvm_toBytes(tollvm_str_vec_header* out, const char* s, size_t sLen) {
     out->cap = sLen;
 }
 
-tollvm_str_result tollvm_fromBytesVec(const tollvm_str_vec_header* vec) {
+lux_str_result lux_fromBytesVec(const lux_str_vec_header* vec) {
     uint8_t* arr = (uint8_t*)vec->ptr;
     size_t count = vec->len;
 
@@ -569,12 +569,12 @@ tollvm_str_result tollvm_fromBytesVec(const tollvm_str_vec_header* vec) {
     memcpy(buf, arr, count);
     buf[count] = '\0';
 
-    return (tollvm_str_result){ buf, count };
+    return (lux_str_result){ buf, count };
 }
 
 // ── C FFI String Conversion ─────────────────────────────────────────────────
 
-char* tollvm_cstr(const char* s, size_t sLen) {
+char* lux_cstr(const char* s, size_t sLen) {
     char* buf = (char*)malloc(sLen + 1);
     if (!buf) return NULL;
     memcpy(buf, s, sLen);
@@ -582,13 +582,13 @@ char* tollvm_cstr(const char* s, size_t sLen) {
     return buf;
 }
 
-tollvm_str_result tollvm_fromCStr(const char* cstr) {
-    if (!cstr) return (tollvm_str_result){ "", 0 };
+lux_str_result lux_fromCStr(const char* cstr) {
+    if (!cstr) return (lux_str_result){ "", 0 };
     size_t len = strlen(cstr);
-    return (tollvm_str_result){ cstr, len };
+    return (lux_str_result){ cstr, len };
 }
 
-tollvm_str_result tollvm_fromCStrLen(const char* cstr, size_t len) {
-    if (!cstr) return (tollvm_str_result){ "", 0 };
-    return (tollvm_str_result){ cstr, len };
+lux_str_result lux_fromCStrLen(const char* cstr, size_t len) {
+    if (!cstr) return (lux_str_result){ "", 0 };
+    return (lux_str_result){ cstr, len };
 }

@@ -10,7 +10,7 @@
 
 // Read a line from stdin, stripping trailing newline.
 // Returns a heap-allocated string and its length.
-static tollvm_io_string read_line_internal(void) {
+static lux_io_string read_line_internal(void) {
     char*  buf  = NULL;
     size_t cap  = 0;
     ssize_t len = getline(&buf, &cap, stdin);
@@ -20,7 +20,7 @@ static tollvm_io_string read_line_internal(void) {
         free(buf);
         char* empty = (char*)malloc(1);
         empty[0] = '\0';
-        return (tollvm_io_string){ empty, 0 };
+        return (lux_io_string){ empty, 0 };
     }
 
     // Strip trailing newline
@@ -31,22 +31,22 @@ static tollvm_io_string read_line_internal(void) {
             buf[--len] = '\0';
     }
 
-    return (tollvm_io_string){ buf, (size_t)len };
+    return (lux_io_string){ buf, (size_t)len };
 }
 
 // ── Stdin — Text ────────────────────────────────────────────────────────────
 
-tollvm_io_string tollvm_readLine(void) {
+lux_io_string lux_readLine(void) {
     return read_line_internal();
 }
 
-char tollvm_readChar(void) {
+char lux_readChar(void) {
     int c = fgetc(stdin);
     return (c == EOF) ? '\0' : (char)c;
 }
 
-int64_t tollvm_readInt(void) {
-    tollvm_io_string line = read_line_internal();
+int64_t lux_readInt(void) {
+    lux_io_string line = read_line_internal();
     int64_t result = 0;
 
     if (line.len > 0) {
@@ -58,8 +58,8 @@ int64_t tollvm_readInt(void) {
     return result;
 }
 
-double tollvm_readFloat(void) {
-    tollvm_io_string line = read_line_internal();
+double lux_readFloat(void) {
+    lux_io_string line = read_line_internal();
     double result = 0.0;
 
     if (line.len > 0) {
@@ -71,8 +71,8 @@ double tollvm_readFloat(void) {
     return result;
 }
 
-int tollvm_readBool(void) {
-    tollvm_io_string line = read_line_internal();
+int lux_readBool(void) {
+    lux_io_string line = read_line_internal();
     int result = 0;
 
     if (line.len > 0) {
@@ -85,7 +85,7 @@ int tollvm_readBool(void) {
     return result;
 }
 
-tollvm_io_string tollvm_readAll(void) {
+lux_io_string lux_readAll(void) {
     size_t cap = 4096;
     size_t len = 0;
     char*  buf = (char*)malloc(cap);
@@ -102,22 +102,22 @@ tollvm_io_string tollvm_readAll(void) {
     }
 
     buf[len] = '\0';  // null-terminate (cap always > len after last realloc)
-    return (tollvm_io_string){ buf, len };
+    return (lux_io_string){ buf, len };
 }
 
 // ── Prompt variants ─────────────────────────────────────────────────────────
 
-tollvm_io_string tollvm_prompt(const char* msg, size_t msgLen) {
+lux_io_string lux_prompt(const char* msg, size_t msgLen) {
     printf("%.*s", (int)msgLen, msg);
     fflush(stdout);
     return read_line_internal();
 }
 
-int64_t tollvm_promptInt(const char* msg, size_t msgLen) {
+int64_t lux_promptInt(const char* msg, size_t msgLen) {
     printf("%.*s", (int)msgLen, msg);
     fflush(stdout);
 
-    tollvm_io_string line = read_line_internal();
+    lux_io_string line = read_line_internal();
     int64_t result = 0;
 
     if (line.len > 0) {
@@ -129,11 +129,11 @@ int64_t tollvm_promptInt(const char* msg, size_t msgLen) {
     return result;
 }
 
-double tollvm_promptFloat(const char* msg, size_t msgLen) {
+double lux_promptFloat(const char* msg, size_t msgLen) {
     printf("%.*s", (int)msgLen, msg);
     fflush(stdout);
 
-    tollvm_io_string line = read_line_internal();
+    lux_io_string line = read_line_internal();
     double result = 0.0;
 
     if (line.len > 0) {
@@ -145,11 +145,11 @@ double tollvm_promptFloat(const char* msg, size_t msgLen) {
     return result;
 }
 
-int tollvm_promptBool(const char* msg, size_t msgLen) {
+int lux_promptBool(const char* msg, size_t msgLen) {
     printf("%.*s", (int)msgLen, msg);
     fflush(stdout);
 
-    tollvm_io_string line = read_line_internal();
+    lux_io_string line = read_line_internal();
     int result = 0;
 
     if (line.len > 0) {
@@ -164,20 +164,20 @@ int tollvm_promptBool(const char* msg, size_t msgLen) {
 
 // ── Stdin — Binary ──────────────────────────────────────────────────────────
 
-uint8_t tollvm_readByte(void) {
+uint8_t lux_readByte(void) {
     int c = fgetc(stdin);
     return (c == EOF) ? 0 : (uint8_t)c;
 }
 
 // ── Stdin — Status ──────────────────────────────────────────────────────────
 
-int tollvm_isEOF(void) {
+int lux_isEOF(void) {
     return feof(stdin) ? 1 : 0;
 }
 
 // ── Secure Input ────────────────────────────────────────────────────────────
 
-static tollvm_io_string read_password_internal(void) {
+static lux_io_string read_password_internal(void) {
     struct termios old, new_term;
 
     // Only disable echo if stdin is a terminal
@@ -190,7 +190,7 @@ static tollvm_io_string read_password_internal(void) {
         tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
     }
 
-    tollvm_io_string result = read_line_internal();
+    lux_io_string result = read_line_internal();
 
     if (is_tty) {
         tcsetattr(STDIN_FILENO, TCSANOW, &old);
@@ -200,11 +200,11 @@ static tollvm_io_string read_password_internal(void) {
     return result;
 }
 
-tollvm_io_string tollvm_readPassword(void) {
+lux_io_string lux_readPassword(void) {
     return read_password_internal();
 }
 
-tollvm_io_string tollvm_promptPassword(const char* msg, size_t msgLen) {
+lux_io_string lux_promptPassword(const char* msg, size_t msgLen) {
     printf("%.*s", (int)msgLen, msg);
     fflush(stdout);
     return read_password_internal();
@@ -212,31 +212,31 @@ tollvm_io_string tollvm_promptPassword(const char* msg, size_t msgLen) {
 
 // ── Stream Control ──────────────────────────────────────────────────────────
 
-void tollvm_flush(void) {
+void lux_flush(void) {
     fflush(stdout);
 }
 
-void tollvm_flushErr(void) {
+void lux_flushErr(void) {
     fflush(stderr);
 }
 
 // ── Terminal Detection ──────────────────────────────────────────────────────
 
-int tollvm_isTTY(void) {
+int lux_isTTY(void) {
     return isatty(STDIN_FILENO) ? 1 : 0;
 }
 
-int tollvm_isStdoutTTY(void) {
+int lux_isStdoutTTY(void) {
     return isatty(STDOUT_FILENO) ? 1 : 0;
 }
 
-int tollvm_isStderrTTY(void) {
+int lux_isStderrTTY(void) {
     return isatty(STDERR_FILENO) ? 1 : 0;
 }
 
 // ── Vec-returning functions ─────────────────────────────────────────────────
 
-void tollvm_readLines(tollvm_io_vec_header* out) {
+void lux_readLines(lux_io_vec_header* out) {
     out->ptr = NULL;
     out->len = 0;
     out->cap = 0;
@@ -274,7 +274,7 @@ void tollvm_readLines(tollvm_io_vec_header* out) {
     out->cap = cap;
 }
 
-void tollvm_readNBytes(tollvm_io_vec_header* out, size_t n) {
+void lux_readNBytes(lux_io_vec_header* out, size_t n) {
     out->ptr = NULL;
     out->len = 0;
     out->cap = 0;

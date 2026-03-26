@@ -6,19 +6,19 @@
 
 /* ── Task implementation ───────────────────────────────────────────────── */
 
-struct tollvm_Task {
+struct lux_Task {
     pthread_t thread;
     void*     result;
     int       completed;
 };
 
-tollvm_Task* tollvm_taskCreate(void* (*fn)(void*), void* arg) {
-    tollvm_Task* t = (tollvm_Task*)calloc(1, sizeof(tollvm_Task));
+lux_Task* lux_taskCreate(void* (*fn)(void*), void* arg) {
+    lux_Task* t = (lux_Task*)calloc(1, sizeof(lux_Task));
     pthread_create(&t->thread, NULL, fn, arg);
     return t;
 }
 
-void* tollvm_taskAwait(tollvm_Task* task) {
+void* lux_taskAwait(lux_Task* task) {
     if (!task) return NULL;
     if (!task->completed) {
         void* retval;
@@ -29,36 +29,36 @@ void* tollvm_taskAwait(tollvm_Task* task) {
     return task->result;
 }
 
-void tollvm_taskFree(tollvm_Task* task) {
+void lux_taskFree(lux_Task* task) {
     if (task) free(task);
 }
 
 /* ── Mutex implementation ──────────────────────────────────────────────── */
 
-struct tollvm_Mutex {
+struct lux_Mutex {
     pthread_mutex_t mtx;
 };
 
-tollvm_Mutex* tollvm_mutexCreate(void) {
-    tollvm_Mutex* m = (tollvm_Mutex*)malloc(sizeof(tollvm_Mutex));
+lux_Mutex* lux_mutexCreate(void) {
+    lux_Mutex* m = (lux_Mutex*)malloc(sizeof(lux_Mutex));
     pthread_mutex_init(&m->mtx, NULL);
     return m;
 }
 
-void tollvm_mutexLock(tollvm_Mutex* m) {
+void lux_mutexLock(lux_Mutex* m) {
     if (m) pthread_mutex_lock(&m->mtx);
 }
 
-void tollvm_mutexUnlock(tollvm_Mutex* m) {
+void lux_mutexUnlock(lux_Mutex* m) {
     if (m) pthread_mutex_unlock(&m->mtx);
 }
 
-int32_t tollvm_mutexTryLock(tollvm_Mutex* m) {
+int32_t lux_mutexTryLock(lux_Mutex* m) {
     if (!m) return 0;
     return pthread_mutex_trylock(&m->mtx) == 0 ? 1 : 0;
 }
 
-void tollvm_mutexFree(tollvm_Mutex* m) {
+void lux_mutexFree(lux_Mutex* m) {
     if (m) {
         pthread_mutex_destroy(&m->mtx);
         free(m);
@@ -67,15 +67,15 @@ void tollvm_mutexFree(tollvm_Mutex* m) {
 
 /* ── Utilities ─────────────────────────────────────────────────────────── */
 
-uint32_t tollvm_cpuCount(void) {
+uint32_t lux_cpuCount(void) {
     long n = sysconf(_SC_NPROCESSORS_ONLN);
     return n > 0 ? (uint32_t)n : 1;
 }
 
-uint64_t tollvm_threadId(void) {
+uint64_t lux_threadId(void) {
     return (uint64_t)pthread_self();
 }
 
-void tollvm_yield(void) {
+void lux_yield(void) {
     sched_yield();
 }

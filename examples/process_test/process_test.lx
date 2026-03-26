@@ -38,14 +38,14 @@ int32 main() {
     println(exeOk);
 
     /* setEnv + env + hasEnv */
-    setEnv("TOLLVM_TEST_VAR", "hello123");
-    bool has = hasEnv("TOLLVM_TEST_VAR");
+    setEnv("LUX_TEST_VAR", "hello123");
+    bool has = hasEnv("LUX_TEST_VAR");
     println(has);
 
-    string val = env("TOLLVM_TEST_VAR");
+    string val = env("LUX_TEST_VAR");
     println(val);
 
-    bool noVar = hasEnv("TOLLVM_NONEXISTENT_VAR_XYZ");
+    bool noVar = hasEnv("LUX_NONEXISTENT_VAR_XYZ");
     println(noVar);
 
     /* exec (as statement, discard return) */

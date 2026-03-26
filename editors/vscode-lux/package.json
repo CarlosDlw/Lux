@@ -1,0 +1,27 @@
+{
+  "name": "lux",
+  "displayName": "Lux Language",
+  "description": "Syntax highlighting for the Lux language (.lx files)",
+  "version": "0.2.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "lux",
+        "aliases": ["Lux", "lux"],
+        "extensions": [".lx"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lux",
+        "scopeName": "source.lux",
+        "path": "./syntaxes/lux.tmLanguage.json"
+      }
+    ]
+  }
+}

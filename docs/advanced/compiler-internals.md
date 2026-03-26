@@ -1,17 +1,17 @@
 # Compiler Internals
 
-This page describes how the T compiler transforms source code into a native executable. The pipeline has 7 stages, from scanning project files to linking the final binary.
+This page describes how the Lux compiler transforms source code into a native executable. The pipeline has 7 stages, from scanning project files to linking the final binary.
 
 ---
 
 ## Pipeline Overview
 
 ```
-Source Files (.tm)
+Source Files (.lx)
        │
        ▼
 ┌──────────────┐
-│ 1. Scan      │  Find all .tm files in project
+│ 1. Scan      │  Find all .lx files in project
 └──────┬───────┘
        ▼
 ┌──────────────┐
@@ -43,13 +43,13 @@ Source Files (.tm)
 
 ## Stage 1: Project Scanning
 
-The compiler starts by finding the project root and scanning for all `.tm` source files.
+The compiler starts by finding the project root and scanning for all `.lx` source files.
 
 **Entry point:** `CLI::run()` in `src/cli/CLI.cpp`
 
-The function `getProjectRoot()` walks up from the current directory looking for a `.tmbuild/` directory (the project marker). Then `ProjectScanner::scan()` collects all `.tm` files recursively.
+The function `getProjectRoot()` walks up from the current directory looking for a `.luxbuild/` directory (the project marker). Then `ProjectScanner::scan()` collects all `.lx` files recursively.
 
-For a single-file compilation like `tollvm main.tm ./main`, the scanner only processes the file specified on the command line.
+For a single-file compilation like `lux main.lx ./main`, the scanner only processes the file specified on the command line.
 
 ---
 
@@ -68,7 +68,7 @@ Source text
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│ ToLLVMLexer     │  Characters → token stream
+│ LuxLexer     │  Characters → token stream
 └────────┬────────┘
          ▼
 ┌─────────────────┐
@@ -76,13 +76,13 @@ Source text
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│ ToLLVMParser    │  Tokens → parse tree (ProgramContext)
+│ LuxParser    │  Tokens → parse tree (ProgramContext)
 └─────────────────┘
 ```
 
 The grammar is defined in two files:
-- `grammar/ToLLVMLexer.g4` — keyword tokens, operators, literals
-- `grammar/ToLLVMParser.g4` — syntax rules (statements, expressions, declarations)
+- `grammar/LuxLexer.g4` — keyword tokens, operators, literals
+- `grammar/LuxParser.g4` — syntax rules (statements, expressions, declarations)
 
 ### Parse Tree Structure
 
@@ -205,9 +205,9 @@ The checker maintains several registries:
 When the checker finds an error, it records the file, line number, and a descriptive message:
 
 ```
-error: main.tm:15 — cannot assign string to int32
-error: main.tm:23 — unknown function 'foobar'
-error: main.tm:31 — struct 'Point' has no field 'z'
+error: main.lx:15 — cannot assign string to int32
+error: main.lx:23 — unknown function 'foobar'
+error: main.lx:31 — struct 'Point' has no field 'z'
 ```
 
 If any errors are found during checking, compilation stops — no IR is generated.
@@ -220,7 +220,7 @@ The IR generator walks the parse tree using the visitor pattern, emitting LLVM I
 
 ### Visitor Pattern
 
-The `IRGen` class inherits from `ToLLVMParserBaseVisitor` and overrides 100+ visitor methods:
+The `IRGen` class inherits from `LuxParserBaseVisitor` and overrides 100+ visitor methods:
 
 ```
 IRGen::generate(parseTree, filePath)
@@ -252,9 +252,9 @@ For each function, the IR generator:
 Generic types like `Vec<T>` are compiled into type-specific implementations. The compiler generates a unique function name for each concrete type:
 
 ```
-Vec<int32>.push()  → calls tollvm_vec_push_i32()
-Vec<string>.push() → calls tollvm_vec_push_str()
-Vec<float64>.pop() → calls tollvm_vec_pop_f64()
+Vec<int32>.push()  → calls lux_vec_push_i32()
+Vec<string>.push() → calls lux_vec_push_str()
+Vec<float64>.pop() → calls lux_vec_pop_f64()
 ```
 
 The suffix (`i32`, `str`, `f64`, etc.) is determined by the element type's `builtinSuffix` property. Each suffixed function is implemented in C in the builtins library.
@@ -302,7 +302,7 @@ LLVM Module
 
 The compiler always targets the **native platform** — it detects the host CPU and target triple automatically using `llvm::sys::getDefaultTargetTriple()` and `llvm::sys::getHostCPUName()`.
 
-Object files are written to the `.tmbuild/` directory.
+Object files are written to the `.luxbuild/` directory.
 
 ---
 
@@ -316,12 +316,12 @@ All object files are combined into a final executable using the system linker.
 ┌─────────────────────────┐
 │ Your .o files            │  From stage 6c (one per source file)
 ├─────────────────────────┤
-│ libtollvm.a             │  Builtins static library
-│   tollvm_vec_*          │    Vec operations
-│   tollvm_map_*          │    Map operations
-│   tollvm_set_*          │    Set operations
-│   tollvm_string_*       │    String operations
-│   tollvm_*              │    Math, IO, FS, thread, etc.
+│ liblux.a             │  Builtins static library
+│   lux_vec_*          │    Vec operations
+│   lux_map_*          │    Map operations
+│   lux_set_*          │    Set operations
+│   lux_string_*       │    String operations
+│   lux_*              │    Math, IO, FS, thread, etc.
 ├─────────────────────────┤
 │ System libraries        │
 │   -lm                   │    Math (libm)
@@ -343,19 +343,19 @@ The linker is invoked by forking a child process and calling `execvp("ld", ...)`
 
 ```bash
 # Simple compilation (no extra libraries)
-tollvm main.tm ./main
+lux main.lx ./main
 
 # With optimization
-tollvm main.tm ./main -o2
+lux main.lx ./main -o2
 
 # With external library
-tollvm main.tm ./main -lssl -lcrypto
+lux main.lx ./main -lssl -lcrypto
 
 # With custom library path
-tollvm main.tm ./main -L/usr/local/lib -lmylib
+lux main.lx ./main -L/usr/local/lib -lmylib
 
 # With include path for C headers
-tollvm main.tm ./main -I/usr/local/include
+lux main.lx ./main -I/usr/local/include
 ```
 
 ---
@@ -363,9 +363,9 @@ tollvm main.tm ./main -I/usr/local/include
 ## Data Flow Summary
 
 ```
-Source files (.tm)
+Source files (.lx)
     │
-    ├── Scanned: collect all .tm files
+    ├── Scanned: collect all .lx files
     │
     ├── Parsed: ANTLR4 → parse trees (ProgramContext per file)
     │

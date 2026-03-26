@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(tollvm VERSION 0.1.0 LANGUAGES C CXX)
+project(lux VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -79,7 +79,7 @@ endif()
 message(STATUS "Found libclang: ${LIBCLANG_LIB}")
 
 # ─── Builtins (C library linked into every compiled binary) ───────────────────
-add_library(tollvm_builtins STATIC
+add_library(lux_builtins STATIC
     src/builtins/log/log.c
     src/builtins/collections/vec.c
     src/builtins/collections/map.c
@@ -109,17 +109,17 @@ add_library(tollvm_builtins STATIC
     src/builtins/thread/thread.c
     src/builtins/error/error.c
 )
-target_include_directories(tollvm_builtins PRIVATE
+target_include_directories(lux_builtins PRIVATE
     ${CMAKE_SOURCE_DIR}/src/builtins
 )
-target_link_libraries(tollvm_builtins PRIVATE z pthread)
+target_link_libraries(lux_builtins PRIVATE z pthread)
 
 # ─── Sources ──────────────────────────────────────────────────────────────────
 set(GENERATED_SOURCES
-    src/generated/ToLLVMLexer.cpp
-    src/generated/ToLLVMParser.cpp
-    src/generated/ToLLVMParserBaseVisitor.cpp
-    src/generated/ToLLVMParserVisitor.cpp
+    src/generated/LuxLexer.cpp
+    src/generated/LuxParser.cpp
+    src/generated/LuxParserBaseVisitor.cpp
+    src/generated/LuxParserVisitor.cpp
 )
 
 set(SOURCES
@@ -150,9 +150,9 @@ set(SOURCES
 )
 
 # ─── Target ───────────────────────────────────────────────────────────────────
-add_executable(tollvm ${SOURCES} ${GENERATED_SOURCES})
+add_executable(lux ${SOURCES} ${GENERATED_SOURCES})
 
-target_include_directories(tollvm PRIVATE
+target_include_directories(lux PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/generated
     ${CMAKE_SOURCE_DIR}/src/builtins
@@ -162,14 +162,14 @@ target_include_directories(tollvm PRIVATE
 
 # Compatibility flags for LLVM API differences across versions
 if(LLVM_VERSION_MAJOR GREATER_EQUAL 15)
-    target_compile_definitions(tollvm PRIVATE LLVM_VERSION_15_OR_NEWER)
+    target_compile_definitions(lux PRIVATE LLVM_VERSION_15_OR_NEWER)
 endif()
 if(LLVM_VERSION_MAJOR GREATER_EQUAL 18)
-    target_compile_definitions(tollvm PRIVATE LLVM_VERSION_18_OR_NEWER)
+    target_compile_definitions(lux PRIVATE LLVM_VERSION_18_OR_NEWER)
 endif()
 
-target_link_libraries(tollvm PRIVATE
-    tollvm_builtins
+target_link_libraries(lux PRIVATE
+    lux_builtins
     ${ANTLR4_LIB}
     ${LLVM_LIBS}
     ${LIBCLANG_LIB}
@@ -177,5 +177,5 @@ target_link_libraries(tollvm PRIVATE
 
 # ─── Build instructions ───────────────────────────────────────────────────────
 # mkdir build && cd build && cmake .. && make -j$(nproc)
-# ./tollvm ../examples/main.tm
-# ./tollvm ../examples/main.tm ./out -o2
+# ./lux ../examples/main.lx
+# ./lux ../examples/main.lx ./out -o2

@@ -1,32 +1,32 @@
 # helpc — C Library Reference
 
-`tollvm helpc` is a built-in command that inspects C library headers and displays
+`lux helpc` is a built-in command that inspects C library headers and displays
 detailed information about functions, structs, enums, macros, typedefs, and globals.
-It uses libclang to parse headers accurately, and maps every C type to its T equivalent.
+It uses libclang to parse headers accurately, and maps every C type to its Lux equivalent.
 
 ## Synopsis
 
 ```
-tollvm helpc <lib> [symbol] [flags]
+lux helpc <lib> [symbol] [flags]
 ```
 
 ## Quick Examples
 
 ```bash
 # Look up a function
-tollvm helpc raylib InitWindow
+lux helpc raylib InitWindow
 
 # Look up a struct (with known constants)
-tollvm helpc raylib Color
+lux helpc raylib Color
 
 # List everything in a library
-tollvm helpc raylib --list
+lux helpc raylib --list
 
 # Search for symbols by name
-tollvm helpc raylib -s Draw
+lux helpc raylib -s Draw
 
 # Search with regex
-tollvm helpc raylib -s "^Is" --regex
+lux helpc raylib -s "^Is" --regex
 ```
 
 ---
@@ -41,14 +41,14 @@ The first argument after `helpc` is the library name. It can be:
 - A **full header path**: `raylib.h`, `SDL2/SDL.h`, `curl/curl.h`
 
 ```bash
-tollvm helpc raylib          # resolves to <raylib.h>
-tollvm helpc stdio           # resolves to <stdio.h>
-tollvm helpc math            # resolves to <math.h>
-tollvm helpc string          # resolves to <string.h>
-tollvm helpc SDL2            # resolves to <SDL2/SDL.h>
-tollvm helpc curl            # resolves to <curl/curl.h>
-tollvm helpc openssl         # resolves to <openssl/ssl.h>
-tollvm helpc sqlite3         # resolves to <sqlite3.h>
+lux helpc raylib          # resolves to <raylib.h>
+lux helpc stdio           # resolves to <stdio.h>
+lux helpc math            # resolves to <math.h>
+lux helpc string          # resolves to <string.h>
+lux helpc SDL2            # resolves to <SDL2/SDL.h>
+lux helpc curl            # resolves to <curl/curl.h>
+lux helpc openssl         # resolves to <openssl/ssl.h>
+lux helpc sqlite3         # resolves to <sqlite3.h>
 ```
 
 Any installed system header works — helpc uses the same discovery mechanism as the
@@ -59,13 +59,13 @@ compiler (`clang -E -x c -v /dev/null`) to find system include paths.
 The second positional argument looks up a specific symbol:
 
 ```bash
-tollvm helpc raylib InitWindow   # function
-tollvm helpc raylib Color        # struct
-tollvm helpc raylib KeyboardKey  # enum
-tollvm helpc raylib RED          # macro (struct literal)
-tollvm helpc raylib Texture2D    # typedef
-tollvm helpc stdio printf        # function from another lib
-tollvm helpc math sin            # function from math.h
+lux helpc raylib InitWindow   # function
+lux helpc raylib Color        # struct
+lux helpc raylib KeyboardKey  # enum
+lux helpc raylib RED          # macro (struct literal)
+lux helpc raylib Texture2D    # typedef
+lux helpc stdio printf        # function from another lib
+lux helpc math sin            # function from math.h
 ```
 
 If no symbol is given and no flags are specified, helpc prints a summary of the library.
@@ -121,7 +121,7 @@ information. The exact content depends on the symbol kind.
 #### Functions
 
 ```bash
-$ tollvm helpc raylib InitWindow
+$ lux helpc raylib InitWindow
 ```
 
 ```
@@ -142,13 +142,13 @@ $ tollvm helpc raylib InitWindow
 ╰─────────────────────────────────────────────────────────────╯
 ```
 
-Each parameter shows its C type and the corresponding T type in parentheses.
+Each parameter shows its C type and the corresponding Lux type in parentheses.
 Variadic functions display `...` as an extra parameter.
 
 #### Structs
 
 ```bash
-$ tollvm helpc raylib Color
+$ lux helpc raylib Color
 ```
 
 ```
@@ -178,7 +178,7 @@ directives that use the `CLITERAL(Type){ ... }` pattern and shown as known const
 #### Enums
 
 ```bash
-$ tollvm helpc raylib KeyboardKey
+$ lux helpc raylib KeyboardKey
 ```
 
 Shows all enum values with their integer constants. Use `--all` to see every value
@@ -187,7 +187,7 @@ when the list is long.
 #### Macros
 
 ```bash
-$ tollvm helpc raylib RED
+$ lux helpc raylib RED
 ```
 
 For struct literal macros (like color constants), helpc shows the expanded fields
@@ -198,7 +198,7 @@ For integer macros, it shows the name and numeric value.
 #### Typedefs
 
 ```bash
-$ tollvm helpc raylib Texture2D
+$ lux helpc raylib Texture2D
 ```
 
 Shows the alias target. If it resolves to a known struct, the struct fields are
@@ -209,7 +209,7 @@ shown inline.
 Add `--verbose` or `-v` to see low-level details:
 
 ```bash
-$ tollvm helpc raylib Color -v
+$ lux helpc raylib Color -v
 ```
 
 ```
@@ -232,7 +232,7 @@ This is useful for understanding ABI layout when doing manual memory manipulatio
 Add `--related` or `-r` to see functions and macros that reference a given type:
 
 ```bash
-$ tollvm helpc raylib Color -r
+$ lux helpc raylib Color -r
 ```
 
 Shows the struct info followed by all functions that take or return `Color`, plus
@@ -243,7 +243,7 @@ all macros that produce `Color` values.
 Add `--json` for machine-readable output:
 
 ```bash
-$ tollvm helpc raylib InitWindow --json
+$ lux helpc raylib InitWindow --json
 ```
 
 ```json
@@ -269,7 +269,7 @@ JSON output is available for functions, structs, enums, and full header dumps.
 When you specify a library without a symbol or listing flag, helpc prints a summary:
 
 ```bash
-$ tollvm helpc raylib
+$ lux helpc raylib
 ```
 
 ```
@@ -290,7 +290,7 @@ If a symbol name doesn't match exactly, helpc suggests similar symbols based on
 edit distance:
 
 ```bash
-$ tollvm helpc raylib initwindow
+$ lux helpc raylib initwindow
 ```
 
 ```
@@ -330,13 +330,13 @@ for convenience:
 For headers not in this table, use the full header name:
 
 ```bash
-tollvm helpc mylib.h MyFunction -I/path/to/headers
+lux helpc mylib.h MyFunction -I/path/to/headers
 ```
 
 ---
 
 ## See Also
 
-- [Calling C Functions](../ffi/calling-c.md) — How to use C functions in T code
+- [Calling C Functions](../ffi/calling-c.md) — How to use C functions in Lux code
 - [Linking](../ffi/linking.md) — Linking with external C libraries
 - [CLI Usage](../getting-started/cli-usage.md) — All compiler options

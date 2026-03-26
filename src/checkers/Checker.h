@@ -5,7 +5,7 @@
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
-#include "generated/ToLLVMParser.h"
+#include "generated/LuxParser.h"
 #include "imports/ImportResolver.h"
 #include "types/TypeRegistry.h"
 #include "types/MethodRegistry.h"
@@ -17,7 +17,7 @@ class CBindings;
 
 class Checker {
 public:
-    bool check(ToLLVMParser::ProgramContext* tree);
+    bool check(LuxParser::ProgramContext* tree);
 
     const std::vector<std::string>& errors() const { return errors_; }
 
@@ -67,52 +67,52 @@ private:
     std::vector<std::unique_ptr<TypeInfo>> dynamicTypes_;
 
     // ── Type resolution ──────────────────────────────────────────────
-    const TypeInfo* resolveTypeSpec(ToLLVMParser::TypeSpecContext* ctx,
+    const TypeInfo* resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
                                    unsigned& arrayDims);
-    const TypeInfo* resolveExprType(ToLLVMParser::ExpressionContext* expr);
+    const TypeInfo* resolveExprType(LuxParser::ExpressionContext* expr);
     const TypeInfo* getPointerType(const TypeInfo* pointee);
     const TypeInfo* makeFunctionType(const TypeInfo* returnType,
                                      const std::vector<const TypeInfo*>& paramTypes,
                                      bool isVariadic = false);
-    std::string resolveBaseTypeName(ToLLVMParser::TypeSpecContext* ctx);
+    std::string resolveBaseTypeName(LuxParser::TypeSpecContext* ctx);
     const TypeInfo* resolveBuiltinReturnType(const std::string& retName);
 
     // ── Type queries ─────────────────────────────────────────────────
     bool isNumeric(const TypeInfo* ti);
     bool isInteger(const TypeInfo* ti);
     bool isAssignable(const TypeInfo* lhs, const TypeInfo* rhs);
-    unsigned resolveExprArrayDims(ToLLVMParser::ExpressionContext* expr);
+    unsigned resolveExprArrayDims(LuxParser::ExpressionContext* expr);
 
     // ── Top-level checks ─────────────────────────────────────────────
-    void checkUseDecls(ToLLVMParser::ProgramContext* tree);
-    void checkTypeAliasDecl(ToLLVMParser::TypeAliasDeclContext* decl);
-    void checkStructDecl(ToLLVMParser::StructDeclContext* decl);
-    void checkUnionDecl(ToLLVMParser::UnionDeclContext* decl);
-    void checkEnumDecl(ToLLVMParser::EnumDeclContext* decl);
-    void checkExtendDecl(ToLLVMParser::ExtendDeclContext* decl);
-    void checkExternDecl(ToLLVMParser::ExternDeclContext* decl);
-    void registerFunctionSignature(ToLLVMParser::FunctionDeclContext* func);
-    void checkFunction(ToLLVMParser::FunctionDeclContext* func);
+    void checkUseDecls(LuxParser::ProgramContext* tree);
+    void checkTypeAliasDecl(LuxParser::TypeAliasDeclContext* decl);
+    void checkStructDecl(LuxParser::StructDeclContext* decl);
+    void checkUnionDecl(LuxParser::UnionDeclContext* decl);
+    void checkEnumDecl(LuxParser::EnumDeclContext* decl);
+    void checkExtendDecl(LuxParser::ExtendDeclContext* decl);
+    void checkExternDecl(LuxParser::ExternDeclContext* decl);
+    void registerFunctionSignature(LuxParser::FunctionDeclContext* func);
+    void checkFunction(LuxParser::FunctionDeclContext* func);
     void registerGlobalBuiltins();
 
     // ── Statement checks ────────────────────────────────────────────
-    void checkBlock(ToLLVMParser::BlockContext* block, const TypeInfo* retType);
-    void checkVarDeclStmt(ToLLVMParser::VarDeclStmtContext* stmt);
-    void checkAssignStmt(ToLLVMParser::AssignStmtContext* stmt);
-    void checkCompoundAssignStmt(ToLLVMParser::CompoundAssignStmtContext* stmt);
-    void checkFieldAssignStmt(ToLLVMParser::FieldAssignStmtContext* stmt);
-    void checkDerefAssignStmt(ToLLVMParser::DerefAssignStmtContext* stmt);
-    void checkCallStmt(ToLLVMParser::CallStmtContext* stmt);
-    void checkExprStmt(ToLLVMParser::ExprStmtContext* stmt);
-    void checkReturnStmt(ToLLVMParser::ReturnStmtContext* stmt,
+    void checkBlock(LuxParser::BlockContext* block, const TypeInfo* retType);
+    void checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt);
+    void checkAssignStmt(LuxParser::AssignStmtContext* stmt);
+    void checkCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* stmt);
+    void checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt);
+    void checkDerefAssignStmt(LuxParser::DerefAssignStmtContext* stmt);
+    void checkCallStmt(LuxParser::CallStmtContext* stmt);
+    void checkExprStmt(LuxParser::ExprStmtContext* stmt);
+    void checkReturnStmt(LuxParser::ReturnStmtContext* stmt,
                          const TypeInfo* expectedType);
-    void checkIfStmt(ToLLVMParser::IfStmtContext* stmt,
+    void checkIfStmt(LuxParser::IfStmtContext* stmt,
                      const TypeInfo* retType);
-    void checkForInStmt(ToLLVMParser::ForInStmtContext* stmt,
+    void checkForInStmt(LuxParser::ForInStmtContext* stmt,
                         const TypeInfo* retType);
-    void checkForClassicStmt(ToLLVMParser::ForClassicStmtContext* stmt,
+    void checkForClassicStmt(LuxParser::ForClassicStmtContext* stmt,
                              const TypeInfo* retType);
-    void checkSwitchStmt(ToLLVMParser::SwitchStmtContext* stmt,
+    void checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
                          const TypeInfo* retType);
 
     // ── Error reporting with source location ────────────────────────

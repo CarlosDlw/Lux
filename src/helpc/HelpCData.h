@@ -10,13 +10,13 @@
 struct HelpCParam {
     std::string name;
     std::string cType;     // raw C type spelling (e.g. "const char *")
-    std::string tType;     // T language equivalent (e.g. "*char")
+    std::string luxType;     // Lux language equivalent (e.g. "*char")
 };
 
 struct HelpCFunction {
     std::string name;
     std::string returnCType;
-    std::string returnTType;
+    std::string returnLuxType;
     std::vector<HelpCParam> params;
     bool isVariadic = false;
     std::string doc;       // brief doc comment (if any)
@@ -25,7 +25,7 @@ struct HelpCFunction {
 struct HelpCField {
     std::string name;
     std::string cType;
-    std::string tType;
+    std::string luxType;
     int64_t     offset = -1;  // byte offset (-1 = unknown)
     int64_t     size   = -1;  // byte size (-1 = unknown)
 };
@@ -53,7 +53,7 @@ struct HelpCEnum {
 struct HelpCTypedef {
     std::string name;
     std::string underlyingCType;
-    std::string underlyingTType;
+    std::string underlyingLuxType;
     std::string doc;
 };
 
@@ -72,7 +72,7 @@ struct HelpCStructMacro {
 struct HelpCGlobal {
     std::string name;
     std::string cType;
-    std::string tType;
+    std::string luxType;
     std::string doc;
 };
 

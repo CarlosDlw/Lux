@@ -5,16 +5,16 @@
 
 // ── Process Control ─────────────────────────────────────────────────────────
 
-void tollvm_exit(int code) {
+void lux_exit(int code) {
     exit(code);
 }
 
-void tollvm_panic(const char* msg, size_t len) {
+void lux_panic(const char* msg, size_t len) {
     fprintf(stderr, "panic: %.*s\n", (int)len, msg);
     exit(1);
 }
 
-void tollvm_assert(int cond, const char* file, size_t fileLen, int line) {
+void lux_assert(int cond, const char* file, size_t fileLen, int line) {
     if (!cond) {
         fprintf(stderr, "assertion failed at %.*s:%d\n",
                 (int)fileLen, file, line);
@@ -22,14 +22,14 @@ void tollvm_assert(int cond, const char* file, size_t fileLen, int line) {
     }
 }
 
-void tollvm_assertMsg(int cond, const char* msg, size_t msgLen) {
+void lux_assertMsg(int cond, const char* msg, size_t msgLen) {
     if (!cond) {
         fprintf(stderr, "assertion failed: %.*s\n", (int)msgLen, msg);
         abort();
     }
 }
 
-void tollvm_unreachable(const char* file, size_t fileLen, int line) {
+void lux_unreachable(const char* file, size_t fileLen, int line) {
     fprintf(stderr, "unreachable code reached at %.*s:%d\n",
             (int)fileLen, file, line);
     abort();
@@ -37,7 +37,7 @@ void tollvm_unreachable(const char* file, size_t fileLen, int line) {
 
 // ── Type Conversions (string → T) ──────────────────────────────────────────
 
-int64_t tollvm_toInt(const char* data, size_t len) {
+int64_t lux_toInt(const char* data, size_t len) {
     char buf[64];
     size_t n = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
     memcpy(buf, data, n);
@@ -51,7 +51,7 @@ int64_t tollvm_toInt(const char* data, size_t len) {
     return result;
 }
 
-double tollvm_toFloat(const char* data, size_t len) {
+double lux_toFloat(const char* data, size_t len) {
     char buf[128];
     size_t n = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
     memcpy(buf, data, n);
@@ -65,7 +65,7 @@ double tollvm_toFloat(const char* data, size_t len) {
     return result;
 }
 
-int tollvm_toBool(const char* data, size_t len) {
+int lux_toBool(const char* data, size_t len) {
     if (len == 4 && memcmp(data, "true", 4) == 0)  return 1;
     if (len == 5 && memcmp(data, "false", 5) == 0) return 0;
     fprintf(stderr, "toBool: invalid bool '%.*s' (expected \"true\" or \"false\")\n",
@@ -76,79 +76,79 @@ int tollvm_toBool(const char* data, size_t len) {
 
 // ── toString (T → string) ──────────────────────────────────────────────────
 
-static tollvm_string_ret make_string(const char* buf, int len) {
+static lux_string_ret make_string(const char* buf, int len) {
     char* heap = (char*)malloc(len);
     memcpy(heap, buf, len);
-    return (tollvm_string_ret){ heap, (size_t)len };
+    return (lux_string_ret){ heap, (size_t)len };
 }
 
-tollvm_string_ret tollvm_toString_i8(int8_t val) {
+lux_string_ret lux_toString_i8(int8_t val) {
     char buf[8];
     int len = snprintf(buf, sizeof(buf), "%d", (int)val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_i16(int16_t val) {
+lux_string_ret lux_toString_i16(int16_t val) {
     char buf[8];
     int len = snprintf(buf, sizeof(buf), "%d", (int)val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_i32(int32_t val) {
+lux_string_ret lux_toString_i32(int32_t val) {
     char buf[16];
     int len = snprintf(buf, sizeof(buf), "%d", val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_i64(int64_t val) {
+lux_string_ret lux_toString_i64(int64_t val) {
     char buf[24];
     int len = snprintf(buf, sizeof(buf), "%lld", (long long)val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_u8(uint8_t val) {
+lux_string_ret lux_toString_u8(uint8_t val) {
     char buf[8];
     int len = snprintf(buf, sizeof(buf), "%u", (unsigned)val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_u16(uint16_t val) {
+lux_string_ret lux_toString_u16(uint16_t val) {
     char buf[8];
     int len = snprintf(buf, sizeof(buf), "%u", (unsigned)val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_u32(uint32_t val) {
+lux_string_ret lux_toString_u32(uint32_t val) {
     char buf[16];
     int len = snprintf(buf, sizeof(buf), "%u", val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_u64(uint64_t val) {
+lux_string_ret lux_toString_u64(uint64_t val) {
     char buf[24];
     int len = snprintf(buf, sizeof(buf), "%llu", (unsigned long long)val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_f32(float val) {
+lux_string_ret lux_toString_f32(float val) {
     char buf[32];
     int len = snprintf(buf, sizeof(buf), "%g", (double)val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_f64(double val) {
+lux_string_ret lux_toString_f64(double val) {
     char buf[32];
     int len = snprintf(buf, sizeof(buf), "%g", val);
     return make_string(buf, len);
 }
 
-tollvm_string_ret tollvm_toString_bool(int val) {
-    if (val & 1) return (tollvm_string_ret){ "true",  4 };
-    return (tollvm_string_ret){ "false", 5 };
+lux_string_ret lux_toString_bool(int val) {
+    if (val & 1) return (lux_string_ret){ "true",  4 };
+    return (lux_string_ret){ "false", 5 };
 }
 
-tollvm_string_ret tollvm_toString_char(char val) {
+lux_string_ret lux_toString_char(char val) {
     char* heap = (char*)malloc(1);
     heap[0] = val;
-    return (tollvm_string_ret){ heap, 1 };
+    return (lux_string_ret){ heap, 1 };
 }

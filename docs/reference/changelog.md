@@ -1,12 +1,12 @@
 # Changelog
 
-All notable changes to the T language and its compiler.
+All notable changes to the Lux language and its compiler.
 
 ---
 
 ## v0.1.0 — Initial Release
 
-First public release of the T language compiler.
+First public release of the Lux language compiler.
 
 ### Language Features
 

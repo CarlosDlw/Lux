@@ -5,7 +5,7 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Verifier.h>
 
-#include "generated/ToLLVMLexer.h"
+#include "generated/LuxLexer.h"
 #include "namespace/NamespaceRegistry.h"
 #include "ffi/CBindings.h"
 
@@ -119,7 +119,7 @@ llvm::Function* IRGen::declareCFunction(const std::string& name) {
     return fn;
 }
 
-std::unique_ptr<IRModule> IRGen::generate(ToLLVMParser::ProgramContext* tree,
+std::unique_ptr<IRModule> IRGen::generate(LuxParser::ProgramContext* tree,
                                           const std::string& moduleName) {
     auto ctx = std::make_unique<llvm::LLVMContext>();
     auto mod = std::make_unique<llvm::Module>(moduleName, *ctx);
@@ -143,7 +143,7 @@ std::unique_ptr<IRModule> IRGen::generate(ToLLVMParser::ProgramContext* tree,
     std::string verifyErr;
     llvm::raw_string_ostream errStream(verifyErr);
     if (llvm::verifyModule(*module_, &errStream)) {
-        std::cerr << "tollvm: IR verification failed:\n" << errStream.str() << "\n";
+        std::cerr << "lux: IR verification failed:\n" << errStream.str() << "\n";
         context_ = nullptr;
         module_  = nullptr;
         builder_ = nullptr;
@@ -159,7 +159,7 @@ std::unique_ptr<IRModule> IRGen::generate(ToLLVMParser::ProgramContext* tree,
 
 // ── Visitors ────────────────────────────────────────────────────────────────
 
-std::any IRGen::visitProgram(ToLLVMParser::ProgramContext* ctx) {
+std::any IRGen::visitProgram(LuxParser::ProgramContext* ctx) {
     // ── Register built-in Error struct type in LLVM ─────────────────────
     {
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
@@ -309,7 +309,7 @@ std::any IRGen::visitProgram(ToLLVMParser::ProgramContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitStructDecl(ToLLVMParser::StructDeclContext* ctx) {
+std::any IRGen::visitStructDecl(LuxParser::StructDeclContext* ctx) {
     auto structName = ctx->IDENTIFIER()->getText();
 
     // Create opaque LLVM struct first (enables self-referencing pointer fields)
@@ -339,7 +339,7 @@ std::any IRGen::visitStructDecl(ToLLVMParser::StructDeclContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitUnionDecl(ToLLVMParser::UnionDeclContext* ctx) {
+std::any IRGen::visitUnionDecl(LuxParser::UnionDeclContext* ctx) {
     auto unionName = ctx->IDENTIFIER()->getText();
 
     // Collect field types and compute the max field size
@@ -374,7 +374,7 @@ std::any IRGen::visitUnionDecl(ToLLVMParser::UnionDeclContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitEnumDecl(ToLLVMParser::EnumDeclContext* ctx) {
+std::any IRGen::visitEnumDecl(LuxParser::EnumDeclContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
     auto enumName = identifiers[0]->getText();
 
@@ -397,11 +397,11 @@ std::any IRGen::visitEnumDecl(ToLLVMParser::EnumDeclContext* ctx) {
 //  extend StructName { methods... }
 // ═══════════════════════════════════════════════════════════════════════
 
-std::any IRGen::visitExtendDecl(ToLLVMParser::ExtendDeclContext* ctx) {
+std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
     auto structName = ctx->IDENTIFIER()->getText();
     auto* structTI = typeRegistry_.lookup(structName);
     if (!structTI || structTI->kind != TypeKind::Struct) {
-        std::cerr << "tollvm: cannot extend unknown struct '" << structName << "'\n";
+        std::cerr << "lux: cannot extend unknown struct '" << structName << "'\n";
         return {};
     }
 
@@ -424,7 +424,7 @@ std::any IRGen::visitExtendDecl(ToLLVMParser::ExtendDeclContext* ctx) {
         }
 
         // Get param list from the correct source
-        std::vector<ToLLVMParser::ParamContext*> params;
+        std::vector<LuxParser::ParamContext*> params;
         if (isStatic) {
             if (auto* pl = method->paramList())
                 params = pl->param();
@@ -520,7 +520,7 @@ std::any IRGen::visitExtendDecl(ToLLVMParser::ExtendDeclContext* ctx) {
 
 // ── FFI: extern function declarations ─────────────────────────────────────────
 
-std::any IRGen::visitExternDecl(ToLLVMParser::ExternDeclContext* ctx) {
+std::any IRGen::visitExternDecl(LuxParser::ExternDeclContext* ctx) {
     auto funcName = ctx->IDENTIFIER()->getText();
 
     // Don't re-declare if already present
@@ -551,7 +551,7 @@ std::any IRGen::visitExternDecl(ToLLVMParser::ExternDeclContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitTypeAliasDecl(ToLLVMParser::TypeAliasDeclContext* ctx) {
+std::any IRGen::visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) {
     auto name = ctx->IDENTIFIER()->getText();
 
     // Skip if already registered (e.g., from a previous pass)
@@ -588,7 +588,7 @@ std::any IRGen::visitTypeAliasDecl(ToLLVMParser::TypeAliasDeclContext* ctx) {
 }
 
 // ── Forward-declare a user function (signature only, no body) ───────────
-void IRGen::forwardDeclareFunction(ToLLVMParser::FunctionDeclContext* ctx) {
+void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
     auto  funcName   = ctx->IDENTIFIER()->getText();
@@ -615,7 +615,7 @@ void IRGen::forwardDeclareFunction(ToLLVMParser::FunctionDeclContext* ctx) {
 
     std::string emitName;
     if (isMainWithArgs) {
-        emitName = "tollvm_user_main";
+        emitName = "lux_user_main";
     } else if (funcName == "main") {
         emitName = "main";
     } else if (nsRegistry_) {
@@ -646,14 +646,14 @@ void IRGen::forwardDeclareFunction(ToLLVMParser::FunctionDeclContext* ctx) {
     }
 }
 
-std::any IRGen::visitFunctionDecl(ToLLVMParser::FunctionDeclContext* ctx) {
+std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
     auto  funcName   = ctx->IDENTIFIER()->getText();
 
     // ── Special handling: main(Vec<string> args) ────────────────────────
     // When main has parameters, we generate:
-    //   1) tollvm_user_main(ptr %args) — the user's actual code
+    //   1) lux_user_main(ptr %args) — the user's actual code
     //   2) main(i32 %argc, ptr %argv) — a C-ABI wrapper that builds the Vec
     bool isMainWithArgs = (funcName == "main" && ctx->paramList() != nullptr);
 
@@ -680,7 +680,7 @@ std::any IRGen::visitFunctionDecl(ToLLVMParser::FunctionDeclContext* ctx) {
     // Apply namespace mangling for non-main functions
     std::string emitName;
     if (isMainWithArgs) {
-        emitName = "tollvm_user_main";
+        emitName = "lux_user_main";
     } else if (funcName == "main") {
         emitName = "main";
     } else if (nsRegistry_) {
@@ -806,18 +806,18 @@ std::any IRGen::visitFunctionDecl(ToLLVMParser::FunctionDeclContext* ctx) {
         // Alloca a Vec<string> on the stack
         auto* vecAlloca = builder_->CreateAlloca(vecTy, nullptr, "args");
 
-        // Call tollvm_args_init(&args, argc, argv)
-        auto argsInit = declareBuiltin("tollvm_args_init", voidTy,
+        // Call lux_args_init(&args, argc, argv)
+        auto argsInit = declareBuiltin("lux_args_init", voidTy,
                                        {ptrTy, i32Ty, ptrTy});
         builder_->CreateCall(argsInit, {vecAlloca, argc, argv});
 
-        // Call tollvm_user_main(args_vec_struct)
+        // Call lux_user_main(args_vec_struct)
         // The user function takes the vec struct by value (loaded from alloca)
         auto* vecVal = builder_->CreateLoad(vecTy, vecAlloca, "args_vec");
         auto* retVal = builder_->CreateCall(func, {vecVal}, "ret");
 
         // Free the vec
-        auto vecFree = declareBuiltin("tollvm_vec_free_str", voidTy, {ptrTy});
+        auto vecFree = declareBuiltin("lux_vec_free_str", voidTy, {ptrTy});
         builder_->CreateCall(vecFree, {vecAlloca});
 
         builder_->CreateRet(retVal);
@@ -826,7 +826,7 @@ std::any IRGen::visitFunctionDecl(ToLLVMParser::FunctionDeclContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitBlock(ToLLVMParser::BlockContext* ctx) {
+std::any IRGen::visitBlock(LuxParser::BlockContext* ctx) {
     auto* entry = llvm::BasicBlock::Create(*context_, "entry", currentFunction_);
     builder_->SetInsertPoint(entry);
 
@@ -838,7 +838,7 @@ std::any IRGen::visitBlock(ToLLVMParser::BlockContext* ctx) {
 }
 
 // use std::log::println;   →  register in ImportResolver
-std::any IRGen::visitUseItem(ToLLVMParser::UseItemContext* ctx) {
+std::any IRGen::visitUseItem(LuxParser::UseItemContext* ctx) {
     std::string path;
     for (auto* id : ctx->modulePath()->IDENTIFIER()) {
         if (!path.empty()) path += "::";
@@ -856,7 +856,7 @@ std::any IRGen::visitUseItem(ToLLVMParser::UseItemContext* ctx) {
 }
 
 // use std::log::{ println, print };
-std::any IRGen::visitUseGroup(ToLLVMParser::UseGroupContext* ctx) {
+std::any IRGen::visitUseGroup(LuxParser::UseGroupContext* ctx) {
     std::string path;
     for (auto* id : ctx->modulePath()->IDENTIFIER()) {
         if (!path.empty()) path += "::";
@@ -879,7 +879,7 @@ std::any IRGen::visitUseGroup(ToLLVMParser::UseGroupContext* ctx) {
 //  Cross-file symbol registration (namespace support)
 // ═══════════════════════════════════════════════════════════════════════
 
-void IRGen::registerCrossFileSymbols(ToLLVMParser::ProgramContext* /*ctx*/) {
+void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
     if (!nsRegistry_) return;
 
     // ── Phase 1: Register struct / enum / typeAlias types from other files
@@ -889,19 +889,19 @@ void IRGen::registerCrossFileSymbols(ToLLVMParser::ProgramContext* /*ctx*/) {
 
     for (auto* sym : sameNsSymbols) {
         if (sym->kind == ExportedSymbol::Struct) {
-            auto* structCtx = dynamic_cast<ToLLVMParser::StructDeclContext*>(sym->decl);
+            auto* structCtx = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
             if (structCtx && !typeRegistry_.lookup(sym->name))
                 visitStructDecl(structCtx);
         } else if (sym->kind == ExportedSymbol::Union) {
-            auto* unionCtx = dynamic_cast<ToLLVMParser::UnionDeclContext*>(sym->decl);
+            auto* unionCtx = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
             if (unionCtx && !typeRegistry_.lookup(sym->name))
                 visitUnionDecl(unionCtx);
         } else if (sym->kind == ExportedSymbol::Enum) {
-            auto* enumCtx = dynamic_cast<ToLLVMParser::EnumDeclContext*>(sym->decl);
+            auto* enumCtx = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
             if (enumCtx && !typeRegistry_.lookup(sym->name))
                 visitEnumDecl(enumCtx);
         } else if (sym->kind == ExportedSymbol::TypeAlias) {
-            auto* aliasCtx = dynamic_cast<ToLLVMParser::TypeAliasDeclContext*>(sym->decl);
+            auto* aliasCtx = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
             if (aliasCtx && !typeRegistry_.lookup(sym->name))
                 visitTypeAliasDecl(aliasCtx);
         }
@@ -913,19 +913,19 @@ void IRGen::registerCrossFileSymbols(ToLLVMParser::ProgramContext* /*ctx*/) {
         if (!sym) continue;
 
         if (sym->kind == ExportedSymbol::Struct) {
-            auto* structCtx = dynamic_cast<ToLLVMParser::StructDeclContext*>(sym->decl);
+            auto* structCtx = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
             if (structCtx && !typeRegistry_.lookup(sym->name))
                 visitStructDecl(structCtx);
         } else if (sym->kind == ExportedSymbol::Union) {
-            auto* unionCtx = dynamic_cast<ToLLVMParser::UnionDeclContext*>(sym->decl);
+            auto* unionCtx = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
             if (unionCtx && !typeRegistry_.lookup(sym->name))
                 visitUnionDecl(unionCtx);
         } else if (sym->kind == ExportedSymbol::Enum) {
-            auto* enumCtx = dynamic_cast<ToLLVMParser::EnumDeclContext*>(sym->decl);
+            auto* enumCtx = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
             if (enumCtx && !typeRegistry_.lookup(sym->name))
                 visitEnumDecl(enumCtx);
         } else if (sym->kind == ExportedSymbol::TypeAlias) {
-            auto* aliasCtx = dynamic_cast<ToLLVMParser::TypeAliasDeclContext*>(sym->decl);
+            auto* aliasCtx = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
             if (aliasCtx && !typeRegistry_.lookup(sym->name))
                 visitTypeAliasDecl(aliasCtx);
         }
@@ -936,7 +936,7 @@ void IRGen::registerCrossFileSymbols(ToLLVMParser::ProgramContext* /*ctx*/) {
         if (sym->kind == ExportedSymbol::Function) {
             auto mangledName = NamespaceRegistry::mangle(
                 currentNamespace_, sym->name);
-            auto* funcCtx = dynamic_cast<ToLLVMParser::FunctionDeclContext*>(sym->decl);
+            auto* funcCtx = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
             if (funcCtx && !module_->getFunction(mangledName)) {
                 declareExternFunction(mangledName, funcCtx);
             }
@@ -951,7 +951,7 @@ void IRGen::registerCrossFileSymbols(ToLLVMParser::ProgramContext* /*ctx*/) {
         if (!sym || sym->kind != ExportedSymbol::Function) continue;
 
         auto mangledName = NamespaceRegistry::mangle(sourceNs, sym->name);
-        auto* funcCtx = dynamic_cast<ToLLVMParser::FunctionDeclContext*>(sym->decl);
+        auto* funcCtx = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
         if (funcCtx && !module_->getFunction(mangledName)) {
             declareExternFunction(mangledName, funcCtx);
         }
@@ -963,7 +963,7 @@ void IRGen::registerCrossFileSymbols(ToLLVMParser::ProgramContext* /*ctx*/) {
 }
 
 void IRGen::declareExternFunction(const std::string& mangledName,
-                                   ToLLVMParser::FunctionDeclContext* decl) {
+                                   LuxParser::FunctionDeclContext* decl) {
     auto* retTI     = resolveTypeInfo(decl->typeSpec());
     auto* retLLType = retTI->toLLVMType(*context_, module_->getDataLayout());
 
@@ -1007,7 +1007,7 @@ std::string IRGen::resolveCallTarget(const std::string& name) const {
 }
 
 // int32 x = 42;   or   []int32 arr = [1, 2, 3];   or   Vec<int32> v = [1, 2, 3];
-std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
+std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
     auto* ti   = resolveTypeInfo(ctx->typeSpec());
     auto  dims = countArrayDims(ctx->typeSpec());
     auto  name = ctx->IDENTIFIER()->getText();
@@ -1032,11 +1032,11 @@ std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
             return {};
         }
 
-        // Mutex — initialized via tollvm_mutexCreate()
+        // Mutex — initialized via lux_mutexCreate()
         if (ti->extendedKind == "Mutex") {
             auto* alloca = builder_->CreateAlloca(ptrTy, nullptr, name);
             locals_[name] = { alloca, ti, 0 };
-            auto callee = declareBuiltin("tollvm_mutexCreate", ptrTy, {});
+            auto callee = declareBuiltin("lux_mutexCreate", ptrTy, {});
             auto* mtx = builder_->CreateCall(callee, {}, "mutex");
             builder_->CreateStore(mtx, alloca);
             return {};
@@ -1050,7 +1050,7 @@ std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
             locals_[name] = { alloca, ti, 0 };
 
             auto initFn = declareBuiltin(
-                "tollvm_map_init_" + suffix,
+                "lux_map_init_" + suffix,
                 llvm::Type::getVoidTy(*context_),
                 { ptrTy });
             builder_->CreateCall(initFn, { alloca });
@@ -1065,7 +1065,7 @@ std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
             locals_[name] = { alloca, ti, 0 };
 
             auto initFn = declareBuiltin(
-                "tollvm_set_init_" + suffix,
+                "lux_set_init_" + suffix,
                 llvm::Type::getVoidTy(*context_),
                 { ptrTy });
             builder_->CreateCall(initFn, { alloca });
@@ -1082,7 +1082,7 @@ std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
         // No initializer — default to empty vec
         if (!ctx->expression()) {
             auto initFn = declareBuiltin(
-                "tollvm_vec_init_" + suffix,
+                "lux_vec_init_" + suffix,
                 llvm::Type::getVoidTy(*context_),
                 { ptrTy });
             builder_->CreateCall(initFn, { alloca });
@@ -1090,7 +1090,7 @@ std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
         }
 
         // Check if the initializer is an array literal
-        auto* arrLit = dynamic_cast<ToLLVMParser::ArrayLitExprContext*>(
+        auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(
                 ctx->expression());
 
         if (arrLit) {
@@ -1105,14 +1105,14 @@ std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
             if (vals.empty()) {
                 // Empty vec: call init
                 auto initFn = declareBuiltin(
-                    "tollvm_vec_init_" + suffix,
+                    "lux_vec_init_" + suffix,
                     llvm::Type::getVoidTy(*context_),
                     { ptrTy });
                 builder_->CreateCall(initFn, { alloca });
             } else {
                 // Non-empty vec: init with capacity, then push each
                 auto initCapFn = declareBuiltin(
-                    "tollvm_vec_init_cap_" + suffix,
+                    "lux_vec_init_cap_" + suffix,
                     llvm::Type::getVoidTy(*context_),
                     { ptrTy, usizeTy });
                 builder_->CreateCall(initCapFn, {
@@ -1121,7 +1121,7 @@ std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
                 });
 
                 auto pushFn = declareBuiltin(
-                    "tollvm_vec_push_" + suffix,
+                    "lux_vec_push_" + suffix,
                     llvm::Type::getVoidTy(*context_),
                     { ptrTy, elemLLTy });
                 for (auto* v : vals) {
@@ -1207,7 +1207,7 @@ std::any IRGen::visitVarDeclStmt(ToLLVMParser::VarDeclStmtContext* ctx) {
 }
 
 // x = 42;  or  arr[i] = val;   arr[i][j] = val;
-std::any IRGen::visitAssignStmt(ToLLVMParser::AssignStmtContext* ctx) {
+std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
     auto varName = ctx->IDENTIFIER()->getText();
     auto it = locals_.find(varName);
 
@@ -1229,7 +1229,7 @@ std::any IRGen::visitAssignStmt(ToLLVMParser::AssignStmtContext* ctx) {
             }
             return {};
         }
-        std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
         return {};
     }
 
@@ -1268,7 +1268,7 @@ std::any IRGen::visitAssignStmt(ToLLVMParser::AssignStmtContext* ctx) {
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
 
         if (elemTI->extendedKind == "Map") {
-            // Map<K,V> subscript assignment: m[key] = val → tollvm_map_set_<suffix>
+            // Map<K,V> subscript assignment: m[key] = val → lux_map_set_<suffix>
             auto* keyLLTy = elemTI->keyType->toLLVMType(*context_, module_->getDataLayout());
             auto* valLLTy = elemTI->valueType->toLLVMType(*context_, module_->getDataLayout());
             auto suffix = elemTI->builtinSuffix;
@@ -1292,14 +1292,14 @@ std::any IRGen::visitAssignStmt(ToLLVMParser::AssignStmtContext* ctx) {
             }
 
             auto callee = declareBuiltin(
-                "tollvm_map_set_" + suffix,
+                "lux_map_set_" + suffix,
                 llvm::Type::getVoidTy(*context_),
                 { ptrTy, keyLLTy, valLLTy });
             builder_->CreateCall(callee, { alloca, keyVal, val });
             return {};
         }
 
-        // Vec<T> index assignment: v[i] = x → tollvm_vec_set_<suffix>
+        // Vec<T> index assignment: v[i] = x → lux_vec_set_<suffix>
         auto* elemLLTy = elemTI->elementType->toLLVMType(
             *context_, module_->getDataLayout());
         auto suffix = getVecSuffix(elemTI->elementType);
@@ -1324,7 +1324,7 @@ std::any IRGen::visitAssignStmt(ToLLVMParser::AssignStmtContext* ctx) {
         }
 
         auto callee = declareBuiltin(
-            "tollvm_vec_set_" + suffix,
+            "lux_vec_set_" + suffix,
             llvm::Type::getVoidTy(*context_),
             { ptrTy, usizeTy, elemLLTy });
         builder_->CreateCall(callee, { alloca, idx, val });
@@ -1367,11 +1367,11 @@ std::any IRGen::visitAssignStmt(ToLLVMParser::AssignStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitCompoundAssignStmt(ToLLVMParser::CompoundAssignStmtContext* ctx) {
+std::any IRGen::visitCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* ctx) {
     auto varName = ctx->IDENTIFIER()->getText();
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
         return {};
     }
 
@@ -1398,34 +1398,34 @@ std::any IRGen::visitCompoundAssignStmt(ToLLVMParser::CompoundAssignStmtContext*
     llvm::Value* result = nullptr;
 
     switch (ctx->op->getType()) {
-    case ToLLVMLexer::PLUS_ASSIGN:
+    case LuxLexer::PLUS_ASSIGN:
         result = isFloat ? builder_->CreateFAdd(cur, rhs) : builder_->CreateAdd(cur, rhs);
         break;
-    case ToLLVMLexer::MINUS_ASSIGN:
+    case LuxLexer::MINUS_ASSIGN:
         result = isFloat ? builder_->CreateFSub(cur, rhs) : builder_->CreateSub(cur, rhs);
         break;
-    case ToLLVMLexer::STAR_ASSIGN:
+    case LuxLexer::STAR_ASSIGN:
         result = isFloat ? builder_->CreateFMul(cur, rhs) : builder_->CreateMul(cur, rhs);
         break;
-    case ToLLVMLexer::SLASH_ASSIGN:
+    case LuxLexer::SLASH_ASSIGN:
         result = isFloat ? builder_->CreateFDiv(cur, rhs) : builder_->CreateSDiv(cur, rhs);
         break;
-    case ToLLVMLexer::PERCENT_ASSIGN:
+    case LuxLexer::PERCENT_ASSIGN:
         result = isFloat ? builder_->CreateFRem(cur, rhs) : builder_->CreateSRem(cur, rhs);
         break;
-    case ToLLVMLexer::AMP_ASSIGN:
+    case LuxLexer::AMP_ASSIGN:
         result = builder_->CreateAnd(cur, rhs);
         break;
-    case ToLLVMLexer::PIPE_ASSIGN:
+    case LuxLexer::PIPE_ASSIGN:
         result = builder_->CreateOr(cur, rhs);
         break;
-    case ToLLVMLexer::CARET_ASSIGN:
+    case LuxLexer::CARET_ASSIGN:
         result = builder_->CreateXor(cur, rhs);
         break;
-    case ToLLVMLexer::LSHIFT_ASSIGN:
+    case LuxLexer::LSHIFT_ASSIGN:
         result = builder_->CreateShl(cur, rhs);
         break;
-    case ToLLVMLexer::RSHIFT_ASSIGN:
+    case LuxLexer::RSHIFT_ASSIGN:
         result = builder_->CreateAShr(cur, rhs);
         break;
     default:
@@ -1438,13 +1438,13 @@ std::any IRGen::visitCompoundAssignStmt(ToLLVMParser::CompoundAssignStmtContext*
 }
 
 // p.x = 42;
-std::any IRGen::visitFieldAssignStmt(ToLLVMParser::FieldAssignStmtContext* ctx) {
+std::any IRGen::visitFieldAssignStmt(LuxParser::FieldAssignStmtContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
         return {};
     }
 
@@ -1467,7 +1467,7 @@ std::any IRGen::visitFieldAssignStmt(ToLLVMParser::FieldAssignStmtContext* ctx) 
             }
         }
         if (fieldIdx < 0) {
-            std::cerr << "tollvm: '" << currentTI->name
+            std::cerr << "lux: '" << currentTI->name
                       << "' has no field '" << fieldName << "'\n";
             return {};
         }
@@ -1504,13 +1504,13 @@ std::any IRGen::visitFieldAssignStmt(ToLLVMParser::FieldAssignStmtContext* ctx) 
 
 // arr[i].field = value;  or  arr[i][j].field.subfield = value;
 std::any IRGen::visitIndexFieldAssignStmt(
-    ToLLVMParser::IndexFieldAssignStmtContext* ctx) {
+    LuxParser::IndexFieldAssignStmtContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
         return {};
     }
 
@@ -1559,7 +1559,7 @@ std::any IRGen::visitIndexFieldAssignStmt(
             }
         }
         if (fieldIdx < 0) {
-            std::cerr << "tollvm: '" << currentTI->name
+            std::cerr << "lux: '" << currentTI->name
                       << "' has no field '" << fieldName << "'\n";
             return {};
         }
@@ -1595,14 +1595,14 @@ std::any IRGen::visitIndexFieldAssignStmt(
 }
 
 // ptr->field = value;
-std::any IRGen::visitArrowAssignStmt(ToLLVMParser::ArrowAssignStmtContext* ctx) {
+std::any IRGen::visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
     auto varName = identifiers[0]->getText();
     auto fieldName = identifiers[1]->getText();
 
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
         return {};
     }
 
@@ -1616,7 +1616,7 @@ std::any IRGen::visitArrowAssignStmt(ToLLVMParser::ArrowAssignStmtContext* ctx) 
         structTI = structTI->pointeeType;
 
     if (!structTI || (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union)) {
-        std::cerr << "tollvm: '->' requires pointer to struct or union\n";
+        std::cerr << "lux: '->' requires pointer to struct or union\n";
         return {};
     }
 
@@ -1630,7 +1630,7 @@ std::any IRGen::visitArrowAssignStmt(ToLLVMParser::ArrowAssignStmtContext* ctx) 
         }
     }
     if (fieldIdx < 0) {
-        std::cerr << "tollvm: '" << structTI->name
+        std::cerr << "lux: '" << structTI->name
                   << "' has no field '" << fieldName << "'\n";
         return {};
     }
@@ -1658,14 +1658,14 @@ std::any IRGen::visitArrowAssignStmt(ToLLVMParser::ArrowAssignStmtContext* ctx) 
 
 // ptr->field += value;
 std::any IRGen::visitArrowCompoundAssignStmt(
-    ToLLVMParser::ArrowCompoundAssignStmtContext* ctx) {
+    LuxParser::ArrowCompoundAssignStmtContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
     auto varName = identifiers[0]->getText();
     auto fieldName = identifiers[1]->getText();
 
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
         return {};
     }
 
@@ -1677,7 +1677,7 @@ std::any IRGen::visitArrowCompoundAssignStmt(
         structTI = structTI->pointeeType;
 
     if (!structTI || structTI->kind != TypeKind::Struct) {
-        std::cerr << "tollvm: '->' requires pointer to struct\n";
+        std::cerr << "lux: '->' requires pointer to struct\n";
         return {};
     }
 
@@ -1689,7 +1689,7 @@ std::any IRGen::visitArrowCompoundAssignStmt(
         }
     }
     if (fieldIdx < 0) {
-        std::cerr << "tollvm: struct '" << structTI->name
+        std::cerr << "lux: struct '" << structTI->name
                   << "' has no field '" << fieldName << "'\n";
         return {};
     }
@@ -1712,36 +1712,36 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     auto opType = ctx->op->getType();
     bool isFloat = fieldTy->isFloatingPointTy();
 
-    if (opType == ToLLVMLexer::PLUS_ASSIGN)
+    if (opType == LuxLexer::PLUS_ASSIGN)
         result = isFloat ? builder_->CreateFAdd(oldVal, rhs) : builder_->CreateAdd(oldVal, rhs);
-    else if (opType == ToLLVMLexer::MINUS_ASSIGN)
+    else if (opType == LuxLexer::MINUS_ASSIGN)
         result = isFloat ? builder_->CreateFSub(oldVal, rhs) : builder_->CreateSub(oldVal, rhs);
-    else if (opType == ToLLVMLexer::STAR_ASSIGN)
+    else if (opType == LuxLexer::STAR_ASSIGN)
         result = isFloat ? builder_->CreateFMul(oldVal, rhs) : builder_->CreateMul(oldVal, rhs);
-    else if (opType == ToLLVMLexer::SLASH_ASSIGN)
+    else if (opType == LuxLexer::SLASH_ASSIGN)
         result = isFloat ? builder_->CreateFDiv(oldVal, rhs)
                          : (structTI->fields[fieldIdx].typeInfo->isSigned
                                 ? builder_->CreateSDiv(oldVal, rhs)
                                 : builder_->CreateUDiv(oldVal, rhs));
-    else if (opType == ToLLVMLexer::PERCENT_ASSIGN)
+    else if (opType == LuxLexer::PERCENT_ASSIGN)
         result = isFloat ? builder_->CreateFRem(oldVal, rhs)
                          : (structTI->fields[fieldIdx].typeInfo->isSigned
                                 ? builder_->CreateSRem(oldVal, rhs)
                                 : builder_->CreateURem(oldVal, rhs));
-    else if (opType == ToLLVMLexer::AMP_ASSIGN)
+    else if (opType == LuxLexer::AMP_ASSIGN)
         result = builder_->CreateAnd(oldVal, rhs);
-    else if (opType == ToLLVMLexer::PIPE_ASSIGN)
+    else if (opType == LuxLexer::PIPE_ASSIGN)
         result = builder_->CreateOr(oldVal, rhs);
-    else if (opType == ToLLVMLexer::CARET_ASSIGN)
+    else if (opType == LuxLexer::CARET_ASSIGN)
         result = builder_->CreateXor(oldVal, rhs);
-    else if (opType == ToLLVMLexer::LSHIFT_ASSIGN)
+    else if (opType == LuxLexer::LSHIFT_ASSIGN)
         result = builder_->CreateShl(oldVal, rhs);
-    else if (opType == ToLLVMLexer::RSHIFT_ASSIGN)
+    else if (opType == LuxLexer::RSHIFT_ASSIGN)
         result = structTI->fields[fieldIdx].typeInfo->isSigned
                      ? builder_->CreateAShr(oldVal, rhs)
                      : builder_->CreateLShr(oldVal, rhs);
     else {
-        std::cerr << "tollvm: unsupported compound assign operator\n";
+        std::cerr << "lux: unsupported compound assign operator\n";
         return {};
     }
 
@@ -1749,13 +1749,13 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     return {};
 }
 
-std::any IRGen::visitExprStmt(ToLLVMParser::ExprStmtContext* ctx) {
+std::any IRGen::visitExprStmt(LuxParser::ExprStmtContext* ctx) {
     visit(ctx->expression());
     return {};
 }
 
 // println(x);
-std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
+std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
     auto funcName = ctx->IDENTIFIER()->getText();
 
     // ── Global builtins (always available, no import required) ──────────
@@ -1777,12 +1777,12 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
             auto* arg = args.empty()
                 ? llvm::ConstantInt::get(i32Ty, 0)
                 : builder_->CreateIntCast(args[0], i32Ty, true, "exit_code");
-            auto callee = declareBuiltin("tollvm_exit", voidTy, {i32Ty});
+            auto callee = declareBuiltin("lux_exit", voidTy, {i32Ty});
             builder_->CreateCall(callee, {arg});
         } else if (funcName == "panic") {
             auto* strPtr = builder_->CreateExtractValue(args[0], 0, "panic_ptr");
             auto* strLen = builder_->CreateExtractValue(args[0], 1, "panic_len");
-            auto callee = declareBuiltin("tollvm_panic", voidTy, {ptrTy, usizeTy});
+            auto callee = declareBuiltin("lux_panic", voidTy, {ptrTy, usizeTy});
             builder_->CreateCall(callee, {strPtr, strLen});
         } else if (funcName == "assert") {
             auto* cond = args[0];
@@ -1793,7 +1793,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
             auto* fileGlobal = builder_->CreateGlobalString(fileName, ".assert_file", 0, module_);
             auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
             auto* lineNo  = llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine());
-            auto callee = declareBuiltin("tollvm_assert", voidTy,
+            auto callee = declareBuiltin("lux_assert", voidTy,
                                          {i32Ty, ptrTy, usizeTy, i32Ty});
             builder_->CreateCall(callee, {cond, fileGlobal, fileLen, lineNo});
         } else if (funcName == "assertMsg") {
@@ -1802,7 +1802,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
                 cond = builder_->CreateZExt(cond, i32Ty, "assertmsg_cond");
             auto* msgPtr = builder_->CreateExtractValue(args[1], 0, "assertmsg_ptr");
             auto* msgLen = builder_->CreateExtractValue(args[1], 1, "assertmsg_len");
-            auto callee = declareBuiltin("tollvm_assertMsg", voidTy,
+            auto callee = declareBuiltin("lux_assertMsg", voidTy,
                                          {i32Ty, ptrTy, usizeTy});
             builder_->CreateCall(callee, {cond, msgPtr, msgLen});
         } else if (funcName == "unreachable") {
@@ -1810,7 +1810,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
             auto* fileGlobal = builder_->CreateGlobalString(fileName, ".unreach_file", 0, module_);
             auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
             auto* lineNo  = llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine());
-            auto callee = declareBuiltin("tollvm_unreachable", voidTy,
+            auto callee = declareBuiltin("lux_unreachable", voidTy,
                                          {ptrTy, usizeTy, i32Ty});
             builder_->CreateCall(callee, {fileGlobal, fileLen, lineNo});
         }
@@ -2008,7 +2008,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
     }
 
     if (!imports_.isImported(funcName)) {
-        std::cerr << "tollvm: call to undeclared function '" << funcName
+        std::cerr << "lux: call to undeclared function '" << funcName
                   << "'. Did you forget 'use std::log::" << funcName << ";'?\n";
         return {};
     }
@@ -2047,7 +2047,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
             if (isString) {
                 auto* strPtr = builder_->CreateExtractValue(arg, 0, "dbg_str_ptr");
                 auto* strLen = builder_->CreateExtractValue(arg, 1, "dbg_str_len");
-                auto callee = declareBuiltin("tollvm_dbg_str",
+                auto callee = declareBuiltin("lux_dbg_str",
                     llvm::Type::getVoidTy(*context_),
                     {ptrTy, usizeTy, i32Ty, ptrTy, usizeTy});
                 builder_->CreateCall(callee, {fileGlobal, fileLen, lineNo, strPtr, strLen});
@@ -2073,7 +2073,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
                 callArg   = builder_->CreateTrunc(arg, paramType);
             }
 
-            auto cFuncName = "tollvm_dbg_" + suffix;
+            auto cFuncName = "lux_dbg_" + suffix;
             auto callee = declareBuiltin(cFuncName,
                 llvm::Type::getVoidTy(*context_),
                 {ptrTy, usizeTy, i32Ty, paramType});
@@ -2084,13 +2084,13 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
 
     // ── std::io void functions as statement ─────────────────────────────
     if (funcName == "flush") {
-        auto callee = declareBuiltin("tollvm_flush",
+        auto callee = declareBuiltin("lux_flush",
             llvm::Type::getVoidTy(*context_), {});
         builder_->CreateCall(callee, {});
         return {};
     }
     if (funcName == "flushErr") {
-        auto callee = declareBuiltin("tollvm_flushErr",
+        auto callee = declareBuiltin("lux_flushErr",
             llvm::Type::getVoidTy(*context_), {});
         builder_->CreateCall(callee, {});
         return {};
@@ -2104,7 +2104,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
                 args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
         }
         auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
-        auto callee = declareBuiltin("tollvm_free",
+        auto callee = declareBuiltin("lux_free",
             llvm::Type::getVoidTy(*context_), {ptrTy});
         builder_->CreateCall(callee, {args[0]});
         return {};
@@ -2120,7 +2120,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* n = args[2];
         if (n->getType() != usizeTy)
             n = builder_->CreateIntCast(n, usizeTy, false);
-        auto callee = declareBuiltin("tollvm_copy",
+        auto callee = declareBuiltin("lux_copy",
             llvm::Type::getVoidTy(*context_), {ptrTy, ptrTy, usizeTy});
         builder_->CreateCall(callee, {args[0], args[1], n});
         return {};
@@ -2136,7 +2136,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* n = args[2];
         if (n->getType() != usizeTy)
             n = builder_->CreateIntCast(n, usizeTy, false);
-        auto callee = declareBuiltin("tollvm_move",
+        auto callee = declareBuiltin("lux_move",
             llvm::Type::getVoidTy(*context_), {ptrTy, ptrTy, usizeTy});
         builder_->CreateCall(callee, {args[0], args[1], n});
         return {};
@@ -2156,7 +2156,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* n = args[2];
         if (n->getType() != usizeTy)
             n = builder_->CreateIntCast(n, usizeTy, false);
-        auto callee = declareBuiltin("tollvm_set",
+        auto callee = declareBuiltin("lux_set",
             llvm::Type::getVoidTy(*context_), {ptrTy, i8Ty, usizeTy});
         builder_->CreateCall(callee, {args[0], val, n});
         return {};
@@ -2172,7 +2172,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* n = args[1];
         if (n->getType() != usizeTy)
             n = builder_->CreateIntCast(n, usizeTy, false);
-        auto callee = declareBuiltin("tollvm_zero",
+        auto callee = declareBuiltin("lux_zero",
             llvm::Type::getVoidTy(*context_), {ptrTy, usizeTy});
         builder_->CreateCall(callee, {args[0], n});
         return {};
@@ -2189,13 +2189,13 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* s = args[0];
         if (s->getType() != u64Ty)
             s = builder_->CreateIntCast(s, u64Ty, false);
-        auto callee = declareBuiltin("tollvm_seed",
+        auto callee = declareBuiltin("lux_seed",
             llvm::Type::getVoidTy(*context_), {u64Ty});
         builder_->CreateCall(callee, {s});
         return {};
     }
     if (funcName == "seedTime") {
-        auto callee = declareBuiltin("tollvm_seedTime",
+        auto callee = declareBuiltin("lux_seedTime",
             llvm::Type::getVoidTy(*context_), {});
         builder_->CreateCall(callee, {});
         return {};
@@ -2212,7 +2212,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* ms = args[0];
         if (ms->getType() != u64Ty)
             ms = builder_->CreateIntCast(ms, u64Ty, false);
-        auto callee = declareBuiltin("tollvm_sleep",
+        auto callee = declareBuiltin("lux_sleep",
             llvm::Type::getVoidTy(*context_), {u64Ty});
         builder_->CreateCall(callee, {ms});
         return {};
@@ -2227,7 +2227,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* us = args[0];
         if (us->getType() != u64Ty)
             us = builder_->CreateIntCast(us, u64Ty, false);
-        auto callee = declareBuiltin("tollvm_sleepMicros",
+        auto callee = declareBuiltin("lux_sleepMicros",
             llvm::Type::getVoidTy(*context_), {u64Ty});
         builder_->CreateCall(callee, {us});
         return {};
@@ -2249,7 +2249,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* dataPtr = builder_->CreateExtractValue(args[1], 0, "fs_data_ptr");
         auto* dataLen = builder_->CreateExtractValue(args[1], 1, "fs_data_len");
 
-        auto callee2 = declareBuiltin("tollvm_" + funcName, voidTy,
+        auto callee2 = declareBuiltin("lux_" + funcName, voidTy,
             {ptrTy, usizeTy, ptrTy, usizeTy});
         builder_->CreateCall(callee2, {pathPtr, pathLen, dataPtr, dataLen});
         return {};
@@ -2274,7 +2274,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
 
             auto* pathPtr = builder_->CreateExtractValue(args[0], 0, "fs_path_ptr");
             auto* pathLen = builder_->CreateExtractValue(args[0], 1, "fs_path_len");
-            auto callee2 = declareBuiltin("tollvm_" + funcName, i32Ty,
+            auto callee2 = declareBuiltin("lux_" + funcName, i32Ty,
                 {ptrTy, usizeTy});
             builder_->CreateCall(callee2, {pathPtr, pathLen});
             return {};
@@ -2294,7 +2294,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* fromLen = builder_->CreateExtractValue(args[0], 1, "fs_from_len");
         auto* toPtr   = builder_->CreateExtractValue(args[1], 0, "fs_to_ptr");
         auto* toLen   = builder_->CreateExtractValue(args[1], 1, "fs_to_len");
-        auto callee2 = declareBuiltin("tollvm_fsRename", i32Ty,
+        auto callee2 = declareBuiltin("lux_fsRename", i32Ty,
             {ptrTy, usizeTy, ptrTy, usizeTy});
         builder_->CreateCall(callee2, {fromPtr, fromLen, toPtr, toLen});
         return {};
@@ -2302,7 +2302,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
 
     // ── std::process void functions as statement ────────────────────
     if (funcName == "abort") {
-        auto callee2 = declareBuiltin("tollvm_abort",
+        auto callee2 = declareBuiltin("lux_abort",
             llvm::Type::getVoidTy(*context_), {});
         builder_->CreateCall(callee2, {});
         builder_->CreateUnreachable();
@@ -2322,7 +2322,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* nameLen = builder_->CreateExtractValue(args[0], 1, "env_name_len");
         auto* valPtr  = builder_->CreateExtractValue(args[1], 0, "env_val_ptr");
         auto* valLen  = builder_->CreateExtractValue(args[1], 1, "env_val_len");
-        auto callee2 = declareBuiltin("tollvm_setEnv", voidTy,
+        auto callee2 = declareBuiltin("lux_setEnv", voidTy,
             {ptrTy, usizeTy, ptrTy, usizeTy});
         builder_->CreateCall(callee2, {namePtr, nameLen, valPtr, valLen});
         return {};
@@ -2339,7 +2339,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
 
         auto* cmdPtr = builder_->CreateExtractValue(args[0], 0, "cmd_ptr");
         auto* cmdLen = builder_->CreateExtractValue(args[0], 1, "cmd_len");
-        auto callee2 = declareBuiltin("tollvm_exec", i32Ty,
+        auto callee2 = declareBuiltin("lux_exec", i32Ty,
             {ptrTy, usizeTy});
         builder_->CreateCall(callee2, {cmdPtr, cmdLen});
         return {};
@@ -2361,7 +2361,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* strTy   = llvm::StructType::get(*context_, {ptrTy, usizeTy});
         auto* i1Ty    = llvm::Type::getInt1Ty(*context_);
         std::string prefix = (funcName == "assertEqual")
-            ? "tollvm_assertEqual" : "tollvm_assertNotEqual";
+            ? "lux_assertEqual" : "lux_assertNotEqual";
         auto* ty = tArgs[0]->getType();
         if (ty == strTy) {
             std::vector<llvm::Value*> callArgs;
@@ -2402,7 +2402,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
         auto* cond = builder_->CreateZExt(tArgs[0], i32Ty);
         std::string cName = (funcName == "assertTrue")
-            ? "tollvm_assertTrue" : "tollvm_assertFalse";
+            ? "lux_assertTrue" : "lux_assertFalse";
         auto callee = declareBuiltin(cName, voidTy, {i32Ty});
         builder_->CreateCall(callee, {cond});
         return {};
@@ -2411,16 +2411,16 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
     // ── std::test — assertGreater/Less/GreaterEq/LessEq as statement ─
     {
         static const std::unordered_map<std::string, std::string> cmpI64 = {
-            {"assertGreater",   "tollvm_assertGreaterI64"},
-            {"assertLess",      "tollvm_assertLessI64"},
-            {"assertGreaterEq", "tollvm_assertGreaterEqI64"},
-            {"assertLessEq",    "tollvm_assertLessEqI64"},
+            {"assertGreater",   "lux_assertGreaterI64"},
+            {"assertLess",      "lux_assertLessI64"},
+            {"assertGreaterEq", "lux_assertGreaterEqI64"},
+            {"assertLessEq",    "lux_assertLessEqI64"},
         };
         static const std::unordered_map<std::string, std::string> cmpF64 = {
-            {"assertGreater",   "tollvm_assertGreaterF64"},
-            {"assertLess",      "tollvm_assertLessF64"},
-            {"assertGreaterEq", "tollvm_assertGreaterEqF64"},
-            {"assertLessEq",    "tollvm_assertLessEqF64"},
+            {"assertGreater",   "lux_assertGreaterF64"},
+            {"assertLess",      "lux_assertLessF64"},
+            {"assertGreaterEq", "lux_assertGreaterEqF64"},
+            {"assertLessEq",    "lux_assertLessEqF64"},
         };
         auto itI = cmpI64.find(funcName);
         if (itI != cmpI64.end()) {
@@ -2461,7 +2461,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         callArgs.push_back(builder_->CreateExtractValue(tArgs[0], 1));
         callArgs.push_back(builder_->CreateExtractValue(tArgs[1], 0));
         callArgs.push_back(builder_->CreateExtractValue(tArgs[1], 1));
-        auto callee = declareBuiltin("tollvm_assertStringContains", voidTy,
+        auto callee = declareBuiltin("lux_assertStringContains", voidTy,
             {ptrTy, usizeTy, ptrTy, usizeTy});
         builder_->CreateCall(callee, callArgs);
         return {};
@@ -2475,7 +2475,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
                 tArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
         auto* voidTy = llvm::Type::getVoidTy(*context_);
         auto* f64Ty  = llvm::Type::getDoubleTy(*context_);
-        auto callee = declareBuiltin("tollvm_assertNear", voidTy,
+        auto callee = declareBuiltin("lux_assertNear", voidTy,
             {f64Ty, f64Ty, f64Ty});
         builder_->CreateCall(callee, {tArgs[0], tArgs[1], tArgs[2]});
         return {};
@@ -2484,9 +2484,9 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
     // ── std::test — fail / skip / log (string) as statement ───────
     {
         static const std::unordered_map<std::string, std::string> testStrFuncs = {
-            {"fail", "tollvm_testFail"},
-            {"skip", "tollvm_testSkip"},
-            {"log",  "tollvm_testLog"},
+            {"fail", "lux_testFail"},
+            {"skip", "lux_testSkip"},
+            {"log",  "lux_testLog"},
         };
         auto tsIt = testStrFuncs.find(funcName);
         if (tsIt != testStrFuncs.end()) {
@@ -2514,7 +2514,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
         auto* voidTy = llvm::Type::getVoidTy(*context_);
         auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
-        auto callee = declareBuiltin("tollvm_netClose", voidTy, {i32Ty});
+        auto callee = declareBuiltin("lux_netClose", voidTy, {i32Ty});
         builder_->CreateCall(callee, {fd});
         return {};
     }
@@ -2530,14 +2530,14 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* ms = args[1];
         if (ms->getType() != u64Ty)
             ms = builder_->CreateIntCast(ms, u64Ty, false);
-        auto callee = declareBuiltin("tollvm_netSetTimeout", voidTy, {i32Ty, u64Ty});
+        auto callee = declareBuiltin("lux_netSetTimeout", voidTy, {i32Ty, u64Ty});
         builder_->CreateCall(callee, {fd, ms});
         return {};
     }
 
     // ── std::thread — yield: void ───────────────────────────────────────
     if (funcName == "yield") {
-        auto callee = declareBuiltin("tollvm_yield",
+        auto callee = declareBuiltin("lux_yield",
             llvm::Type::getVoidTy(*context_), {});
         builder_->CreateCall(callee, {});
         return {};
@@ -2557,7 +2557,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto* pathLen = builder_->CreateExtractValue(wbArgs[0], 1, "wb_path_len");
         auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "wb_vec_arg");
         builder_->CreateStore(wbArgs[1], vecArgAlloca);
-        auto callee = declareBuiltin("tollvm_writeFileBytes", voidTy,
+        auto callee = declareBuiltin("lux_writeFileBytes", voidTy,
             {ptrTy, usizeTy, ptrTy});
         builder_->CreateCall(callee, {pathPtr, pathLen, vecArgAlloca});
         return {};
@@ -2565,7 +2565,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
 
     // Collect argument values and their AST expressions
     std::vector<llvm::Value*> args;
-    std::vector<ToLLVMParser::ExpressionContext*> argExprs;
+    std::vector<LuxParser::ExpressionContext*> argExprs;
     if (auto* argList = ctx->argList()) {
         argExprs = argList->expression();
         for (auto* exprCtx : argExprs) {
@@ -2615,7 +2615,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         if (isString) {
             auto cFuncName = imports_.resolve(funcName, "str");
             if (cFuncName.empty()) {
-                std::cerr << "tollvm: no builtin '" << funcName
+                std::cerr << "lux: no builtin '" << funcName
                           << "' for type 'str'\n";
                 continue;
             }
@@ -2632,7 +2632,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
 
         std::string suffix;
         bool isCharLit = (ai < argExprs.size()) &&
-            dynamic_cast<ToLLVMParser::CharLitExprContext*>(argExprs[ai]) != nullptr;
+            dynamic_cast<LuxParser::CharLitExprContext*>(argExprs[ai]) != nullptr;
 
         if (argTypeInfo) {
             suffix = argTypeInfo->builtinSuffix;
@@ -2649,7 +2649,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
         auto  cFuncName = imports_.resolve(funcName, suffix);
 
         if (cFuncName.empty()) {
-            std::cerr << "tollvm: no builtin '" << funcName
+            std::cerr << "lux: no builtin '" << funcName
                       << "' for type '" << suffix << "'\n";
             continue;
         }
@@ -2678,7 +2678,7 @@ std::any IRGen::visitCallStmt(ToLLVMParser::CallStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitReturnStmt(ToLLVMParser::ReturnStmtContext* ctx) {
+std::any IRGen::visitReturnStmt(LuxParser::ReturnStmtContext* ctx) {
     // Handle bare `ret;` in void functions
     if (!ctx->expression()) {
         emitAllCleanups();
@@ -2705,7 +2705,7 @@ std::any IRGen::visitReturnStmt(ToLLVMParser::ReturnStmtContext* ctx) {
     // Emit deferred and auto cleanups before returning.
     // If returning a local collection by value, skip its auto-free.
     std::string skipVar;
-    if (auto* ident = dynamic_cast<ToLLVMParser::IdentExprContext*>(ctx->expression())) {
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression())) {
         skipVar = ident->IDENTIFIER()->getText();
     }
     emitAllCleanups(skipVar);
@@ -2714,7 +2714,7 @@ std::any IRGen::visitReturnStmt(ToLLVMParser::ReturnStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitIfStmt(ToLLVMParser::IfStmtContext* ctx) {
+std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
     auto elseIfs = ctx->elseIfClause();
     auto* elseClause = ctx->elseClause();
 
@@ -2799,7 +2799,7 @@ std::any IRGen::visitIfStmt(ToLLVMParser::IfStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitForClassicStmt(ToLLVMParser::ForClassicStmtContext* ctx) {
+std::any IRGen::visitForClassicStmt(LuxParser::ForClassicStmtContext* ctx) {
     // for TYPE NAME = init; cond; update { body }
     auto* typeInfo = resolveTypeInfo(ctx->typeSpec());
     auto* varType  = typeInfo->toLLVMType(*context_, module_->getDataLayout());
@@ -2852,16 +2852,16 @@ std::any IRGen::visitForClassicStmt(ToLLVMParser::ForClassicStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
+std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
     auto* typeInfo = resolveTypeInfo(ctx->typeSpec());
     auto* varType  = typeInfo->toLLVMType(*context_, module_->getDataLayout());
     auto  varName  = ctx->IDENTIFIER()->getText();
     auto* iterExpr = ctx->expression();
 
     // Check if iterating over a range (..  or ..=)
-    bool isRange = dynamic_cast<ToLLVMParser::RangeExprContext*>(iterExpr) ||
-                   dynamic_cast<ToLLVMParser::RangeInclExprContext*>(iterExpr);
-    bool isInclusive = dynamic_cast<ToLLVMParser::RangeInclExprContext*>(iterExpr) != nullptr;
+    bool isRange = dynamic_cast<LuxParser::RangeExprContext*>(iterExpr) ||
+                   dynamic_cast<LuxParser::RangeInclExprContext*>(iterExpr);
+    bool isInclusive = dynamic_cast<LuxParser::RangeInclExprContext*>(iterExpr) != nullptr;
 
     if (isRange) {
         // Range iteration: for TYPE i in start..end  or  start..=end
@@ -2869,11 +2869,11 @@ std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
         llvm::Value* endVal;
 
         if (isInclusive) {
-            auto* rng = dynamic_cast<ToLLVMParser::RangeInclExprContext*>(iterExpr);
+            auto* rng = dynamic_cast<LuxParser::RangeInclExprContext*>(iterExpr);
             startVal = std::any_cast<llvm::Value*>(visit(rng->expression(0)));
             endVal   = std::any_cast<llvm::Value*>(visit(rng->expression(1)));
         } else {
-            auto* rng = dynamic_cast<ToLLVMParser::RangeExprContext*>(iterExpr);
+            auto* rng = dynamic_cast<LuxParser::RangeExprContext*>(iterExpr);
             startVal = std::any_cast<llvm::Value*>(visit(rng->expression(0)));
             endVal   = std::any_cast<llvm::Value*>(visit(rng->expression(1)));
         }
@@ -2933,7 +2933,7 @@ std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
     } else {
         // Check if iterating over a variadic parameter
         std::string iterName;
-        if (auto* ident = dynamic_cast<ToLLVMParser::IdentExprContext*>(iterExpr))
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(iterExpr))
             iterName = ident->IDENTIFIER()->getText();
 
         auto vpIt = variadicParams_.find(iterName);
@@ -2996,7 +2996,7 @@ std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
         // Detect if the iterable is a Vec<T> (Extended type)
         const TypeInfo* iterableTI = nullptr;
         llvm::AllocaInst* vecAlloca = nullptr;
-        if (auto* ident = dynamic_cast<ToLLVMParser::IdentExprContext*>(iterExpr)) {
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(iterExpr)) {
             auto it = locals_.find(ident->IDENTIFIER()->getText());
             if (it != locals_.end()) {
                 iterableTI = it->second.typeInfo;
@@ -3006,9 +3006,9 @@ std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
 
         // Support method calls that return Vec (e.g. map.keys(), map.values(), set.values())
         if (!vecAlloca) {
-            if (auto* mc = dynamic_cast<ToLLVMParser::MethodCallExprContext*>(iterExpr)) {
+            if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(iterExpr)) {
                 auto* baseExpr = mc->expression();
-                if (auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(baseExpr)) {
+                if (auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(baseExpr)) {
                     auto recvIt = locals_.find(identBase->IDENTIFIER()->getText());
                     if (recvIt != locals_.end() &&
                         recvIt->second.typeInfo->kind == TypeKind::Extended) {
@@ -3039,8 +3039,8 @@ std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
 
-            // Get vec length: tollvm_vec_len_<suffix>(&vec)
-            auto lenCallee = declareBuiltin("tollvm_vec_len_" + suffix, usizeTy, {ptrTy});
+            // Get vec length: lux_vec_len_<suffix>(&vec)
+            auto lenCallee = declareBuiltin("lux_vec_len_" + suffix, usizeTy, {ptrTy});
             auto* vecLen = builder_->CreateCall(lenCallee, {vecAlloca}, "vec_len");
 
             auto* idxType   = usizeTy;
@@ -3065,10 +3065,10 @@ std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
             auto* cond = builder_->CreateICmpULT(idx, vecLen, "cmp");
             builder_->CreateCondBr(cond, bodyBB, endBB);
 
-            // Body: elem = tollvm_vec_at_<suffix>(&vec, idx)
+            // Body: elem = lux_vec_at_<suffix>(&vec, idx)
             builder_->SetInsertPoint(bodyBB);
             auto* curIdx = builder_->CreateLoad(idxType, idxAlloca, "idx");
-            auto atCallee = declareBuiltin("tollvm_vec_at_" + suffix, varType, {ptrTy, usizeTy});
+            auto atCallee = declareBuiltin("lux_vec_at_" + suffix, varType, {ptrTy, usizeTy});
             auto* elem = builder_->CreateCall(atCallee, {vecAlloca, curIdx}, "elem");
             builder_->CreateStore(elem, elemAlloca);
 
@@ -3100,7 +3100,7 @@ std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
 
         // Find the source alloca for indexed access
         llvm::AllocaInst* arrAlloca = nullptr;
-        if (auto* ident = dynamic_cast<ToLLVMParser::IdentExprContext*>(iterExpr)) {
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(iterExpr)) {
             auto it = locals_.find(ident->IDENTIFIER()->getText());
             if (it != locals_.end())
                 arrAlloca = it->second.alloca;
@@ -3168,19 +3168,19 @@ std::any IRGen::visitForInStmt(ToLLVMParser::ForInStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitBreakStmt(ToLLVMParser::BreakStmtContext* /*ctx*/) {
+std::any IRGen::visitBreakStmt(LuxParser::BreakStmtContext* /*ctx*/) {
     if (!loopStack_.empty())
         builder_->CreateBr(loopStack_.back().breakTarget);
     return {};
 }
 
-std::any IRGen::visitContinueStmt(ToLLVMParser::ContinueStmtContext* /*ctx*/) {
+std::any IRGen::visitContinueStmt(LuxParser::ContinueStmtContext* /*ctx*/) {
     if (!loopStack_.empty())
         builder_->CreateBr(loopStack_.back().continueTarget);
     return {};
 }
 
-std::any IRGen::visitLoopStmt(ToLLVMParser::LoopStmtContext* ctx) {
+std::any IRGen::visitLoopStmt(LuxParser::LoopStmtContext* ctx) {
     auto* bodyBB = llvm::BasicBlock::Create(*context_, "loop.body", currentFunction_);
     auto* endBB  = llvm::BasicBlock::Create(*context_, "loop.end", currentFunction_);
 
@@ -3200,7 +3200,7 @@ std::any IRGen::visitLoopStmt(ToLLVMParser::LoopStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitSwitchStmt(ToLLVMParser::SwitchStmtContext* ctx) {
+std::any IRGen::visitSwitchStmt(LuxParser::SwitchStmtContext* ctx) {
     // Evaluate the switch expression
     auto* switchVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
 
@@ -3252,7 +3252,7 @@ std::any IRGen::visitSwitchStmt(ToLLVMParser::SwitchStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitWhileStmt(ToLLVMParser::WhileStmtContext* ctx) {
+std::any IRGen::visitWhileStmt(LuxParser::WhileStmtContext* ctx) {
     auto* condBB = llvm::BasicBlock::Create(*context_, "while.cond", currentFunction_);
     auto* bodyBB = llvm::BasicBlock::Create(*context_, "while.body", currentFunction_);
     auto* endBB  = llvm::BasicBlock::Create(*context_, "while.end", currentFunction_);
@@ -3282,7 +3282,7 @@ std::any IRGen::visitWhileStmt(ToLLVMParser::WhileStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitDoWhileStmt(ToLLVMParser::DoWhileStmtContext* ctx) {
+std::any IRGen::visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx) {
     auto* bodyBB = llvm::BasicBlock::Create(*context_, "do.body", currentFunction_);
     auto* condBB = llvm::BasicBlock::Create(*context_, "do.cond", currentFunction_);
     auto* endBB  = llvm::BasicBlock::Create(*context_, "do.end", currentFunction_);
@@ -3312,26 +3312,26 @@ std::any IRGen::visitDoWhileStmt(ToLLVMParser::DoWhileStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitIntLitExpr(ToLLVMParser::IntLitExprContext* ctx) {
+std::any IRGen::visitIntLitExpr(LuxParser::IntLitExprContext* ctx) {
     auto text = ctx->INT_LIT()->getText();
     llvm::APInt ap(256, text, 10);
     auto* ty = llvm::Type::getIntNTy(*context_, 256);
     return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
 }
 
-std::any IRGen::visitFloatLitExpr(ToLLVMParser::FloatLitExprContext* ctx) {
+std::any IRGen::visitFloatLitExpr(LuxParser::FloatLitExprContext* ctx) {
     double v = std::stod(ctx->FLOAT_LIT()->getText());
     return static_cast<llvm::Value*>(
         llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
 }
 
-std::any IRGen::visitBoolLitExpr(ToLLVMParser::BoolLitExprContext* ctx) {
+std::any IRGen::visitBoolLitExpr(LuxParser::BoolLitExprContext* ctx) {
     bool v = ctx->BOOL_LIT()->getText() == "true";
     return static_cast<llvm::Value*>(
         llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_), v ? 1 : 0));
 }
 
-std::any IRGen::visitCharLitExpr(ToLLVMParser::CharLitExprContext* ctx) {
+std::any IRGen::visitCharLitExpr(LuxParser::CharLitExprContext* ctx) {
     auto raw = ctx->CHAR_LIT()->getText();
     auto inner = raw.substr(1, raw.size() - 2);
     uint8_t ch;
@@ -3354,7 +3354,7 @@ std::any IRGen::visitCharLitExpr(ToLLVMParser::CharLitExprContext* ctx) {
             break;
         }
         default:
-            std::cerr << "tollvm: unknown escape sequence '\\" << inner[1] << "'\n";
+            std::cerr << "lux: unknown escape sequence '\\" << inner[1] << "'\n";
             ch = inner[1];
             break;
         }
@@ -3365,7 +3365,7 @@ std::any IRGen::visitCharLitExpr(ToLLVMParser::CharLitExprContext* ctx) {
         llvm::ConstantInt::get(llvm::Type::getInt8Ty(*context_), ch));
 }
 
-std::any IRGen::visitStrLitExpr(ToLLVMParser::StrLitExprContext* ctx) {
+std::any IRGen::visitStrLitExpr(LuxParser::StrLitExprContext* ctx) {
     auto raw = ctx->STR_LIT()->getText();
     auto escaped = raw.substr(1, raw.size() - 2);
 
@@ -3417,7 +3417,7 @@ std::any IRGen::visitStrLitExpr(ToLLVMParser::StrLitExprContext* ctx) {
     return static_cast<llvm::Value*>(strStruct);
 }
 
-std::any IRGen::visitCStrLitExpr(ToLLVMParser::CStrLitExprContext* ctx) {
+std::any IRGen::visitCStrLitExpr(LuxParser::CStrLitExprContext* ctx) {
     auto raw = ctx->C_STR_LIT()->getText();
     // Strip the c"..." wrapper: skip 'c"' at start and '"' at end
     auto escaped = raw.substr(2, raw.size() - 3);
@@ -3462,7 +3462,7 @@ std::any IRGen::visitCStrLitExpr(ToLLVMParser::CStrLitExprContext* ctx) {
     return static_cast<llvm::Value*>(cstrGlobal);
 }
 
-std::any IRGen::visitIdentExpr(ToLLVMParser::IdentExprContext* ctx) {
+std::any IRGen::visitIdentExpr(LuxParser::IdentExprContext* ctx) {
     auto name = ctx->IDENTIFIER()->getText();
     auto it   = locals_.find(name);
     if (it != locals_.end()) {
@@ -3582,15 +3582,15 @@ std::any IRGen::visitIdentExpr(ToLLVMParser::IdentExprContext* ctx) {
         }
     }
 
-    std::cerr << "tollvm: undefined variable '" << name << "'\n";
+    std::cerr << "lux: undefined variable '" << name << "'\n";
     return static_cast<llvm::Value*>(
         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
 }
 
-std::any IRGen::visitArrayLitExpr(ToLLVMParser::ArrayLitExprContext* ctx) {
+std::any IRGen::visitArrayLitExpr(LuxParser::ArrayLitExprContext* ctx) {
     auto elems = ctx->expression();
     if (elems.empty()) {
-        std::cerr << "tollvm: empty array literal\n";
+        std::cerr << "lux: empty array literal\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -3608,16 +3608,16 @@ std::any IRGen::visitArrayLitExpr(ToLLVMParser::ArrayLitExprContext* ctx) {
     return static_cast<llvm::Value*>(agg);
 }
 
-std::any IRGen::visitListCompExpr(ToLLVMParser::ListCompExprContext* ctx) {
+std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
     auto* typeInfo = resolveTypeInfo(ctx->typeSpec());
     auto* varType  = typeInfo->toLLVMType(*context_, module_->getDataLayout());
     auto  varName  = ctx->IDENTIFIER()->getText();
     auto* iterExpr = ctx->expression(1);
 
     // Determine if iterating over a range
-    bool isRange = dynamic_cast<ToLLVMParser::RangeExprContext*>(iterExpr) ||
-                   dynamic_cast<ToLLVMParser::RangeInclExprContext*>(iterExpr);
-    bool isInclusive = dynamic_cast<ToLLVMParser::RangeInclExprContext*>(iterExpr) != nullptr;
+    bool isRange = dynamic_cast<LuxParser::RangeExprContext*>(iterExpr) ||
+                   dynamic_cast<LuxParser::RangeInclExprContext*>(iterExpr);
+    bool isInclusive = dynamic_cast<LuxParser::RangeInclExprContext*>(iterExpr) != nullptr;
 
     bool hasFilter = ctx->IF() != nullptr;
 
@@ -3627,11 +3627,11 @@ std::any IRGen::visitListCompExpr(ToLLVMParser::ListCompExprContext* ctx) {
         llvm::Value* endVal;
 
         if (isInclusive) {
-            auto* rng = dynamic_cast<ToLLVMParser::RangeInclExprContext*>(iterExpr);
+            auto* rng = dynamic_cast<LuxParser::RangeInclExprContext*>(iterExpr);
             startVal = std::any_cast<llvm::Value*>(visit(rng->expression(0)));
             endVal   = std::any_cast<llvm::Value*>(visit(rng->expression(1)));
         } else {
-            auto* rng = dynamic_cast<ToLLVMParser::RangeExprContext*>(iterExpr);
+            auto* rng = dynamic_cast<LuxParser::RangeExprContext*>(iterExpr);
             startVal = std::any_cast<llvm::Value*>(visit(rng->expression(0)));
             endVal   = std::any_cast<llvm::Value*>(visit(rng->expression(1)));
         }
@@ -3646,7 +3646,7 @@ std::any IRGen::visitListCompExpr(ToLLVMParser::ListCompExprContext* ctx) {
         auto* endConst   = llvm::dyn_cast<llvm::ConstantInt>(endVal);
 
         if (!startConst || !endConst) {
-            std::cerr << "tollvm: list comprehension range bounds must be constants\n";
+            std::cerr << "lux: list comprehension range bounds must be constants\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -3832,29 +3832,29 @@ std::any IRGen::visitListCompExpr(ToLLVMParser::ListCompExprContext* ctx) {
         }
     }
 
-    std::cerr << "tollvm: list comprehension only supports range iterables\n";
+    std::cerr << "lux: list comprehension only supports range iterables\n";
     return static_cast<llvm::Value*>(
         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
 }
 
-std::any IRGen::visitIndexExpr(ToLLVMParser::IndexExprContext* ctx) {
+std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
     // Collect all chained indices: arr[i][j][k] → varName + [i, j, k]
-    std::vector<ToLLVMParser::ExpressionContext*> indexExprs;
+    std::vector<LuxParser::ExpressionContext*> indexExprs;
     std::string varName;
 
-    auto* current = static_cast<ToLLVMParser::ExpressionContext*>(ctx);
-    while (auto* idxCtx = dynamic_cast<ToLLVMParser::IndexExprContext*>(current)) {
+    auto* current = static_cast<LuxParser::ExpressionContext*>(ctx);
+    while (auto* idxCtx = dynamic_cast<LuxParser::IndexExprContext*>(current)) {
         indexExprs.push_back(idxCtx->expression(1)); // the index
         current = idxCtx->expression(0);              // the base
     }
 
-    auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(current);
+    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(current);
     if (!identBase) {
         // ── Field-access base: e.g. cell.chars[0] ─────────────────────
-        auto* fieldBase = dynamic_cast<ToLLVMParser::FieldAccessExprContext*>(current);
+        auto* fieldBase = dynamic_cast<LuxParser::FieldAccessExprContext*>(current);
         if (fieldBase) {
             auto fieldName = fieldBase->IDENTIFIER()->getText();
-            auto* innerIdent = dynamic_cast<ToLLVMParser::IdentExprContext*>(
+            auto* innerIdent = dynamic_cast<LuxParser::IdentExprContext*>(
                 fieldBase->expression());
             if (innerIdent) {
                 auto structVar = innerIdent->IDENTIFIER()->getText();
@@ -3895,7 +3895,7 @@ std::any IRGen::visitIndexExpr(ToLLVMParser::IndexExprContext* ctx) {
                 }
             }
         }
-        std::cerr << "tollvm: invalid index base expression\n";
+        std::cerr << "lux: invalid index base expression\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -3920,7 +3920,7 @@ std::any IRGen::visitIndexExpr(ToLLVMParser::IndexExprContext* ctx) {
 
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -3932,7 +3932,7 @@ std::any IRGen::visitIndexExpr(ToLLVMParser::IndexExprContext* ctx) {
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
 
         if (ti->extendedKind == "Map") {
-            // Map<K,V> subscript: m[key] → tollvm_map_get_<suffix>
+            // Map<K,V> subscript: m[key] → lux_map_get_<suffix>
             auto* keyLLTy = ti->keyType->toLLVMType(*context_, module_->getDataLayout());
             auto* valLLTy = ti->valueType->toLLVMType(*context_, module_->getDataLayout());
             auto suffix = ti->builtinSuffix;
@@ -3944,13 +3944,13 @@ std::any IRGen::visitIndexExpr(ToLLVMParser::IndexExprContext* ctx) {
             }
 
             auto callee = declareBuiltin(
-                "tollvm_map_get_" + suffix, valLLTy, { ptrTy, keyLLTy });
+                "lux_map_get_" + suffix, valLLTy, { ptrTy, keyLLTy });
             auto* result = builder_->CreateCall(callee,
                 { it->second.alloca, keyVal }, "map_get");
             return static_cast<llvm::Value*>(result);
         }
 
-        // Vec<T> subscript: v[i] → tollvm_vec_at_<suffix>
+        // Vec<T> subscript: v[i] → lux_vec_at_<suffix>
         auto* elemLLTy = ti->elementType->toLLVMType(
             *context_, module_->getDataLayout());
         auto suffix = getVecSuffix(ti->elementType);
@@ -3960,7 +3960,7 @@ std::any IRGen::visitIndexExpr(ToLLVMParser::IndexExprContext* ctx) {
             idx = builder_->CreateIntCast(idx, usizeTy, false);
 
         auto callee = declareBuiltin(
-            "tollvm_vec_at_" + suffix, elemLLTy, { ptrTy, usizeTy });
+            "lux_vec_at_" + suffix, elemLLTy, { ptrTy, usizeTy });
         auto* result = builder_->CreateCall(callee,
             { it->second.alloca, idx }, "vec_at");
         return static_cast<llvm::Value*>(result);
@@ -4009,12 +4009,12 @@ std::any IRGen::visitIndexExpr(ToLLVMParser::IndexExprContext* ctx) {
     return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, gep));
 }
 
-std::any IRGen::visitStructLitExpr(ToLLVMParser::StructLitExprContext* ctx) {
+std::any IRGen::visitStructLitExpr(LuxParser::StructLitExprContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
     auto typeName = identifiers[0]->getText();
     auto* ti = typeRegistry_.lookup(typeName);
     if (!ti || (ti->kind != TypeKind::Struct && ti->kind != TypeKind::Union)) {
-        std::cerr << "tollvm: unknown struct/union type '" << typeName << "'\n";
+        std::cerr << "lux: unknown struct/union type '" << typeName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -4071,7 +4071,7 @@ std::any IRGen::visitStructLitExpr(ToLLVMParser::StructLitExprContext* ctx) {
             }
         }
         if (fieldIdx < 0) {
-            std::cerr << "tollvm: '" << typeName
+            std::cerr << "lux: '" << typeName
                       << "' has no field '" << fieldName << "'\n";
             continue;
         }
@@ -4098,14 +4098,14 @@ std::any IRGen::visitStructLitExpr(ToLLVMParser::StructLitExprContext* ctx) {
     return static_cast<llvm::Value*>(agg);
 }
 
-std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) {
+std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
     auto fieldName = ctx->IDENTIFIER()->getText();
 
     // The base expression should resolve to a variable with a struct type
     auto* baseExpr = ctx->expression();
 
     // ── Case 1: base is a bare variable (e.g. myStruct.field) ──────
-    auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(baseExpr);
+    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(baseExpr);
     if (identBase) {
         auto varName = identBase->IDENTIFIER()->getText();
 
@@ -4117,7 +4117,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
                 return static_cast<llvm::Value*>(
                     builder_->CreateLoad(i64Ty, vit->second.lenAlloca, "var_len"));
             }
-            std::cerr << "tollvm: variadic parameter '" << varName
+            std::cerr << "lux: variadic parameter '" << varName
                       << "' has no field '" << fieldName << "'\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -4163,7 +4163,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
                                 builder_->CreateExtractValue(constStruct,
                                     {static_cast<unsigned>(fieldIdx)}, fieldName));
                         }
-                        std::cerr << "tollvm: '" << sm->structType
+                        std::cerr << "lux: '" << sm->structType
                                   << "' has no field '" << fieldName << "'\n";
                     }
                 }
@@ -4171,7 +4171,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
                     llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
             }
 
-            std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+            std::cerr << "lux: undefined variable '" << varName << "'\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -4180,7 +4180,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
         auto* structTI = it->second.typeInfo;
 
         if (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union) {
-            std::cerr << "tollvm: '" << varName << "' is not a struct or union\n";
+            std::cerr << "lux: '" << varName << "' is not a struct or union\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -4196,7 +4196,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
             }
         }
         if (fieldIdx < 0) {
-            std::cerr << "tollvm: '" << structTI->name
+            std::cerr << "lux: '" << structTI->name
                       << "' has no field '" << fieldName << "'\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -4215,18 +4215,18 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
     }
 
     // ── Case 2: base is an indexed array element (e.g. arr[i].field) ──
-    auto* indexBase = dynamic_cast<ToLLVMParser::IndexExprContext*>(baseExpr);
+    auto* indexBase = dynamic_cast<LuxParser::IndexExprContext*>(baseExpr);
     if (indexBase) {
         // Walk down to find the root variable and collect indices
-        std::vector<ToLLVMParser::ExpressionContext*> indexExprs;
-        auto* current = static_cast<ToLLVMParser::ExpressionContext*>(indexBase);
-        while (auto* idxCtx = dynamic_cast<ToLLVMParser::IndexExprContext*>(current)) {
+        std::vector<LuxParser::ExpressionContext*> indexExprs;
+        auto* current = static_cast<LuxParser::ExpressionContext*>(indexBase);
+        while (auto* idxCtx = dynamic_cast<LuxParser::IndexExprContext*>(current)) {
             indexExprs.push_back(idxCtx->expression(1));
             current = idxCtx->expression(0);
         }
-        auto* rootIdent = dynamic_cast<ToLLVMParser::IdentExprContext*>(current);
+        auto* rootIdent = dynamic_cast<LuxParser::IdentExprContext*>(current);
         if (!rootIdent) {
-            std::cerr << "tollvm: invalid base for indexed field access\n";
+            std::cerr << "lux: invalid base for indexed field access\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -4235,7 +4235,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
 
         auto it = locals_.find(varName);
         if (it == locals_.end()) {
-            std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+            std::cerr << "lux: undefined variable '" << varName << "'\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -4246,7 +4246,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
         auto* i64Ty    = llvm::Type::getInt64Ty(*context_);
 
         if (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union) {
-            std::cerr << "tollvm: elements of '" << varName << "' are not structs\n";
+            std::cerr << "lux: elements of '" << varName << "' are not structs\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -4281,7 +4281,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
             }
         }
         if (fieldIdx < 0) {
-            std::cerr << "tollvm: '" << structTI->name
+            std::cerr << "lux: '" << structTI->name
                       << "' has no field '" << fieldName << "'\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -4301,7 +4301,7 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
     }
 
     // ── Case 3: base is another field access (e.g. a.b.c — chained) ──
-    auto* fieldBase = dynamic_cast<ToLLVMParser::FieldAccessExprContext*>(baseExpr);
+    auto* fieldBase = dynamic_cast<LuxParser::FieldAccessExprContext*>(baseExpr);
     if (fieldBase) {
         // Evaluate chained field access: get the struct value, then access this field
         // We need the address, not the value. Walk down to find the root and rebuild GEP chain.
@@ -4337,12 +4337,12 @@ std::any IRGen::visitFieldAccessExpr(ToLLVMParser::FieldAccessExprContext* ctx) 
         }
     }
 
-    std::cerr << "tollvm: unsupported base expression for field access\n";
+    std::cerr << "lux: unsupported base expression for field access\n";
     return static_cast<llvm::Value*>(
         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
 }
 
-std::any IRGen::visitArrowAccessExpr(ToLLVMParser::ArrowAccessExprContext* ctx) {
+std::any IRGen::visitArrowAccessExpr(LuxParser::ArrowAccessExprContext* ctx) {
     auto fieldName = ctx->IDENTIFIER()->getText();
 
     // Evaluate base expression — should yield a pointer to struct
@@ -4355,7 +4355,7 @@ std::any IRGen::visitArrowAccessExpr(ToLLVMParser::ArrowAccessExprContext* ctx) 
         structTI = exprTI->pointeeType;
 
     if (!structTI || (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union)) {
-        std::cerr << "tollvm: '->' requires pointer to struct or union\n";
+        std::cerr << "lux: '->' requires pointer to struct or union\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -4371,7 +4371,7 @@ std::any IRGen::visitArrowAccessExpr(ToLLVMParser::ArrowAccessExprContext* ctx) 
         }
     }
     if (fieldIdx < 0) {
-        std::cerr << "tollvm: '" << structTI->name
+        std::cerr << "lux: '" << structTI->name
                   << "' has no field '" << fieldName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -4391,14 +4391,14 @@ std::any IRGen::visitArrowAccessExpr(ToLLVMParser::ArrowAccessExprContext* ctx) 
     return static_cast<llvm::Value*>(builder_->CreateLoad(fieldLLTy, gep, fieldName));
 }
 
-std::any IRGen::visitEnumAccessExpr(ToLLVMParser::EnumAccessExprContext* ctx) {
+std::any IRGen::visitEnumAccessExpr(LuxParser::EnumAccessExprContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
     auto enumName = identifiers[0]->getText();
     auto variantName = identifiers[1]->getText();
 
     auto* ti = typeRegistry_.lookup(enumName);
     if (!ti || ti->kind != TypeKind::Enum) {
-        std::cerr << "tollvm: unknown enum type '" << enumName << "'\n";
+        std::cerr << "lux: unknown enum type '" << enumName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -4411,7 +4411,7 @@ std::any IRGen::visitEnumAccessExpr(ToLLVMParser::EnumAccessExprContext* ctx) {
         }
     }
     if (variantIdx < 0) {
-        std::cerr << "tollvm: enum '" << enumName
+        std::cerr << "lux: enum '" << enumName
                   << "' has no variant '" << variantName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -4423,20 +4423,20 @@ std::any IRGen::visitEnumAccessExpr(ToLLVMParser::EnumAccessExprContext* ctx) {
 
 // ── Static method call: Struct::method(args) ────────────────────────────────
 std::any IRGen::visitStaticMethodCallExpr(
-        ToLLVMParser::StaticMethodCallExprContext* ctx) {
+        LuxParser::StaticMethodCallExprContext* ctx) {
     auto ids = ctx->IDENTIFIER();
     auto structName = ids[0]->getText();
     auto methodName = ids[1]->getText();
 
     auto smIt = staticStructMethods_.find(structName);
     if (smIt == staticStructMethods_.end()) {
-        std::cerr << "tollvm: struct '" << structName << "' has no static methods\n";
+        std::cerr << "lux: struct '" << structName << "' has no static methods\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto mIt = smIt->second.find(methodName);
     if (mIt == smIt->second.end()) {
-        std::cerr << "tollvm: struct '" << structName
+        std::cerr << "lux: struct '" << structName
                   << "' has no static method '" << methodName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -4475,21 +4475,21 @@ std::any IRGen::visitStaticMethodCallExpr(
         builder_->CreateCall(fn, callArgs, "static_call"));
 }
 
-std::any IRGen::visitTypeSpec(ToLLVMParser::TypeSpecContext* ctx) {
+std::any IRGen::visitTypeSpec(LuxParser::TypeSpecContext* ctx) {
     auto* ti = resolveTypeInfo(ctx);
     return static_cast<llvm::Type*>(ti->toLLVMType(*context_, module_->getDataLayout()));
 }
 
-std::any IRGen::visitNullLitExpr(ToLLVMParser::NullLitExprContext* /*ctx*/) {
+std::any IRGen::visitNullLitExpr(LuxParser::NullLitExprContext* /*ctx*/) {
     return static_cast<llvm::Value*>(
         llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(*context_)));
 }
 
-std::any IRGen::visitAddrOfExpr(ToLLVMParser::AddrOfExprContext* ctx) {
+std::any IRGen::visitAddrOfExpr(LuxParser::AddrOfExprContext* ctx) {
     auto varName = ctx->IDENTIFIER()->getText();
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::PointerType::getUnqual(*context_)));
     }
@@ -4497,7 +4497,7 @@ std::any IRGen::visitAddrOfExpr(ToLLVMParser::AddrOfExprContext* ctx) {
     return static_cast<llvm::Value*>(it->second.alloca);
 }
 
-std::any IRGen::visitDerefExpr(ToLLVMParser::DerefExprContext* ctx) {
+std::any IRGen::visitDerefExpr(LuxParser::DerefExprContext* ctx) {
     auto* ptrVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
 
     // Find pointee type: first try AST-level resolution, then fall back to IR
@@ -4521,7 +4521,7 @@ std::any IRGen::visitDerefExpr(ToLLVMParser::DerefExprContext* ctx) {
     }
 
     if (!pointeeTI) {
-        std::cerr << "tollvm: cannot dereference non-pointer expression\n";
+        std::cerr << "lux: cannot dereference non-pointer expression\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -4531,17 +4531,17 @@ std::any IRGen::visitDerefExpr(ToLLVMParser::DerefExprContext* ctx) {
         builder_->CreateLoad(pointeeLLVM, ptrVal, "deref"));
 }
 
-std::any IRGen::visitDerefAssignStmt(ToLLVMParser::DerefAssignStmtContext* ctx) {
+std::any IRGen::visitDerefAssignStmt(LuxParser::DerefAssignStmtContext* ctx) {
     llvm::Value* ptrVal = nullptr;
     const TypeInfo* ptrTI = nullptr;
-    ToLLVMParser::ExpressionContext* rhsExpr = nullptr;
+    LuxParser::ExpressionContext* rhsExpr = nullptr;
 
     if (ctx->IDENTIFIER()) {
         // *ptr = value;
         auto varName = ctx->IDENTIFIER()->getText();
         auto it = locals_.find(varName);
         if (it == locals_.end()) {
-            std::cerr << "tollvm: undefined variable '" << varName << "'\n";
+            std::cerr << "lux: undefined variable '" << varName << "'\n";
             return {};
         }
 
@@ -4549,7 +4549,7 @@ std::any IRGen::visitDerefAssignStmt(ToLLVMParser::DerefAssignStmtContext* ctx) 
         ptrTI = it->second.typeInfo;
 
         if (ptrTI->kind != TypeKind::Pointer) {
-            std::cerr << "tollvm: '" << varName << "' is not a pointer\n";
+            std::cerr << "lux: '" << varName << "' is not a pointer\n";
             return {};
         }
 
@@ -4591,7 +4591,7 @@ std::any IRGen::visitDerefAssignStmt(ToLLVMParser::DerefAssignStmtContext* ctx) 
     return {};
 }
 
-std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
+std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
     auto* baseExpr = ctx->expression();
 
     // Resolve the function TypeInfo from the base expression
@@ -4600,7 +4600,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
     std::string calleeName;
 
     // Check if base is a simple identifier
-    if (auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(baseExpr)) {
+    if (auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(baseExpr)) {
         calleeName = identBase->IDENTIFIER()->getText();
 
         // ── Global builtins (value-returning: toInt, toFloat, toBool, toString) ──
@@ -4620,7 +4620,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             if (calleeName == "toInt") {
                 auto* strPtr = builder_->CreateExtractValue(args[0], 0, "toInt_ptr");
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "toInt_len");
-                auto callee = declareBuiltin("tollvm_toInt",
+                auto callee = declareBuiltin("lux_toInt",
                     llvm::Type::getInt64Ty(*context_), {ptrTy, usizeTy});
                 auto* result = builder_->CreateCall(callee, {strPtr, strLen}, "toInt");
                 return static_cast<llvm::Value*>(result);
@@ -4628,7 +4628,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             if (calleeName == "toFloat") {
                 auto* strPtr = builder_->CreateExtractValue(args[0], 0, "toFloat_ptr");
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "toFloat_len");
-                auto callee = declareBuiltin("tollvm_toFloat",
+                auto callee = declareBuiltin("lux_toFloat",
                     llvm::Type::getDoubleTy(*context_), {ptrTy, usizeTy});
                 auto* result = builder_->CreateCall(callee, {strPtr, strLen}, "toFloat");
                 return static_cast<llvm::Value*>(result);
@@ -4636,7 +4636,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             if (calleeName == "toBool") {
                 auto* strPtr = builder_->CreateExtractValue(args[0], 0, "toBool_ptr");
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "toBool_len");
-                auto callee = declareBuiltin("tollvm_toBool",
+                auto callee = declareBuiltin("lux_toBool",
                     llvm::Type::getInt1Ty(*context_), {ptrTy, usizeTy});
                 auto* result = builder_->CreateCall(callee, {strPtr, strLen}, "toBool");
                 return static_cast<llvm::Value*>(result);
@@ -4648,14 +4648,14 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 // Detect type info via variable lookup
                 const TypeInfo* argTI = nullptr;
                 auto argExprs = ctx->argList()->expression();
-                if (auto* argIdent = dynamic_cast<ToLLVMParser::IdentExprContext*>(argExprs[0])) {
+                if (auto* argIdent = dynamic_cast<LuxParser::IdentExprContext*>(argExprs[0])) {
                     auto varIt = locals_.find(argIdent->IDENTIFIER()->getText());
                     if (varIt != locals_.end())
                         argTI = varIt->second.typeInfo;
                 }
 
                 // Detect char literal directly from the AST
-                bool isCharLit = dynamic_cast<ToLLVMParser::CharLitExprContext*>(argExprs[0]) != nullptr;
+                bool isCharLit = dynamic_cast<LuxParser::CharLitExprContext*>(argExprs[0]) != nullptr;
 
                 std::string suffix;
                 if (argTI) {
@@ -4670,7 +4670,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 else if (argType->isDoubleTy())       { suffix = "f64"; }
                 else                                  { suffix = "i32"; }
 
-                auto cFuncName = "tollvm_toString_" + suffix;
+                auto cFuncName = "lux_toString_" + suffix;
 
                 // toString returns a struct {ptr, i64} matching the string ABI
                 auto* retStructTy = llvm::StructType::get(*context_,
@@ -4678,7 +4678,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto callee = declareBuiltin(cFuncName, retStructTy, {argType});
                 auto* retVal = builder_->CreateCall(callee, {arg}, "toStr");
 
-                // Extract ptr and len, build tollvm string fat pointer
+                // Extract ptr and len, build lux string fat pointer
                 auto* retPtr = builder_->CreateExtractValue(retVal, 0, "toStr_ptr");
                 auto* retLen = builder_->CreateExtractValue(retVal, 1, "toStr_len");
                 llvm::Value* strStruct = llvm::UndefValue::get(strTy);
@@ -4691,7 +4691,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             if (calleeName == "cstr") {
                 auto* strPtr = builder_->CreateExtractValue(args[0], 0, "cstr_ptr");
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "cstr_len");
-                auto callee = declareBuiltin("tollvm_cstr", ptrTy, {ptrTy, usizeTy});
+                auto callee = declareBuiltin("lux_cstr", ptrTy, {ptrTy, usizeTy});
                 auto* result = builder_->CreateCall(callee, {strPtr, strLen}, "cstr");
                 return static_cast<llvm::Value*>(result);
             }
@@ -4699,7 +4699,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── fromCStr(*char) -> string ──
             if (calleeName == "fromCStr") {
                 auto* retStructTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
-                auto callee = declareBuiltin("tollvm_fromCStr", retStructTy, {ptrTy});
+                auto callee = declareBuiltin("lux_fromCStr", retStructTy, {ptrTy});
                 auto* retVal = builder_->CreateCall(callee, {args[0]}, "fromCStr");
                 auto* retPtr = builder_->CreateExtractValue(retVal, 0, "fromCStr_ptr");
                 auto* retLen = builder_->CreateExtractValue(retVal, 1, "fromCStr_len");
@@ -4715,7 +4715,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* lenArg = args[1];
                 if (lenArg->getType() != usizeTy)
                     lenArg = builder_->CreateIntCast(lenArg, usizeTy, false, "fromCStrLen_cast");
-                auto callee = declareBuiltin("tollvm_fromCStrLen", retStructTy, {ptrTy, usizeTy});
+                auto callee = declareBuiltin("lux_fromCStrLen", retStructTy, {ptrTy, usizeTy});
                 auto* retVal = builder_->CreateCall(callee, {args[0], lenArg}, "fromCStrLen");
                 auto* retPtr = builder_->CreateExtractValue(retVal, 0, "fromCStrLen_ptr");
                 auto* retLen = builder_->CreateExtractValue(retVal, 1, "fromCStrLen_len");
@@ -4772,7 +4772,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 argsCount = llvm::ConstantInt::get(usizeTy, numArgs);
             }
 
-            auto callee = declareBuiltin("tollvm_sprintf", strTy,
+            auto callee = declareBuiltin("lux_sprintf", strTy,
                 {ptrTy, usizeTy, ptrTy, usizeTy});
             auto* ret = builder_->CreateCall(callee,
                 {fmtPtr, fmtLen, argsPtr, argsCount}, "sprintf");
@@ -4798,7 +4798,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             }
 
             if (args.empty()) {
-                std::cerr << "tollvm: dbg() requires an argument\n";
+                std::cerr << "lux: dbg() requires an argument\n";
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
             }
@@ -4813,7 +4813,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             const TypeInfo* argTI = nullptr;
             auto argExprs = ctx->argList()->expression();
-            if (auto* argIdent = dynamic_cast<ToLLVMParser::IdentExprContext*>(argExprs[0])) {
+            if (auto* argIdent = dynamic_cast<LuxParser::IdentExprContext*>(argExprs[0])) {
                 auto varIt = locals_.find(argIdent->IDENTIFIER()->getText());
                 if (varIt != locals_.end())
                     argTI = varIt->second.typeInfo;
@@ -4825,7 +4825,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             if (isString) {
                 auto* strPtr = builder_->CreateExtractValue(arg, 0, "dbg_str_ptr");
                 auto* strLen = builder_->CreateExtractValue(arg, 1, "dbg_str_len");
-                auto callee = declareBuiltin("tollvm_dbg_str",
+                auto callee = declareBuiltin("lux_dbg_str",
                     llvm::Type::getVoidTy(*context_),
                     {ptrTy, usizeTy, i32Ty, ptrTy, usizeTy});
                 builder_->CreateCall(callee, {fileGlobal, fileLen, lineNo, strPtr, strLen});
@@ -4851,7 +4851,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 callArg   = builder_->CreateTrunc(arg, paramType);
             }
 
-            auto cFuncName = "tollvm_dbg_" + suffix;
+            auto cFuncName = "lux_dbg_" + suffix;
             auto callee = declareBuiltin(cFuncName,
                 llvm::Type::getVoidTy(*context_),
                 {ptrTy, usizeTy, i32Ty, paramType});
@@ -4891,62 +4891,62 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── No-arg, returns string ──
             if (calleeName == "readLine" || calleeName == "readAll" ||
                 calleeName == "readPassword") {
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy, {});
+                auto callee = declareBuiltin("lux_" + calleeName, strTy, {});
                 auto* ret = builder_->CreateCall(callee, {}, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
             }
 
             // ── No-arg, returns primitive ──
             if (calleeName == "readChar") {
-                auto callee = declareBuiltin("tollvm_readChar", i8Ty, {});
+                auto callee = declareBuiltin("lux_readChar", i8Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "readChar");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "readInt") {
-                auto callee = declareBuiltin("tollvm_readInt", i64Ty, {});
+                auto callee = declareBuiltin("lux_readInt", i64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "readInt");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "readFloat") {
-                auto callee = declareBuiltin("tollvm_readFloat", f64Ty, {});
+                auto callee = declareBuiltin("lux_readFloat", f64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "readFloat");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "readBool") {
-                auto callee = declareBuiltin("tollvm_readBool", i32Ty, {});
+                auto callee = declareBuiltin("lux_readBool", i32Ty, {});
                 auto* ret32 = builder_->CreateCall(callee, {}, "readBool_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
                     llvm::ConstantInt::get(i32Ty, 0), "readBool");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "readByte") {
-                auto callee = declareBuiltin("tollvm_readByte", i8Ty, {});
+                auto callee = declareBuiltin("lux_readByte", i8Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "readByte");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "isEOF") {
-                auto callee = declareBuiltin("tollvm_isEOF", i32Ty, {});
+                auto callee = declareBuiltin("lux_isEOF", i32Ty, {});
                 auto* ret32 = builder_->CreateCall(callee, {}, "isEOF_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
                     llvm::ConstantInt::get(i32Ty, 0), "isEOF");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "isTTY") {
-                auto callee = declareBuiltin("tollvm_isTTY", i32Ty, {});
+                auto callee = declareBuiltin("lux_isTTY", i32Ty, {});
                 auto* ret32 = builder_->CreateCall(callee, {}, "isTTY_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
                     llvm::ConstantInt::get(i32Ty, 0), "isTTY");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "isStdoutTTY") {
-                auto callee = declareBuiltin("tollvm_isStdoutTTY", i32Ty, {});
+                auto callee = declareBuiltin("lux_isStdoutTTY", i32Ty, {});
                 auto* ret32 = builder_->CreateCall(callee, {}, "isStdoutTTY_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
                     llvm::ConstantInt::get(i32Ty, 0), "isStdoutTTY");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "isStderrTTY") {
-                auto callee = declareBuiltin("tollvm_isStderrTTY", i32Ty, {});
+                auto callee = declareBuiltin("lux_isStderrTTY", i32Ty, {});
                 auto* ret32 = builder_->CreateCall(callee, {}, "isStderrTTY_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
                     llvm::ConstantInt::get(i32Ty, 0), "isStderrTTY");
@@ -4962,7 +4962,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                auto callee = declareBuiltin("lux_" + calleeName, strTy,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -4977,7 +4977,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_promptInt", i64Ty,
+                auto callee = declareBuiltin("lux_promptInt", i64Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "promptInt");
                 return static_cast<llvm::Value*>(ret);
@@ -4992,7 +4992,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_promptFloat", f64Ty,
+                auto callee = declareBuiltin("lux_promptFloat", f64Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "promptFloat");
                 return static_cast<llvm::Value*>(ret);
@@ -5007,7 +5007,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_promptBool", i32Ty,
+                auto callee = declareBuiltin("lux_promptBool", i32Ty,
                     {ptrTy, usizeTy});
                 auto* ret32 = builder_->CreateCall(callee, callArgs, "promptBool_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
@@ -5017,13 +5017,13 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── void functions as expression (flush, flushErr) — return undef ──
             if (calleeName == "flush") {
-                auto callee = declareBuiltin("tollvm_flush", voidTy, {});
+                auto callee = declareBuiltin("lux_flush", voidTy, {});
                 builder_->CreateCall(callee, {});
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(i32Ty));
             }
             if (calleeName == "flushErr") {
-                auto callee = declareBuiltin("tollvm_flushErr", voidTy, {});
+                auto callee = declareBuiltin("lux_flushErr", voidTy, {});
                 builder_->CreateCall(callee, {});
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(i32Ty));
@@ -5048,7 +5048,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     arg = builder_->CreateSIToFP(arg, f64Ty, "math_cast");
                 else if (arg->getType()->isFloatTy())
                     arg = builder_->CreateFPExt(arg, f64Ty, "math_ext");
-                auto callee = declareBuiltin("tollvm_" + calleeName, f64Ty, {f64Ty});
+                auto callee = declareBuiltin("lux_" + calleeName, f64Ty, {f64Ty});
                 auto* ret = builder_->CreateCall(callee, {arg}, calleeName);
                 return static_cast<llvm::Value*>(ret);
             }
@@ -5069,7 +5069,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     else if (a->getType()->isFloatTy())
                         a = builder_->CreateFPExt(a, f64Ty, "math_ext");
                 }
-                auto callee = declareBuiltin("tollvm_" + calleeName, f64Ty,
+                auto callee = declareBuiltin("lux_" + calleeName, f64Ty,
                     {f64Ty, f64Ty});
                 auto* ret = builder_->CreateCall(callee, args, calleeName);
                 return static_cast<llvm::Value*>(ret);
@@ -5088,7 +5088,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     else if (a->getType()->isFloatTy())
                         a = builder_->CreateFPExt(a, f64Ty, "math_ext");
                 }
-                auto callee = declareBuiltin("tollvm_lerp", f64Ty,
+                auto callee = declareBuiltin("lux_lerp", f64Ty,
                     {f64Ty, f64Ty, f64Ty});
                 auto* ret = builder_->CreateCall(callee, args, "lerp");
                 return static_cast<llvm::Value*>(ret);
@@ -5107,7 +5107,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     else if (a->getType()->isFloatTy())
                         a = builder_->CreateFPExt(a, f64Ty, "math_ext");
                 }
-                auto callee = declareBuiltin("tollvm_map", f64Ty,
+                auto callee = declareBuiltin("lux_map", f64Ty,
                     {f64Ty, f64Ty, f64Ty, f64Ty, f64Ty});
                 auto* ret = builder_->CreateCall(callee, args, "map");
                 return static_cast<llvm::Value*>(ret);
@@ -5128,7 +5128,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     arg = builder_->CreateSIToFP(arg, f64Ty, "math_cast");
                 else if (arg->getType()->isFloatTy())
                     arg = builder_->CreateFPExt(arg, f64Ty, "math_ext");
-                auto callee = declareBuiltin("tollvm_" + calleeName, i32Ty,
+                auto callee = declareBuiltin("lux_" + calleeName, i32Ty,
                     {f64Ty});
                 auto* ret32 = builder_->CreateCall(callee, {arg},
                     calleeName + "_i32");
@@ -5150,7 +5150,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 // Detect type info via variable lookup
                 const TypeInfo* argTI = nullptr;
                 auto argExprs = ctx->argList()->expression();
-                if (auto* argIdent = dynamic_cast<ToLLVMParser::IdentExprContext*>(
+                if (auto* argIdent = dynamic_cast<LuxParser::IdentExprContext*>(
                         argExprs[0])) {
                     auto varIt = locals_.find(argIdent->IDENTIFIER()->getText());
                     if (varIt != locals_.end())
@@ -5179,7 +5179,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         arg = builder_->CreateSIToFP(arg, paramType);
                 }
 
-                auto callee = declareBuiltin("tollvm_abs_" + suffix,
+                auto callee = declareBuiltin("lux_abs_" + suffix,
                     paramType, {paramType});
                 auto* ret = builder_->CreateCall(callee, {arg}, "abs");
                 return static_cast<llvm::Value*>(ret);
@@ -5198,7 +5198,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
                 const TypeInfo* argTI = nullptr;
                 auto argExprs = ctx->argList()->expression();
-                if (auto* argIdent = dynamic_cast<ToLLVMParser::IdentExprContext*>(
+                if (auto* argIdent = dynamic_cast<LuxParser::IdentExprContext*>(
                         argExprs[0])) {
                     auto varIt = locals_.find(argIdent->IDENTIFIER()->getText());
                     if (varIt != locals_.end())
@@ -5226,7 +5226,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (b->getType() != paramType)
                     b = builder_->CreateIntCast(b, paramType, suffix[0] != 'u');
 
-                auto callee = declareBuiltin("tollvm_" + calleeName + "_" + suffix,
+                auto callee = declareBuiltin("lux_" + calleeName + "_" + suffix,
                     paramType, {paramType, paramType});
                 auto* ret = builder_->CreateCall(callee, {a, b}, calleeName);
                 return static_cast<llvm::Value*>(ret);
@@ -5246,7 +5246,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
                 const TypeInfo* argTI = nullptr;
                 auto argExprs = ctx->argList()->expression();
-                if (auto* argIdent = dynamic_cast<ToLLVMParser::IdentExprContext*>(
+                if (auto* argIdent = dynamic_cast<LuxParser::IdentExprContext*>(
                         argExprs[0])) {
                     auto varIt = locals_.find(argIdent->IDENTIFIER()->getText());
                     if (varIt != locals_.end())
@@ -5276,7 +5276,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (hi->getType() != paramType)
                     hi = builder_->CreateIntCast(hi, paramType, suffix[0] != 'u');
 
-                auto callee = declareBuiltin("tollvm_clamp_" + suffix,
+                auto callee = declareBuiltin("lux_clamp_" + suffix,
                     paramType, {paramType, paramType, paramType});
                 auto* ret = builder_->CreateCall(callee, {val, lo, hi}, "clamp");
                 return static_cast<llvm::Value*>(ret);
@@ -5295,7 +5295,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_" + calleeName, i32Ty,
+                auto callee = declareBuiltin("lux_" + calleeName, i32Ty,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret32 = builder_->CreateCall(callee, callArgs,
                     calleeName + "_i32");
@@ -5314,7 +5314,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_" + calleeName, i64Ty,
+                auto callee = declareBuiltin("lux_" + calleeName, i64Ty,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                 return static_cast<llvm::Value*>(ret);
@@ -5330,7 +5330,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_count", usizeTy,
+                auto callee = declareBuiltin("lux_count", usizeTy,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "count");
                 return static_cast<llvm::Value*>(ret);
@@ -5354,7 +5354,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 } else {
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
-                    auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                    auto callee = declareBuiltin("lux_" + calleeName, strTy,
                         {ptrTy, usizeTy});
                     auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                     return static_cast<llvm::Value*>(buildString(ret));
@@ -5372,7 +5372,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
                 extractStringArg(args[2], callArgs);
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                auto callee = declareBuiltin("lux_" + calleeName, strTy,
                     {ptrTy, usizeTy, ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -5391,7 +5391,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (n->getType() != usizeTy)
                     n = builder_->CreateIntCast(n, usizeTy, false);
                 callArgs.push_back(n);
-                auto callee = declareBuiltin("tollvm_repeat", strTy,
+                auto callee = declareBuiltin("lux_repeat", strTy,
                     {ptrTy, usizeTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "repeat");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -5414,7 +5414,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (fill->getType() != i8Ty)
                     fill = builder_->CreateIntCast(fill, i8Ty, false);
                 callArgs.push_back(fill);
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                auto callee = declareBuiltin("lux_" + calleeName, strTy,
                     {ptrTy, usizeTy, usizeTy, i8Ty});
                 auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -5437,7 +5437,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (length->getType() != usizeTy)
                     length = builder_->CreateIntCast(length, usizeTy, false);
                 callArgs.push_back(length);
-                auto callee = declareBuiltin("tollvm_substring", strTy,
+                auto callee = declareBuiltin("lux_substring", strTy,
                     {ptrTy, usizeTy, usizeTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "substring");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -5456,7 +5456,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (idx->getType() != usizeTy)
                     idx = builder_->CreateIntCast(idx, usizeTy, false);
                 callArgs.push_back(idx);
-                auto callee = declareBuiltin("tollvm_charAt", i8Ty,
+                auto callee = declareBuiltin("lux_charAt", i8Ty,
                     {ptrTy, usizeTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "charAt");
                 return static_cast<llvm::Value*>(ret);
@@ -5479,7 +5479,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (end->getType() != i64Ty)
                     end = builder_->CreateIntCast(end, i64Ty, true);
                 callArgs.push_back(end);
-                auto callee = declareBuiltin("tollvm_slice", strTy,
+                auto callee = declareBuiltin("lux_slice", strTy,
                     {ptrTy, usizeTy, i64Ty, i64Ty});
                 auto* ret = builder_->CreateCall(callee, callArgs, "slice");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -5494,7 +5494,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_parseInt", i64Ty,
+                auto callee = declareBuiltin("lux_parseInt", i64Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "parseInt");
                 return static_cast<llvm::Value*>(ret);
@@ -5513,7 +5513,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (radix->getType() != i32Ty)
                     radix = builder_->CreateIntCast(radix, i32Ty, false);
                 callArgs.push_back(radix);
-                auto callee = declareBuiltin("tollvm_parseIntRadix", i64Ty,
+                auto callee = declareBuiltin("lux_parseIntRadix", i64Ty,
                     {ptrTy, usizeTy, i32Ty});
                 auto* ret = builder_->CreateCall(callee, callArgs, "parseIntRadix");
                 return static_cast<llvm::Value*>(ret);
@@ -5528,7 +5528,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_parseFloat", f64Ty,
+                auto callee = declareBuiltin("lux_parseFloat", f64Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "parseFloat");
                 return static_cast<llvm::Value*>(ret);
@@ -5544,7 +5544,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* code = args[0];
                 if (code->getType() != i32Ty)
                     code = builder_->CreateIntCast(code, i32Ty, true);
-                auto callee = declareBuiltin("tollvm_fromCharCode", i8Ty,
+                auto callee = declareBuiltin("lux_fromCharCode", i8Ty,
                     {i32Ty});
                 auto* ret = builder_->CreateCall(callee, {code}, "fromCharCode");
                 return static_cast<llvm::Value*>(ret);
@@ -5560,7 +5560,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* size = args[0];
                 if (size->getType() != usizeTy)
                     size = builder_->CreateIntCast(size, usizeTy, false);
-                auto callee = declareBuiltin("tollvm_alloc", ptrTy, {usizeTy});
+                auto callee = declareBuiltin("lux_alloc", ptrTy, {usizeTy});
                 auto* ret = builder_->CreateCall(callee, {size}, "alloc");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -5575,7 +5575,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* size = args[0];
                 if (size->getType() != usizeTy)
                     size = builder_->CreateIntCast(size, usizeTy, false);
-                auto callee = declareBuiltin("tollvm_allocZeroed", ptrTy, {usizeTy});
+                auto callee = declareBuiltin("lux_allocZeroed", ptrTy, {usizeTy});
                 auto* ret = builder_->CreateCall(callee, {size}, "allocZeroed");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -5591,7 +5591,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* size = args[1];
                 if (size->getType() != usizeTy)
                     size = builder_->CreateIntCast(size, usizeTy, false);
-                auto callee = declareBuiltin("tollvm_realloc", ptrTy,
+                auto callee = declareBuiltin("lux_realloc", ptrTy,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, {ptr, size}, "realloc");
                 return static_cast<llvm::Value*>(ret);
@@ -5609,7 +5609,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* n = args[2];
                 if (n->getType() != usizeTy)
                     n = builder_->CreateIntCast(n, usizeTy, false);
-                auto callee = declareBuiltin("tollvm_compare", i32Ty,
+                auto callee = declareBuiltin("lux_compare", i32Ty,
                     {ptrTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, {a, b, n}, "compare");
                 return static_cast<llvm::Value*>(ret);
@@ -5617,7 +5617,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── std::random — randInt: () → int64 ──────────────────────────
             if (calleeName == "randInt") {
-                auto callee = declareBuiltin("tollvm_randInt", i64Ty, {});
+                auto callee = declareBuiltin("lux_randInt", i64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "randInt");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -5635,7 +5635,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     lo = builder_->CreateIntCast(lo, i64Ty, true);
                 if (hi->getType() != i64Ty)
                     hi = builder_->CreateIntCast(hi, i64Ty, true);
-                auto callee = declareBuiltin("tollvm_randIntRange", i64Ty,
+                auto callee = declareBuiltin("lux_randIntRange", i64Ty,
                     {i64Ty, i64Ty});
                 auto* ret = builder_->CreateCall(callee, {lo, hi}, "randIntRange");
                 return static_cast<llvm::Value*>(ret);
@@ -5643,14 +5643,14 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── std::random — randUint: () → uint64 ────────────────────────
             if (calleeName == "randUint") {
-                auto callee = declareBuiltin("tollvm_randUint", i64Ty, {});
+                auto callee = declareBuiltin("lux_randUint", i64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "randUint");
                 return static_cast<llvm::Value*>(ret);
             }
 
             // ── std::random — randFloat: () → float64 ──────────────────────
             if (calleeName == "randFloat") {
-                auto callee = declareBuiltin("tollvm_randFloat", f64Ty, {});
+                auto callee = declareBuiltin("lux_randFloat", f64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "randFloat");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -5668,7 +5668,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     lo = builder_->CreateFPCast(lo, f64Ty);
                 if (hi->getType() != f64Ty)
                     hi = builder_->CreateFPCast(hi, f64Ty);
-                auto callee = declareBuiltin("tollvm_randFloatRange", f64Ty,
+                auto callee = declareBuiltin("lux_randFloatRange", f64Ty,
                     {f64Ty, f64Ty});
                 auto* ret = builder_->CreateCall(callee, {lo, hi}, "randFloatRange");
                 return static_cast<llvm::Value*>(ret);
@@ -5676,7 +5676,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── std::random — randBool: () → bool ──────────────────────────
             if (calleeName == "randBool") {
-                auto callee = declareBuiltin("tollvm_randBool", i32Ty, {});
+                auto callee = declareBuiltin("lux_randBool", i32Ty, {});
                 auto* ret32 = builder_->CreateCall(callee, {}, "randBool_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
                     llvm::ConstantInt::get(i32Ty, 0), "randBool");
@@ -5685,29 +5685,29 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── std::random — randChar: () → char ──────────────────────────
             if (calleeName == "randChar") {
-                auto callee = declareBuiltin("tollvm_randChar", i8Ty, {});
+                auto callee = declareBuiltin("lux_randChar", i8Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "randChar");
                 return static_cast<llvm::Value*>(ret);
             }
 
             // ── std::time — no-arg, returns uint64 ─────────────────────────
             if (calleeName == "now") {
-                auto callee = declareBuiltin("tollvm_now", i64Ty, {});
+                auto callee = declareBuiltin("lux_now", i64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "now");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "nowNanos") {
-                auto callee = declareBuiltin("tollvm_nowNanos", i64Ty, {});
+                auto callee = declareBuiltin("lux_nowNanos", i64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "nowNanos");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "nowMicros") {
-                auto callee = declareBuiltin("tollvm_nowMicros", i64Ty, {});
+                auto callee = declareBuiltin("lux_nowMicros", i64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "nowMicros");
                 return static_cast<llvm::Value*>(ret);
             }
             if (calleeName == "clock") {
-                auto callee = declareBuiltin("tollvm_clock", i64Ty, {});
+                auto callee = declareBuiltin("lux_clock", i64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "clock");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -5717,14 +5717,14 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 "year", "month", "day", "hour", "minute", "second", "weekday"
             };
             if (timeI32Funcs.count(calleeName)) {
-                auto callee = declareBuiltin("tollvm_" + calleeName, i32Ty, {});
+                auto callee = declareBuiltin("lux_" + calleeName, i32Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, calleeName);
                 return static_cast<llvm::Value*>(ret);
             }
 
             // ── std::time — timestamp: () → string ─────────────────────────
             if (calleeName == "timestamp") {
-                auto callee = declareBuiltin("tollvm_timestamp", strTy, {});
+                auto callee = declareBuiltin("lux_timestamp", strTy, {});
                 auto* ret = builder_->CreateCall(callee, {}, "timestamp");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -5739,7 +5739,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* since = args[0];
                 if (since->getType() != i64Ty)
                     since = builder_->CreateIntCast(since, i64Ty, false);
-                auto callee = declareBuiltin("tollvm_elapsed", i64Ty, {i64Ty});
+                auto callee = declareBuiltin("lux_elapsed", i64Ty, {i64Ty});
                 auto* ret = builder_->CreateCall(callee, {since}, "elapsed");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -5756,7 +5756,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     ms = builder_->CreateIntCast(ms, i64Ty, false);
                 auto* fmtPtr = builder_->CreateExtractValue(args[1], 0, "fmt_ptr");
                 auto* fmtLen = builder_->CreateExtractValue(args[1], 1, "fmt_len");
-                auto callee = declareBuiltin("tollvm_formatTime", strTy,
+                auto callee = declareBuiltin("lux_formatTime", strTy,
                     {i64Ty, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee,
                     {ms, fmtPtr, fmtLen}, "formatTime");
@@ -5774,7 +5774,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "str_len");
                 auto* fmtPtr = builder_->CreateExtractValue(args[1], 0, "fmt_ptr");
                 auto* fmtLen = builder_->CreateExtractValue(args[1], 1, "fmt_len");
-                auto callee = declareBuiltin("tollvm_parseTime", i64Ty,
+                auto callee = declareBuiltin("lux_parseTime", i64Ty,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee,
                     {strPtr, strLen, fmtPtr, fmtLen}, "parseTime");
@@ -5783,7 +5783,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── std::fs — no-arg string returns: cwd, tempDir ──────────────
             if (calleeName == "cwd" || calleeName == "tempDir") {
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy, {});
+                auto callee = declareBuiltin("lux_" + calleeName, strTy, {});
                 auto* ret = builder_->CreateCall(callee, {}, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -5797,7 +5797,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_readFile", strTy,
+                auto callee = declareBuiltin("lux_readFile", strTy,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "readFile");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -5818,7 +5818,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     }
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
-                    std::string cName = "tollvm_" + calleeName;
+                    std::string cName = "lux_" + calleeName;
                     auto callee = declareBuiltin(cName, i32Ty,
                         {ptrTy, usizeTy});
                     auto* ret32 = builder_->CreateCall(callee, callArgs, calleeName + "_i32");
@@ -5838,7 +5838,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_fsRename", i32Ty,
+                auto callee = declareBuiltin("lux_fsRename", i32Ty,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret32 = builder_->CreateCall(callee, callArgs, "rename_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
@@ -5855,7 +5855,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_fileSize", i64Ty,
+                auto callee = declareBuiltin("lux_fileSize", i64Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "fileSize");
                 return static_cast<llvm::Value*>(ret);
@@ -5867,7 +5867,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     "platform", "arch", "homeDir", "executablePath"
                 };
                 if (procStrNoArg.count(calleeName)) {
-                    auto callee = declareBuiltin("tollvm_" + calleeName, strTy, {});
+                    auto callee = declareBuiltin("lux_" + calleeName, strTy, {});
                     auto* ret = builder_->CreateCall(callee, {}, calleeName);
                     return static_cast<llvm::Value*>(buildString(ret));
                 }
@@ -5882,7 +5882,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_env", strTy,
+                auto callee = declareBuiltin("lux_env", strTy,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "env");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -5897,7 +5897,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_execOutput", strTy,
+                auto callee = declareBuiltin("lux_execOutput", strTy,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "execOutput");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -5912,7 +5912,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_hasEnv", i32Ty,
+                auto callee = declareBuiltin("lux_hasEnv", i32Ty,
                     {ptrTy, usizeTy});
                 auto* ret32 = builder_->CreateCall(callee, callArgs, "hasEnv_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
@@ -5929,7 +5929,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 }
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_exec", i32Ty,
+                auto callee = declareBuiltin("lux_exec", i32Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "exec");
                 return static_cast<llvm::Value*>(ret);
@@ -5937,7 +5937,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── std::process — pid: () → int32 ─────────────────────────────
             if (calleeName == "pid") {
-                auto callee = declareBuiltin("tollvm_pid", i32Ty, {});
+                auto callee = declareBuiltin("lux_pid", i32Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "pid");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -5951,7 +5951,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, true);
-                auto callee = declareBuiltin("tollvm_itoa", strTy, {i64Ty});
+                auto callee = declareBuiltin("lux_itoa", strTy, {i64Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, "itoa");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -5968,7 +5968,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* radix = args[1];
                 if (radix->getType() != i32Ty)
                     radix = builder_->CreateIntCast(radix, i32Ty, false);
-                auto callee = declareBuiltin("tollvm_itoaRadix", strTy, {i64Ty, i32Ty});
+                auto callee = declareBuiltin("lux_itoaRadix", strTy, {i64Ty, i32Ty});
                 auto* ret = builder_->CreateCall(callee, {val, radix}, "itoaRadix");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -5982,7 +5982,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
-                auto callee = declareBuiltin("tollvm_utoa", strTy, {i64Ty});
+                auto callee = declareBuiltin("lux_utoa", strTy, {i64Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, "utoa");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -5996,7 +5996,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != f64Ty)
                     a = builder_->CreateFPExt(a, f64Ty);
-                auto callee = declareBuiltin("tollvm_ftoa", strTy, {f64Ty});
+                auto callee = declareBuiltin("lux_ftoa", strTy, {f64Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, "ftoa");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -6013,7 +6013,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* prec = args[1];
                 if (prec->getType() != i32Ty)
                     prec = builder_->CreateIntCast(prec, i32Ty, false);
-                auto callee = declareBuiltin("tollvm_ftoaPrecision", strTy, {f64Ty, i32Ty});
+                auto callee = declareBuiltin("lux_ftoaPrecision", strTy, {f64Ty, i32Ty});
                 auto* ret = builder_->CreateCall(callee, {val, prec}, "ftoaPrecision");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -6028,7 +6028,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy, {i64Ty});
+                auto callee = declareBuiltin("lux_" + calleeName, strTy, {i64Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -6041,7 +6041,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_atoi", i64Ty,
+                auto callee = declareBuiltin("lux_atoi", i64Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "atoi");
                 return static_cast<llvm::Value*>(ret);
@@ -6055,7 +6055,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_atof", f64Ty,
+                auto callee = declareBuiltin("lux_atof", f64Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "atof");
                 return static_cast<llvm::Value*>(ret);
@@ -6069,7 +6069,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_fromHex", i64Ty,
+                auto callee = declareBuiltin("lux_fromHex", i64Ty,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "fromHex");
                 return static_cast<llvm::Value*>(ret);
@@ -6081,7 +6081,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
-                auto callee = declareBuiltin("tollvm_charToInt", i32Ty, {i8Ty});
+                auto callee = declareBuiltin("lux_charToInt", i32Ty, {i8Ty});
                 auto* ret = builder_->CreateCall(callee, {args[0]}, "charToInt");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6095,7 +6095,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i32Ty)
                     a = builder_->CreateIntCast(a, i32Ty, true);
-                auto callee = declareBuiltin("tollvm_intToChar", i8Ty, {i32Ty});
+                auto callee = declareBuiltin("lux_intToChar", i8Ty, {i32Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, "intToChar");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6108,7 +6108,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_hashString", i64Ty, {ptrTy, usizeTy});
+                auto callee = declareBuiltin("lux_hashString", i64Ty, {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "hashString");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6122,7 +6122,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, true);
-                auto callee = declareBuiltin("tollvm_hashInt", i64Ty, {i64Ty});
+                auto callee = declareBuiltin("lux_hashInt", i64Ty, {i64Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, "hashInt");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6139,7 +6139,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     a = builder_->CreateIntCast(a, i64Ty, false);
                 if (b->getType() != i64Ty)
                     b = builder_->CreateIntCast(b, i64Ty, false);
-                auto callee = declareBuiltin("tollvm_hashCombine", i64Ty, {i64Ty, i64Ty});
+                auto callee = declareBuiltin("lux_hashCombine", i64Ty, {i64Ty, i64Ty});
                 auto* ret = builder_->CreateCall(callee, {a, b}, "hashCombine");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6154,7 +6154,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
-                auto callee = declareBuiltin("tollvm_" + calleeName, i32Ty, {i64Ty});
+                auto callee = declareBuiltin("lux_" + calleeName, i32Ty, {i64Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, calleeName);
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6174,7 +6174,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     a = builder_->CreateIntCast(a, i64Ty, false);
                 if (b->getType() != i32Ty)
                     b = builder_->CreateIntCast(b, i32Ty, false);
-                auto callee = declareBuiltin("tollvm_" + calleeName, i64Ty, {i64Ty, i32Ty});
+                auto callee = declareBuiltin("lux_" + calleeName, i64Ty, {i64Ty, i32Ty});
                 auto* ret = builder_->CreateCall(callee, {a, b}, calleeName);
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6190,7 +6190,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
-                auto callee = declareBuiltin("tollvm_" + calleeName, i64Ty, {i64Ty});
+                auto callee = declareBuiltin("lux_" + calleeName, i64Ty, {i64Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, calleeName);
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6204,7 +6204,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
-                auto callee = declareBuiltin("tollvm_isPow2", i32Ty, {i64Ty});
+                auto callee = declareBuiltin("lux_isPow2", i32Ty, {i64Ty});
                 auto* raw = builder_->CreateCall(callee, {a}, "isPow2_raw");
                 auto* ret = builder_->CreateICmpNE(raw,
                     llvm::ConstantInt::get(i32Ty, 0), "isPow2");
@@ -6223,7 +6223,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     a = builder_->CreateIntCast(a, i64Ty, false);
                 if (b->getType() != i32Ty)
                     b = builder_->CreateIntCast(b, i32Ty, false);
-                auto callee = declareBuiltin("tollvm_testBit", i32Ty, {i64Ty, i32Ty});
+                auto callee = declareBuiltin("lux_testBit", i32Ty, {i64Ty, i32Ty});
                 auto* raw = builder_->CreateCall(callee, {a, b}, "testBit_raw");
                 auto* ret = builder_->CreateICmpNE(raw,
                     llvm::ConstantInt::get(i32Ty, 0), "testBit");
@@ -6245,7 +6245,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     b = builder_->CreateIntCast(b, i32Ty, false);
                 if (c->getType() != i32Ty)
                     c = builder_->CreateIntCast(c, i32Ty, false);
-                auto callee = declareBuiltin("tollvm_extractBits", i64Ty,
+                auto callee = declareBuiltin("lux_extractBits", i64Ty,
                     {i64Ty, i32Ty, i32Ty});
                 auto* ret = builder_->CreateCall(callee, {a, b, c}, "extractBits");
                 return static_cast<llvm::Value*>(ret);
@@ -6265,7 +6265,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* i8Ty = llvm::Type::getInt8Ty(*context_);
                 if (a->getType() != i8Ty)
                     a = builder_->CreateIntCast(a, i8Ty, false);
-                auto callee = declareBuiltin("tollvm_" + calleeName, i32Ty, {i8Ty});
+                auto callee = declareBuiltin("lux_" + calleeName, i32Ty, {i8Ty});
                 auto* raw = builder_->CreateCall(callee, {a}, calleeName + "_raw");
                 auto* ret = builder_->CreateICmpNE(raw,
                     llvm::ConstantInt::get(i32Ty, 0), calleeName);
@@ -6287,7 +6287,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     if (a->getType() != i8Ty)
                         a = builder_->CreateIntCast(a, i8Ty, false);
                     auto callee = declareBuiltin(
-                        "tollvm_char_" + calleeName, i8Ty, {i8Ty});
+                        "lux_char_" + calleeName, i8Ty, {i8Ty});
                     auto* ret = builder_->CreateCall(callee, {a}, calleeName);
                     return static_cast<llvm::Value*>(ret);
                 }
@@ -6304,7 +6304,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* i8Ty = llvm::Type::getInt8Ty(*context_);
                 if (a->getType() != i8Ty)
                     a = builder_->CreateIntCast(a, i8Ty, false);
-                auto callee = declareBuiltin("tollvm_toDigit", i32Ty, {i8Ty});
+                auto callee = declareBuiltin("lux_toDigit", i32Ty, {i8Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, "toDigit");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6319,7 +6319,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (a->getType() != i32Ty)
                     a = builder_->CreateIntCast(a, i32Ty, true);
                 auto* i8Ty = llvm::Type::getInt8Ty(*context_);
-                auto callee = declareBuiltin("tollvm_fromDigit", i8Ty, {i32Ty});
+                auto callee = declareBuiltin("lux_fromDigit", i8Ty, {i32Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, "fromDigit");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6334,7 +6334,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
                     extractStringArg(args[1], callArgs);
-                    auto callee = declareBuiltin("tollvm_pathJoin", strTy,
+                    auto callee = declareBuiltin("lux_pathJoin", strTy,
                         {ptrTy, usizeTy, ptrTy, usizeTy});
                     auto* ret = builder_->CreateCall(callee, callArgs, "pathJoin");
                     return static_cast<llvm::Value*>(buildString(ret));
@@ -6355,7 +6355,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                             args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
-                    auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                    auto callee = declareBuiltin("lux_" + calleeName, strTy,
                         {ptrTy, usizeTy});
                     auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                     return static_cast<llvm::Value*>(buildString(ret));
@@ -6370,7 +6370,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_" + calleeName, i32Ty,
+                auto callee = declareBuiltin("lux_" + calleeName, i32Ty,
                     {ptrTy, usizeTy});
                 auto* ret32 = builder_->CreateCall(callee, callArgs, calleeName + "_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
@@ -6380,7 +6380,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── std::path — separator: () → char ─────────────────────────
             if (calleeName == "separator") {
-                auto callee = declareBuiltin("tollvm_separator", i8Ty, {});
+                auto callee = declareBuiltin("lux_separator", i8Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "separator");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6394,7 +6394,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                auto callee = declareBuiltin("lux_" + calleeName, strTy,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6417,7 +6417,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (fill->getType() != i8Ty)
                     fill = builder_->CreateIntCast(fill, i8Ty, false);
                 callArgs.push_back(fill);
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                auto callee = declareBuiltin("lux_" + calleeName, strTy,
                     {ptrTy, usizeTy, usizeTy, i8Ty});
                 auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6426,9 +6426,9 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::fmt — hex/hexUpper/oct/bin/humanBytes: (uint64) → string
             {
                 static const std::unordered_map<std::string, std::string> fmtU64Funcs = {
-                    {"hex", "tollvm_fmtHex"}, {"hexUpper", "tollvm_fmtHexUpper"},
-                    {"oct", "tollvm_fmtOct"}, {"bin", "tollvm_fmtBin"},
-                    {"humanBytes", "tollvm_humanBytes"}
+                    {"hex", "lux_fmtHex"}, {"hexUpper", "lux_fmtHexUpper"},
+                    {"oct", "lux_fmtOct"}, {"bin", "lux_fmtBin"},
+                    {"humanBytes", "lux_humanBytes"}
                 };
                 auto fmtIt = fmtU64Funcs.find(calleeName);
                 if (fmtIt != fmtU64Funcs.end()) {
@@ -6455,7 +6455,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, true);
-                auto callee = declareBuiltin("tollvm_commas", strTy, {i64Ty});
+                auto callee = declareBuiltin("lux_commas", strTy, {i64Ty});
                 auto* ret = builder_->CreateCall(callee, {a}, "commas");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -6473,7 +6473,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* u32Ty = llvm::Type::getInt32Ty(*context_);
                 if (dec->getType() != u32Ty)
                     dec = builder_->CreateIntCast(dec, u32Ty, false);
-                auto callee = declareBuiltin("tollvm_fixed", strTy,
+                auto callee = declareBuiltin("lux_fixed", strTy,
                     {f64Ty, u32Ty});
                 auto* ret = builder_->CreateCall(callee, {val, dec}, "fixed");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6488,7 +6488,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* val = args[0];
                 if (val->getType() != f64Ty)
                     val = builder_->CreateSIToFP(val, f64Ty);
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                auto callee = declareBuiltin("lux_" + calleeName, strTy,
                     {f64Ty});
                 auto* ret = builder_->CreateCall(callee, {val}, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6503,7 +6503,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_regexMatch", i32Ty,
+                auto callee = declareBuiltin("lux_regexMatch", i32Ty,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret32 = builder_->CreateCall(callee, callArgs, "match_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
@@ -6520,7 +6520,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_regexFind", strTy,
+                auto callee = declareBuiltin("lux_regexFind", strTy,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "find");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6535,7 +6535,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_regexFindIndex", i64Ty,
+                auto callee = declareBuiltin("lux_regexFindIndex", i64Ty,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "findIndex");
                 return static_cast<llvm::Value*>(ret);
@@ -6551,7 +6551,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
                 extractStringArg(args[2], callArgs);
-                auto callee = declareBuiltin("tollvm_" + calleeName, strTy,
+                auto callee = declareBuiltin("lux_" + calleeName, strTy,
                     {ptrTy, usizeTy, ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6565,7 +6565,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_regexIsValid", i32Ty,
+                auto callee = declareBuiltin("lux_regexIsValid", i32Ty,
                     {ptrTy, usizeTy});
                 auto* ret32 = builder_->CreateCall(callee, callArgs, "isValid_i32");
                 auto* ret = builder_->CreateICmpNE(ret32,
@@ -6576,10 +6576,10 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::encoding — string → string functions ────────────────
             {
                 static const std::unordered_map<std::string, std::string> encStrFuncs = {
-                    {"base64EncodeStr", "tollvm_base64EncodeStr"},
-                    {"base64DecodeStr", "tollvm_base64DecodeStr"},
-                    {"urlEncode",       "tollvm_urlEncode"},
-                    {"urlDecode",       "tollvm_urlDecode"},
+                    {"base64EncodeStr", "lux_base64EncodeStr"},
+                    {"base64DecodeStr", "lux_base64DecodeStr"},
+                    {"urlEncode",       "lux_urlEncode"},
+                    {"urlDecode",       "lux_urlDecode"},
                 };
                 auto encIt = encStrFuncs.find(calleeName);
                 if (encIt != encStrFuncs.end()) {
@@ -6599,10 +6599,10 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::crypto — string → string hash functions ─────────────
             {
                 static const std::unordered_map<std::string, std::string> cryptoStrFuncs = {
-                    {"md5String",    "tollvm_md5String"},
-                    {"sha1String",   "tollvm_sha1String"},
-                    {"sha256String", "tollvm_sha256String"},
-                    {"sha512String", "tollvm_sha512String"},
+                    {"md5String",    "lux_md5String"},
+                    {"sha1String",   "lux_sha1String"},
+                    {"sha256String", "lux_sha256String"},
+                    {"sha512String", "lux_sha512String"},
                 };
                 auto crIt = cryptoStrFuncs.find(calleeName);
                 if (crIt != cryptoStrFuncs.end()) {
@@ -6622,10 +6622,10 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::compress — string → string (gzip/deflate) ────────
             {
                 static const std::unordered_map<std::string, std::string> compressStrFuncs = {
-                    {"gzipCompress",   "tollvm_gzipCompress"},
-                    {"gzipDecompress", "tollvm_gzipDecompress"},
-                    {"deflate",        "tollvm_deflate"},
-                    {"inflate",        "tollvm_inflate"},
+                    {"gzipCompress",   "lux_gzipCompress"},
+                    {"gzipDecompress", "lux_gzipDecompress"},
+                    {"deflate",        "lux_deflate"},
+                    {"inflate",        "lux_inflate"},
                 };
                 auto cpIt = compressStrFuncs.find(calleeName);
                 if (cpIt != compressStrFuncs.end()) {
@@ -6654,7 +6654,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (lvl->getType() != i32Ty)
                     lvl = builder_->CreateIntCast(lvl, i32Ty, true);
                 callArgs.push_back(lvl);
-                auto callee = declareBuiltin("tollvm_compressLevel", strTy,
+                auto callee = declareBuiltin("lux_compressLevel", strTy,
                     {ptrTy, usizeTy, i32Ty});
                 auto* ret = builder_->CreateCall(callee, callArgs, "compressLevel");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6668,7 +6668,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_netResolve", strTy,
+                auto callee = declareBuiltin("lux_netResolve", strTy,
                     {ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "resolve");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6677,14 +6677,14 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::thread — cpuCount: () → uint32 ────────────────────
             if (calleeName == "cpuCount") {
                 auto* u32Ty = llvm::Type::getInt32Ty(*context_);
-                auto callee = declareBuiltin("tollvm_cpuCount", u32Ty, {});
+                auto callee = declareBuiltin("lux_cpuCount", u32Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "cpuCount");
                 return static_cast<llvm::Value*>(ret);
             }
 
             // ── std::thread — threadId: () → uint64 ────────────────────
             if (calleeName == "threadId") {
-                auto callee = declareBuiltin("tollvm_threadId", i64Ty, {});
+                auto callee = declareBuiltin("lux_threadId", i64Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "threadId");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6701,7 +6701,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* i16Ty = llvm::Type::getInt16Ty(*context_);
                 auto* port = builder_->CreateIntCast(args[1], i16Ty, false);
                 callArgs.push_back(port);
-                std::string cName = "tollvm_" + calleeName;
+                std::string cName = "lux_" + calleeName;
                 auto callee = declareBuiltin(cName, i32Ty,
                     {ptrTy, usizeTy, i16Ty});
                 auto* ret = builder_->CreateCall(callee, callArgs, calleeName);
@@ -6715,7 +6715,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     for (auto* e : argList->expression())
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
-                auto callee = declareBuiltin("tollvm_tcpAccept", i32Ty, {i32Ty});
+                auto callee = declareBuiltin("lux_tcpAccept", i32Ty, {i32Ty});
                 auto* ret = builder_->CreateCall(callee, {fd}, "tcpAccept");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6730,7 +6730,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
                 callArgs.push_back(fd);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_tcpSend", i64Ty,
+                auto callee = declareBuiltin("lux_tcpSend", i64Ty,
                     {i32Ty, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "tcpSend");
                 return static_cast<llvm::Value*>(ret);
@@ -6746,7 +6746,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* maxLen = args[1];
                 if (maxLen->getType() != usizeTy)
                     maxLen = builder_->CreateIntCast(maxLen, usizeTy, false);
-                std::string cName = "tollvm_" + calleeName;
+                std::string cName = "lux_" + calleeName;
                 auto callee = declareBuiltin(cName, strTy,
                     {i32Ty, usizeTy});
                 auto* ret = builder_->CreateCall(callee, {fd, maxLen}, calleeName);
@@ -6767,7 +6767,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* i16Ty = llvm::Type::getInt16Ty(*context_);
                 auto* port = builder_->CreateIntCast(args[3], i16Ty, false);
                 callArgs.push_back(port);
-                auto callee = declareBuiltin("tollvm_udpSendTo", i64Ty,
+                auto callee = declareBuiltin("lux_udpSendTo", i64Ty,
                     {i32Ty, ptrTy, usizeTy, ptrTy, usizeTy, i16Ty});
                 auto* ret = builder_->CreateCall(callee, callArgs, "udpSendTo");
                 return static_cast<llvm::Value*>(ret);
@@ -6776,8 +6776,8 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::os — no-arg → int32 ─────────────────────────────────
             {
                 static const std::unordered_map<std::string, std::string> osI32NoArg = {
-                    {"getpid",  "tollvm_osGetpid"},
-                    {"getppid", "tollvm_osGetppid"},
+                    {"getpid",  "lux_osGetpid"},
+                    {"getppid", "lux_osGetppid"},
                 };
                 auto osIt = osI32NoArg.find(calleeName);
                 if (osIt != osI32NoArg.end()) {
@@ -6790,8 +6790,8 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::os — no-arg → uint32 ────────────────────────────────
             {
                 static const std::unordered_map<std::string, std::string> osU32NoArg = {
-                    {"getuid", "tollvm_osGetuid"},
-                    {"getgid", "tollvm_osGetgid"},
+                    {"getuid", "lux_osGetuid"},
+                    {"getgid", "lux_osGetgid"},
                 };
                 auto osIt = osU32NoArg.find(calleeName);
                 if (osIt != osU32NoArg.end()) {
@@ -6804,21 +6804,21 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
             // ── std::os — hostname: () → string ──────────────────────────
             if (calleeName == "hostname") {
-                auto callee = declareBuiltin("tollvm_osHostname", strTy, {});
+                auto callee = declareBuiltin("lux_osHostname", strTy, {});
                 auto* ret = builder_->CreateCall(callee, {}, "hostname");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
 
             // ── std::os — pageSize: () → usize ──────────────────────────
             if (calleeName == "pageSize") {
-                auto callee = declareBuiltin("tollvm_osPageSize", usizeTy, {});
+                auto callee = declareBuiltin("lux_osPageSize", usizeTy, {});
                 auto* ret = builder_->CreateCall(callee, {}, "pageSize");
                 return static_cast<llvm::Value*>(ret);
             }
 
             // ── std::os — errno: () → int32 ─────────────────────────────
             if (calleeName == "errno") {
-                auto callee = declareBuiltin("tollvm_osErrno", i32Ty, {});
+                auto callee = declareBuiltin("lux_osErrno", i32Ty, {});
                 auto* ret = builder_->CreateCall(callee, {}, "osErrno");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6830,7 +6830,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                     for (auto* e : argList->expression())
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 auto* code = builder_->CreateIntCast(args[0], i32Ty, true);
-                auto callee = declareBuiltin("tollvm_osStrerror", strTy, {i32Ty});
+                auto callee = declareBuiltin("lux_osStrerror", strTy, {i32Ty});
                 auto* ret = builder_->CreateCall(callee, {code}, "strerror");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -6843,7 +6843,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 auto* a = builder_->CreateIntCast(args[0], i32Ty, true);
                 auto* b = builder_->CreateIntCast(args[1], i32Ty, true);
-                auto callee = declareBuiltin("tollvm_osKill", i32Ty, {i32Ty, i32Ty});
+                auto callee = declareBuiltin("lux_osKill", i32Ty, {i32Ty, i32Ty});
                 auto* ret = builder_->CreateCall(callee, {a, b}, "kill");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6851,8 +6851,8 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::os — fd ops: (int32) → int32 ───────────────────────
             {
                 static const std::unordered_map<std::string, std::string> osFdOps = {
-                    {"dup",     "tollvm_osDup"},
-                    {"closeFd", "tollvm_osCloseFd"},
+                    {"dup",     "lux_osDup"},
+                    {"closeFd", "lux_osCloseFd"},
                 };
                 auto osIt = osFdOps.find(calleeName);
                 if (osIt != osFdOps.end()) {
@@ -6875,7 +6875,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                         args.push_back(std::any_cast<llvm::Value*>(visit(e)));
                 auto* a = builder_->CreateIntCast(args[0], i32Ty, true);
                 auto* b = builder_->CreateIntCast(args[1], i32Ty, true);
-                auto callee = declareBuiltin("tollvm_osDup2", i32Ty, {i32Ty, i32Ty});
+                auto callee = declareBuiltin("lux_osDup2", i32Ty, {i32Ty, i32Ty});
                 auto* ret = builder_->CreateCall(callee, {a, b}, "dup2");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -6884,7 +6884,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             if (calleeName == "readLines") {
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "readLines_out");
-                auto callee = declareBuiltin("tollvm_readLines", voidTy, {ptrTy});
+                auto callee = declareBuiltin("lux_readLines", voidTy, {ptrTy});
                 builder_->CreateCall(callee, {outAlloca});
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "readLines_val");
                 return static_cast<llvm::Value*>(result);
@@ -6901,7 +6901,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* n = args[0];
                 if (n->getType() != usizeTy)
                     n = builder_->CreateIntCast(n, usizeTy, false);
-                auto callee = declareBuiltin("tollvm_readNBytes", voidTy, {ptrTy, usizeTy});
+                auto callee = declareBuiltin("lux_readNBytes", voidTy, {ptrTy, usizeTy});
                 builder_->CreateCall(callee, {outAlloca, n});
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "readNBytes_val");
                 return static_cast<llvm::Value*>(result);
@@ -6918,7 +6918,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_split", voidTy,
+                auto callee = declareBuiltin("lux_split", voidTy,
                     {ptrTy, ptrTy, usizeTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "split_val");
@@ -6940,7 +6940,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 if (n->getType() != usizeTy)
                     n = builder_->CreateIntCast(n, usizeTy, false);
                 callArgs.push_back(n);
-                auto callee = declareBuiltin("tollvm_splitN", voidTy,
+                auto callee = declareBuiltin("lux_splitN", voidTy,
                     {ptrTy, ptrTy, usizeTy, ptrTy, usizeTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "splitN_val");
@@ -6958,7 +6958,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 builder_->CreateStore(args[0], vecArgAlloca);
                 std::vector<llvm::Value*> callArgs = {vecArgAlloca};
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_joinVec", strTy,
+                auto callee = declareBuiltin("lux_joinVec", strTy,
                     {ptrTy, ptrTy, usizeTy});
                 auto* ret = builder_->CreateCall(callee, callArgs, "joinVec");
                 return static_cast<llvm::Value*>(buildString(ret));
@@ -6974,7 +6974,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "lines_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_lines", voidTy,
+                auto callee = declareBuiltin("lux_lines", voidTy,
                     {ptrTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "lines_val");
@@ -6991,7 +6991,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "chars_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_chars", voidTy,
+                auto callee = declareBuiltin("lux_chars", voidTy,
                     {ptrTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "chars_val");
@@ -7007,7 +7007,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "fromChars_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
-                auto callee = declareBuiltin("tollvm_fromCharsVec", strTy, {ptrTy});
+                auto callee = declareBuiltin("lux_fromCharsVec", strTy, {ptrTy});
                 auto* ret = builder_->CreateCall(callee, {vecArgAlloca}, "fromChars");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -7022,7 +7022,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "toBytes_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_toBytes", voidTy,
+                auto callee = declareBuiltin("lux_toBytes", voidTy,
                     {ptrTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "toBytes_val");
@@ -7038,7 +7038,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "fromBytes_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
-                auto callee = declareBuiltin("tollvm_fromBytesVec", strTy, {ptrTy});
+                auto callee = declareBuiltin("lux_fromBytesVec", strTy, {ptrTy});
                 auto* ret = builder_->CreateCall(callee, {vecArgAlloca}, "fromBytes");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -7053,7 +7053,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "listDir_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_listDir", voidTy,
+                auto callee = declareBuiltin("lux_listDir", voidTy,
                     {ptrTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "listDir_val");
@@ -7070,7 +7070,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "readBytes_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_readFileBytes", voidTy,
+                auto callee = declareBuiltin("lux_readFileBytes", voidTy,
                     {ptrTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "readBytes_val");
@@ -7086,7 +7086,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "hashBytes_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
-                auto callee = declareBuiltin("tollvm_hashBytesVec", i64Ty, {ptrTy});
+                auto callee = declareBuiltin("lux_hashBytesVec", i64Ty, {ptrTy});
                 auto* ret = builder_->CreateCall(callee, {vecArgAlloca}, "hashBytes");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -7100,7 +7100,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "crc32_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
-                auto callee = declareBuiltin("tollvm_crc32Bytes", i32Ty, {ptrTy});
+                auto callee = declareBuiltin("lux_crc32Bytes", i32Ty, {ptrTy});
                 auto* ret = builder_->CreateCall(callee, {vecArgAlloca}, "crc32");
                 return static_cast<llvm::Value*>(ret);
             }
@@ -7116,7 +7116,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_regexFindAll", voidTy,
+                auto callee = declareBuiltin("lux_regexFindAll", voidTy,
                     {ptrTy, ptrTy, usizeTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "findAll_val");
@@ -7134,7 +7134,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
-                auto callee = declareBuiltin("tollvm_regexSplit", voidTy,
+                auto callee = declareBuiltin("lux_regexSplit", voidTy,
                     {ptrTy, ptrTy, usizeTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "regexSplit_val");
@@ -7150,7 +7150,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "b64enc_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
-                auto callee = declareBuiltin("tollvm_base64EncodeVec", strTy, {ptrTy});
+                auto callee = declareBuiltin("lux_base64EncodeVec", strTy, {ptrTy});
                 auto* ret = builder_->CreateCall(callee, {vecArgAlloca}, "base64Encode");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -7165,7 +7165,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "b64dec_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
                 extractStringArg(args[0], callArgs);
-                auto callee = declareBuiltin("tollvm_base64DecodeVec", voidTy,
+                auto callee = declareBuiltin("lux_base64DecodeVec", voidTy,
                     {ptrTy, ptrTy, usizeTy});
                 builder_->CreateCall(callee, callArgs);
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "b64dec_val");
@@ -7175,10 +7175,10 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
             // ── std::crypto — md5/sha1/sha256/sha512: (Vec<uint8>) → string ─
             {
                 static const std::unordered_map<std::string, std::string> cryptoByteFuncs = {
-                    {"md5",    "tollvm_md5Bytes"},
-                    {"sha1",   "tollvm_sha1Bytes"},
-                    {"sha256", "tollvm_sha256Bytes"},
-                    {"sha512", "tollvm_sha512Bytes"},
+                    {"md5",    "lux_md5Bytes"},
+                    {"sha1",   "lux_sha1Bytes"},
+                    {"sha256", "lux_sha256Bytes"},
+                    {"sha512", "lux_sha512Bytes"},
                 };
                 auto crIt = cryptoByteFuncs.find(calleeName);
                 if (crIt != cryptoByteFuncs.end()) {
@@ -7207,7 +7207,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* outAlloca  = builder_->CreateAlloca(vecTy, nullptr, "hmac_out");
                 builder_->CreateStore(args[0], keyAlloca);
                 builder_->CreateStore(args[1], dataAlloca);
-                auto callee = declareBuiltin("tollvm_hmacSha256", voidTy,
+                auto callee = declareBuiltin("lux_hmacSha256", voidTy,
                     {ptrTy, ptrTy, ptrTy});
                 builder_->CreateCall(callee, {outAlloca, keyAlloca, dataAlloca});
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "hmac_val");
@@ -7225,7 +7225,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* n = args[0];
                 if (n->getType() != usizeTy)
                     n = builder_->CreateIntCast(n, usizeTy, false);
-                auto callee = declareBuiltin("tollvm_randomBytes", voidTy, {ptrTy, usizeTy});
+                auto callee = declareBuiltin("lux_randomBytes", voidTy, {ptrTy, usizeTy});
                 builder_->CreateCall(callee, {outAlloca, n});
                 auto* result = builder_->CreateLoad(vecTy, outAlloca, "randomBytes_val");
                 return static_cast<llvm::Value*>(result);
@@ -7240,7 +7240,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "joinAll_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
-                auto callee = declareBuiltin("tollvm_joinAllVec", strTy, {ptrTy});
+                auto callee = declareBuiltin("lux_joinAllVec", strTy, {ptrTy});
                 auto* ret = builder_->CreateCall(callee, {vecArgAlloca}, "joinAll");
                 return static_cast<llvm::Value*>(buildString(ret));
             }
@@ -7471,7 +7471,7 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
 
     // Indirect call via function pointer variable
     if (!fnTI || fnTI->kind != TypeKind::Function) {
-        std::cerr << "tollvm: expression is not a function type\n";
+        std::cerr << "lux: expression is not a function type\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -7513,22 +7513,22 @@ std::any IRGen::visitFnCallExpr(ToLLVMParser::FnCallExprContext* ctx) {
     return static_cast<llvm::Value*>(result);
 }
 
-std::any IRGen::visitNegExpr(ToLLVMParser::NegExprContext* ctx) {
+std::any IRGen::visitNegExpr(LuxParser::NegExprContext* ctx) {
     auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
     if (val->getType()->isFloatingPointTy())
         return static_cast<llvm::Value*>(builder_->CreateFNeg(val, "neg"));
     return static_cast<llvm::Value*>(builder_->CreateNeg(val, "neg"));
 }
 
-std::any IRGen::visitMulExpr(ToLLVMParser::MulExprContext* ctx) {
+std::any IRGen::visitMulExpr(LuxParser::MulExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
 
     // Division by zero check for integer / and %
-    if (!isFloat && (ctx->op->getType() == ToLLVMLexer::SLASH ||
-                     ctx->op->getType() == ToLLVMLexer::PERCENT)) {
+    if (!isFloat && (ctx->op->getType() == LuxLexer::SLASH ||
+                     ctx->op->getType() == LuxLexer::PERCENT)) {
         auto* zero    = llvm::ConstantInt::get(r->getType(), 0);
         auto* isZero  = builder_->CreateICmpEQ(r, zero, "div_zero_chk");
 
@@ -7580,7 +7580,7 @@ std::any IRGen::visitMulExpr(ToLLVMParser::MulExprContext* ctx) {
             auto* errAlloca = builder_->CreateAlloca(errorTy, nullptr, "div_err");
             builder_->CreateStore(errVal, errAlloca);
 
-            auto throwFn = declareBuiltin("tollvm_eh_throw", voidTy, {ptrTy});
+            auto throwFn = declareBuiltin("lux_eh_throw", voidTy, {ptrTy});
             builder_->CreateCall(throwFn, {errAlloca});
             builder_->CreateUnreachable();
         }
@@ -7589,15 +7589,15 @@ std::any IRGen::visitMulExpr(ToLLVMParser::MulExprContext* ctx) {
     }
 
     switch (ctx->op->getType()) {
-    case ToLLVMLexer::STAR:
+    case LuxLexer::STAR:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFMul(l, r, "mul")
                     : builder_->CreateMul(l, r, "mul"));
-    case ToLLVMLexer::SLASH:
+    case LuxLexer::SLASH:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFDiv(l, r, "div")
                     : builder_->CreateSDiv(l, r, "div"));
-    case ToLLVMLexer::PERCENT:
+    case LuxLexer::PERCENT:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFRem(l, r, "mod")
                     : builder_->CreateSRem(l, r, "mod"));
@@ -7606,7 +7606,7 @@ std::any IRGen::visitMulExpr(ToLLVMParser::MulExprContext* ctx) {
     }
 }
 
-std::any IRGen::visitAddSubExpr(ToLLVMParser::AddSubExprContext* ctx) {
+std::any IRGen::visitAddSubExpr(LuxParser::AddSubExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
 
@@ -7618,7 +7618,7 @@ std::any IRGen::visitAddSubExpr(ToLLVMParser::AddSubExprContext* ctx) {
         auto* i8Ty = llvm::Type::getInt8Ty(*context_);
 
         // Resolve the pointee LLVM type for proper stride calculation
-        auto getPointeeTy = [&](ToLLVMParser::ExpressionContext* e) -> llvm::Type* {
+        auto getPointeeTy = [&](LuxParser::ExpressionContext* e) -> llvm::Type* {
             auto* ti = resolveExprTypeInfo(e);
             if (ti && ti->kind == TypeKind::Pointer && ti->pointeeType) {
                 return ti->pointeeType->toLLVMType(*context_, module_->getDataLayout());
@@ -7630,7 +7630,7 @@ std::any IRGen::visitAddSubExpr(ToLLVMParser::AddSubExprContext* ctx) {
             // ptr +/- int
             auto* elemTy = getPointeeTy(ctx->expression(0));
             auto* idx = rhs;
-            if (ctx->op->getType() == ToLLVMLexer::MINUS) {
+            if (ctx->op->getType() == LuxLexer::MINUS) {
                 idx = builder_->CreateNeg(rhs, "neg");
             }
             return static_cast<llvm::Value*>(
@@ -7661,11 +7661,11 @@ std::any IRGen::visitAddSubExpr(ToLLVMParser::AddSubExprContext* ctx) {
     bool isFloat = l->getType()->isFloatingPointTy();
 
     switch (ctx->op->getType()) {
-    case ToLLVMLexer::PLUS:
+    case LuxLexer::PLUS:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFAdd(l, r, "add")
                     : builder_->CreateAdd(l, r, "add"));
-    case ToLLVMLexer::MINUS:
+    case LuxLexer::MINUS:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFSub(l, r, "sub")
                     : builder_->CreateSub(l, r, "sub"));
@@ -7674,7 +7674,7 @@ std::any IRGen::visitAddSubExpr(ToLLVMParser::AddSubExprContext* ctx) {
     }
 }
 
-std::any IRGen::visitLogicalNotExpr(ToLLVMParser::LogicalNotExprContext* ctx) {
+std::any IRGen::visitLogicalNotExpr(LuxParser::LogicalNotExprContext* ctx) {
     auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
     // Truncate to i1 if not already bool
     if (!val->getType()->isIntegerTy(1))
@@ -7683,7 +7683,7 @@ std::any IRGen::visitLogicalNotExpr(ToLLVMParser::LogicalNotExprContext* ctx) {
     return static_cast<llvm::Value*>(builder_->CreateNot(val, "not"));
 }
 
-std::any IRGen::visitLogicalAndExpr(ToLLVMParser::LogicalAndExprContext* ctx) {
+std::any IRGen::visitLogicalAndExpr(LuxParser::LogicalAndExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     // Convert to i1 if needed
@@ -7696,7 +7696,7 @@ std::any IRGen::visitLogicalAndExpr(ToLLVMParser::LogicalAndExprContext* ctx) {
     return static_cast<llvm::Value*>(builder_->CreateAnd(lhs, rhs, "and"));
 }
 
-std::any IRGen::visitLogicalOrExpr(ToLLVMParser::LogicalOrExprContext* ctx) {
+std::any IRGen::visitLogicalOrExpr(LuxParser::LogicalOrExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     if (!lhs->getType()->isIntegerTy(1))
@@ -7708,57 +7708,57 @@ std::any IRGen::visitLogicalOrExpr(ToLLVMParser::LogicalOrExprContext* ctx) {
     return static_cast<llvm::Value*>(builder_->CreateOr(lhs, rhs, "or"));
 }
 
-std::any IRGen::visitBitNotExpr(ToLLVMParser::BitNotExprContext* ctx) {
+std::any IRGen::visitBitNotExpr(LuxParser::BitNotExprContext* ctx) {
     auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
     return static_cast<llvm::Value*>(builder_->CreateNot(val, "bitnot"));
 }
 
-std::any IRGen::visitShiftExpr(ToLLVMParser::ShiftExprContext* ctx) {
+std::any IRGen::visitShiftExpr(LuxParser::ShiftExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
 
     switch (ctx->op->getType()) {
-    case ToLLVMLexer::LSHIFT:
+    case LuxLexer::LSHIFT:
         return static_cast<llvm::Value*>(builder_->CreateShl(l, r, "shl"));
-    case ToLLVMLexer::RSHIFT:
+    case LuxLexer::RSHIFT:
         return static_cast<llvm::Value*>(builder_->CreateAShr(l, r, "shr"));
     default:
         return static_cast<llvm::Value*>(llvm::UndefValue::get(l->getType()));
     }
 }
 
-std::any IRGen::visitBitAndExpr(ToLLVMParser::BitAndExprContext* ctx) {
+std::any IRGen::visitBitAndExpr(LuxParser::BitAndExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateAnd(l, r, "bitand"));
 }
 
-std::any IRGen::visitBitXorExpr(ToLLVMParser::BitXorExprContext* ctx) {
+std::any IRGen::visitBitXorExpr(LuxParser::BitXorExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateXor(l, r, "bitxor"));
 }
 
-std::any IRGen::visitBitOrExpr(ToLLVMParser::BitOrExprContext* ctx) {
+std::any IRGen::visitBitOrExpr(LuxParser::BitOrExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateOr(l, r, "bitor"));
 }
 
-std::any IRGen::visitPreIncrExpr(ToLLVMParser::PreIncrExprContext* ctx) {
-    auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(ctx->expression());
+std::any IRGen::visitPreIncrExpr(LuxParser::PreIncrExprContext* ctx) {
+    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression());
     if (!identBase) {
-        std::cerr << "tollvm: ++/-- requires a variable\n";
+        std::cerr << "lux: ++/-- requires a variable\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto name = identBase->IDENTIFIER()->getText();
     auto it = locals_.find(name);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << name << "'\n";
+        std::cerr << "lux: undefined variable '" << name << "'\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto* alloca = it->second.alloca;
@@ -7770,16 +7770,16 @@ std::any IRGen::visitPreIncrExpr(ToLLVMParser::PreIncrExprContext* ctx) {
     return static_cast<llvm::Value*>(inc);
 }
 
-std::any IRGen::visitPreDecrExpr(ToLLVMParser::PreDecrExprContext* ctx) {
-    auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(ctx->expression());
+std::any IRGen::visitPreDecrExpr(LuxParser::PreDecrExprContext* ctx) {
+    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression());
     if (!identBase) {
-        std::cerr << "tollvm: ++/-- requires a variable\n";
+        std::cerr << "lux: ++/-- requires a variable\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto name = identBase->IDENTIFIER()->getText();
     auto it = locals_.find(name);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << name << "'\n";
+        std::cerr << "lux: undefined variable '" << name << "'\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto* alloca = it->second.alloca;
@@ -7791,16 +7791,16 @@ std::any IRGen::visitPreDecrExpr(ToLLVMParser::PreDecrExprContext* ctx) {
     return static_cast<llvm::Value*>(dec);
 }
 
-std::any IRGen::visitPostIncrExpr(ToLLVMParser::PostIncrExprContext* ctx) {
-    auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(ctx->expression());
+std::any IRGen::visitPostIncrExpr(LuxParser::PostIncrExprContext* ctx) {
+    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression());
     if (!identBase) {
-        std::cerr << "tollvm: ++/-- requires a variable\n";
+        std::cerr << "lux: ++/-- requires a variable\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto name = identBase->IDENTIFIER()->getText();
     auto it = locals_.find(name);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << name << "'\n";
+        std::cerr << "lux: undefined variable '" << name << "'\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto* alloca = it->second.alloca;
@@ -7812,16 +7812,16 @@ std::any IRGen::visitPostIncrExpr(ToLLVMParser::PostIncrExprContext* ctx) {
     return static_cast<llvm::Value*>(old);
 }
 
-std::any IRGen::visitPostDecrExpr(ToLLVMParser::PostDecrExprContext* ctx) {
-    auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(ctx->expression());
+std::any IRGen::visitPostDecrExpr(LuxParser::PostDecrExprContext* ctx) {
+    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression());
     if (!identBase) {
-        std::cerr << "tollvm: ++/-- requires a variable\n";
+        std::cerr << "lux: ++/-- requires a variable\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto name = identBase->IDENTIFIER()->getText();
     auto it = locals_.find(name);
     if (it == locals_.end()) {
-        std::cerr << "tollvm: undefined variable '" << name << "'\n";
+        std::cerr << "lux: undefined variable '" << name << "'\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
     auto* alloca = it->second.alloca;
@@ -7833,7 +7833,7 @@ std::any IRGen::visitPostDecrExpr(ToLLVMParser::PostDecrExprContext* ctx) {
     return static_cast<llvm::Value*>(old);
 }
 
-std::any IRGen::visitCastExpr(ToLLVMParser::CastExprContext* ctx) {
+std::any IRGen::visitCastExpr(LuxParser::CastExprContext* ctx) {
     auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
     auto* ti = resolveTypeInfo(ctx->typeSpec());
     auto* targetTy = ti->toLLVMType(*context_, module_->getDataLayout());
@@ -7880,11 +7880,11 @@ std::any IRGen::visitCastExpr(ToLLVMParser::CastExprContext* ctx) {
         return static_cast<llvm::Value*>(
             builder_->CreatePtrToInt(val, targetTy, "cast"));
 
-    std::cerr << "tollvm: unsupported cast\n";
+    std::cerr << "lux: unsupported cast\n";
     return static_cast<llvm::Value*>(val);
 }
 
-std::any IRGen::visitSizeofExpr(ToLLVMParser::SizeofExprContext* ctx) {
+std::any IRGen::visitSizeofExpr(LuxParser::SizeofExprContext* ctx) {
     auto* ti = resolveTypeInfo(ctx->typeSpec());
     auto* llvmTy = ti->toLLVMType(*context_, module_->getDataLayout());
     auto& dl = module_->getDataLayout();
@@ -7893,7 +7893,7 @@ std::any IRGen::visitSizeofExpr(ToLLVMParser::SizeofExprContext* ctx) {
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), sizeBytes));
 }
 
-std::any IRGen::visitTypeofExpr(ToLLVMParser::TypeofExprContext* ctx) {
+std::any IRGen::visitTypeofExpr(LuxParser::TypeofExprContext* ctx) {
     // Resolve expression type at compile-time
     auto* exprVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
 
@@ -7946,7 +7946,7 @@ std::any IRGen::visitTypeofExpr(ToLLVMParser::TypeofExprContext* ctx) {
     if (typeName == "unknown") {
         auto* exprCtx = ctx->expression();
 
-        if (auto* mc = dynamic_cast<ToLLVMParser::MethodCallExprContext*>(exprCtx)) {
+        if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(exprCtx)) {
             auto* receiverTI = resolveExprTypeInfo(mc->expression());
             if (receiverTI) {
                 std::string mname = mc->IDENTIFIER()->getText();
@@ -8010,7 +8010,7 @@ std::any IRGen::visitTypeofExpr(ToLLVMParser::TypeofExprContext* ctx) {
     return static_cast<llvm::Value*>(strStruct);
 }
 
-std::any IRGen::visitTernaryExpr(ToLLVMParser::TernaryExprContext* ctx) {
+std::any IRGen::visitTernaryExpr(LuxParser::TernaryExprContext* ctx) {
     auto* cond = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     // Convert to i1 if not already bool
     if (!cond->getType()->isIntegerTy(1))
@@ -8025,7 +8025,7 @@ std::any IRGen::visitTernaryExpr(ToLLVMParser::TernaryExprContext* ctx) {
     return static_cast<llvm::Value*>(builder_->CreateSelect(cond, t, f, "ternary"));
 }
 
-std::any IRGen::visitIsExpr(ToLLVMParser::IsExprContext* ctx) {
+std::any IRGen::visitIsExpr(LuxParser::IsExprContext* ctx) {
     // Static type check — resolved at compile time
     auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
     auto* targetTI = resolveTypeInfo(ctx->typeSpec());
@@ -8037,7 +8037,7 @@ std::any IRGen::visitIsExpr(ToLLVMParser::IsExprContext* ctx) {
         llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_), match ? 1 : 0));
 }
 
-std::any IRGen::visitNullCoalExpr(ToLLVMParser::NullCoalExprContext* ctx) {
+std::any IRGen::visitNullCoalExpr(LuxParser::NullCoalExprContext* ctx) {
     auto* ptrVal = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
 
     // Check if pointer is null
@@ -8074,7 +8074,7 @@ std::any IRGen::visitNullCoalExpr(ToLLVMParser::NullCoalExprContext* ctx) {
     return static_cast<llvm::Value*>(phi);
 }
 
-std::any IRGen::visitRangeExpr(ToLLVMParser::RangeExprContext* ctx) {
+std::any IRGen::visitRangeExpr(LuxParser::RangeExprContext* ctx) {
     // Range creates a {start, end} struct
     auto* startVal = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* endVal   = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
@@ -8088,7 +8088,7 @@ std::any IRGen::visitRangeExpr(ToLLVMParser::RangeExprContext* ctx) {
     return static_cast<llvm::Value*>(rangeVal);
 }
 
-std::any IRGen::visitRangeInclExpr(ToLLVMParser::RangeInclExprContext* ctx) {
+std::any IRGen::visitRangeInclExpr(LuxParser::RangeInclExprContext* ctx) {
     // Inclusive range: same struct as range, semantics differ at use site (for loop)
     auto* startVal = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* endVal   = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
@@ -8102,35 +8102,35 @@ std::any IRGen::visitRangeInclExpr(ToLLVMParser::RangeInclExprContext* ctx) {
     return static_cast<llvm::Value*>(rangeVal);
 }
 
-std::any IRGen::visitSpreadExpr(ToLLVMParser::SpreadExprContext* ctx) {
+std::any IRGen::visitSpreadExpr(LuxParser::SpreadExprContext* ctx) {
     // Spread just evaluates the inner expression — expansion handled at call/array site
     return visit(ctx->expression());
 }
 
-std::any IRGen::visitParenExpr(ToLLVMParser::ParenExprContext* ctx) {
+std::any IRGen::visitParenExpr(LuxParser::ParenExprContext* ctx) {
     return visit(ctx->expression());
 }
 
-std::any IRGen::visitRelExpr(ToLLVMParser::RelExprContext* ctx) {
+std::any IRGen::visitRelExpr(LuxParser::RelExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
 
     switch (ctx->op->getType()) {
-    case ToLLVMLexer::LT:
+    case LuxLexer::LT:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOLT(l, r, "lt")
                     : builder_->CreateICmpSLT(l, r, "lt"));
-    case ToLLVMLexer::GT:
+    case LuxLexer::GT:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOGT(l, r, "gt")
                     : builder_->CreateICmpSGT(l, r, "gt"));
-    case ToLLVMLexer::LTE:
+    case LuxLexer::LTE:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOLE(l, r, "lte")
                     : builder_->CreateICmpSLE(l, r, "lte"));
-    case ToLLVMLexer::GTE:
+    case LuxLexer::GTE:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOGE(l, r, "gte")
                     : builder_->CreateICmpSGE(l, r, "gte"));
@@ -8139,18 +8139,18 @@ std::any IRGen::visitRelExpr(ToLLVMParser::RelExprContext* ctx) {
     }
 }
 
-std::any IRGen::visitEqExpr(ToLLVMParser::EqExprContext* ctx) {
+std::any IRGen::visitEqExpr(LuxParser::EqExprContext* ctx) {
     auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
     auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
 
     switch (ctx->op->getType()) {
-    case ToLLVMLexer::EQ:
+    case LuxLexer::EQ:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOEQ(l, r, "eq")
                     : builder_->CreateICmpEQ(l, r, "eq"));
-    case ToLLVMLexer::NEQ:
+    case LuxLexer::NEQ:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpONE(l, r, "neq")
                     : builder_->CreateICmpNE(l, r, "neq"));
@@ -8161,7 +8161,7 @@ std::any IRGen::visitEqExpr(ToLLVMParser::EqExprContext* ctx) {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const TypeInfo* IRGen::resolveTypeInfo(ToLLVMParser::TypeSpecContext* ctx) {
+const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
     // Check for pointer type: *T
     if (isPointerType(ctx)) {
         auto* inner = ctx->typeSpec(0);
@@ -8284,19 +8284,19 @@ const TypeInfo* IRGen::resolveTypeInfo(ToLLVMParser::TypeSpecContext* ctx) {
 
     auto* ti  = typeRegistry_.lookup(name);
     if (!ti) {
-        std::cerr << "tollvm: unknown type '" << name << "'\n";
+        std::cerr << "lux: unknown type '" << name << "'\n";
         return typeRegistry_.lookup("int32");
     }
     return ti;
 }
 
-bool IRGen::isPointerType(ToLLVMParser::TypeSpecContext* ctx) {
+bool IRGen::isPointerType(LuxParser::TypeSpecContext* ctx) {
     return ctx->STAR() != nullptr;
 }
 
-const TypeInfo* IRGen::resolveExprTypeInfo(ToLLVMParser::ExpressionContext* ctx) {
+const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
     // Identifier: look up in locals, then C globals
-    if (auto* ident = dynamic_cast<ToLLVMParser::IdentExprContext*>(ctx)) {
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(ctx)) {
         auto name = ident->IDENTIFIER()->getText();
         auto it = locals_.find(name);
         if (it != locals_.end()) return it->second.typeInfo;
@@ -8306,7 +8306,7 @@ const TypeInfo* IRGen::resolveExprTypeInfo(ToLLVMParser::ExpressionContext* ctx)
     }
 
     // Dot access: resolve base struct/union, find field type
-    if (auto* dot = dynamic_cast<ToLLVMParser::FieldAccessExprContext*>(ctx)) {
+    if (auto* dot = dynamic_cast<LuxParser::FieldAccessExprContext*>(ctx)) {
         auto* baseTI = resolveExprTypeInfo(dot->expression());
         if (!baseTI || (baseTI->kind != TypeKind::Struct && baseTI->kind != TypeKind::Union)) return nullptr;
         auto fname = dot->IDENTIFIER()->getText();
@@ -8317,7 +8317,7 @@ const TypeInfo* IRGen::resolveExprTypeInfo(ToLLVMParser::ExpressionContext* ctx)
     }
 
     // Arrow access: resolve base pointer, dereference, find field type
-    if (auto* arrow = dynamic_cast<ToLLVMParser::ArrowAccessExprContext*>(ctx)) {
+    if (auto* arrow = dynamic_cast<LuxParser::ArrowAccessExprContext*>(ctx)) {
         auto* baseTI = resolveExprTypeInfo(arrow->expression());
         if (!baseTI || baseTI->kind != TypeKind::Pointer) return nullptr;
         auto* structTI = baseTI->pointeeType;
@@ -8330,7 +8330,7 @@ const TypeInfo* IRGen::resolveExprTypeInfo(ToLLVMParser::ExpressionContext* ctx)
     }
 
     // Additive: ptr + int → pointer type preserved
-    if (auto* add = dynamic_cast<ToLLVMParser::AddSubExprContext*>(ctx)) {
+    if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(ctx)) {
         auto* lhsTI = resolveExprTypeInfo(add->expression(0));
         if (lhsTI && lhsTI->kind == TypeKind::Pointer) return lhsTI;
         auto* rhsTI = resolveExprTypeInfo(add->expression(1));
@@ -8339,22 +8339,22 @@ const TypeInfo* IRGen::resolveExprTypeInfo(ToLLVMParser::ExpressionContext* ctx)
     }
 
     // Cast: resolve target type
-    if (auto* cast = dynamic_cast<ToLLVMParser::CastExprContext*>(ctx)) {
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(ctx)) {
         return resolveTypeInfo(cast->typeSpec());
     }
 
     // Paren: unwrap
-    if (auto* paren = dynamic_cast<ToLLVMParser::ParenExprContext*>(ctx)) {
+    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(ctx)) {
         return resolveExprTypeInfo(paren->expression());
     }
 
     // Index: array[i] → element type (which is the variable's typeInfo)
-    if (auto* idx = dynamic_cast<ToLLVMParser::IndexExprContext*>(ctx)) {
+    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(ctx)) {
         // Walk down to the root variable
-        auto* current = static_cast<ToLLVMParser::ExpressionContext*>(idx);
-        while (auto* idxCtx = dynamic_cast<ToLLVMParser::IndexExprContext*>(current))
+        auto* current = static_cast<LuxParser::ExpressionContext*>(idx);
+        while (auto* idxCtx = dynamic_cast<LuxParser::IndexExprContext*>(current))
             current = idxCtx->expression(0);
-        auto* ident = dynamic_cast<ToLLVMParser::IdentExprContext*>(current);
+        auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(current);
         if (ident) {
             auto it = locals_.find(ident->IDENTIFIER()->getText());
             if (it != locals_.end())
@@ -8366,7 +8366,7 @@ const TypeInfo* IRGen::resolveExprTypeInfo(ToLLVMParser::ExpressionContext* ctx)
     return nullptr;
 }
 
-unsigned IRGen::countArrayDims(ToLLVMParser::TypeSpecContext* ctx) {
+unsigned IRGen::countArrayDims(LuxParser::TypeSpecContext* ctx) {
     unsigned dims = 0;
     while (!ctx->typeSpec().empty()) {
         // Only count [] array dimensions, not * pointer prefixes
@@ -8431,35 +8431,35 @@ llvm::FunctionCallee IRGen::declareBuiltin(const std::string&           name,
 }
 
 llvm::StructType* IRGen::getOrCreateVecStructType() {
-    auto* existing = llvm::StructType::getTypeByName(*context_, "tollvm_vec_header");
+    auto* existing = llvm::StructType::getTypeByName(*context_, "lux_vec_header");
     if (existing) return existing;
 
     auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
     auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
     return llvm::StructType::create(*context_,
-        { ptrTy, usizeTy, usizeTy }, "tollvm_vec_header");
+        { ptrTy, usizeTy, usizeTy }, "lux_vec_header");
 }
 
 llvm::StructType* IRGen::getOrCreateMapStructType() {
-    auto* existing = llvm::StructType::getTypeByName(*context_, "tollvm_map_header");
+    auto* existing = llvm::StructType::getTypeByName(*context_, "lux_map_header");
     if (existing) return existing;
 
     auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
     auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
     return llvm::StructType::create(*context_,
         { ptrTy, ptrTy, ptrTy, ptrTy,
-          usizeTy, usizeTy, usizeTy, usizeTy }, "tollvm_map_header");
+          usizeTy, usizeTy, usizeTy, usizeTy }, "lux_map_header");
 }
 
 llvm::StructType* IRGen::getOrCreateSetStructType() {
-    auto* existing = llvm::StructType::getTypeByName(*context_, "tollvm_set_header");
+    auto* existing = llvm::StructType::getTypeByName(*context_, "lux_set_header");
     if (existing) return existing;
 
     auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
     auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
     return llvm::StructType::create(*context_,
         { ptrTy, ptrTy, ptrTy,
-          usizeTy, usizeTy, usizeTy }, "tollvm_set_header");
+          usizeTy, usizeTy, usizeTy }, "lux_set_header");
 }
 
 std::string IRGen::getVecSuffix(const TypeInfo* elemTI) {
@@ -8468,7 +8468,7 @@ std::string IRGen::getVecSuffix(const TypeInfo* elemTI) {
 
 // ── Defer infrastructure ────────────────────────────────────────────────────
 
-std::any IRGen::visitDeferStmt(ToLLVMParser::DeferStmtContext* ctx) {
+std::any IRGen::visitDeferStmt(LuxParser::DeferStmtContext* ctx) {
     DeferredStmt ds;
     if (ctx->callStmt())
         ds.callCtx = ctx->callStmt();
@@ -8501,14 +8501,14 @@ void IRGen::emitAutoCleanups(const std::string& skipVar) {
             auto suffix = info.typeInfo->elementType
                               ? info.typeInfo->elementType->builtinSuffix
                               : info.typeInfo->builtinSuffix;
-            freeFuncName = "tollvm_vec_free_" + suffix;
+            freeFuncName = "lux_vec_free_" + suffix;
         } else if (info.typeInfo->extendedKind == "Map") {
-            freeFuncName = "tollvm_map_free_" + info.typeInfo->builtinSuffix;
+            freeFuncName = "lux_map_free_" + info.typeInfo->builtinSuffix;
         } else if (info.typeInfo->extendedKind == "Set") {
             auto suffix = info.typeInfo->elementType
                               ? info.typeInfo->elementType->builtinSuffix
                               : info.typeInfo->builtinSuffix;
-            freeFuncName = "tollvm_set_free_" + suffix;
+            freeFuncName = "lux_set_free_" + suffix;
         } else {
             continue;
         }
@@ -8524,7 +8524,7 @@ void IRGen::emitAllCleanups(const std::string& skipVar) {
 }
 
 std::any
-IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
+IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
     auto methodName = ctx->IDENTIFIER()->getText();
 
     // Resolve receiver type info BEFORE evaluating receiver
@@ -8532,7 +8532,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
     unsigned recvArrayDims = 0;
     auto* baseExpr = ctx->expression();
     std::string receiverVarName;
-    if (auto* identBase = dynamic_cast<ToLLVMParser::IdentExprContext*>(baseExpr)) {
+    if (auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(baseExpr)) {
         receiverVarName = identBase->IDENTIFIER()->getText();
         auto it = locals_.find(receiverVarName);
         if (it != locals_.end()) {
@@ -8550,7 +8550,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(
                     builder_->CreateLoad(i64Ty, vit->second.lenAlloca, "var_len"));
             }
-            std::cerr << "tollvm: variadic parameter '" << receiverVarName
+            std::cerr << "lux: variadic parameter '" << receiverVarName
                       << "' has no method '" << methodName << "'\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -8561,7 +8561,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
     if (receiverTI && receiverTI->kind == TypeKind::Extended) {
         auto* extDesc = extTypeRegistry_.lookup(receiverTI->extendedKind);
         if (!extDesc) {
-            std::cerr << "tollvm: unknown extended type '" << receiverTI->extendedKind << "'\n";
+            std::cerr << "lux: unknown extended type '" << receiverTI->extendedKind << "'\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -8572,7 +8572,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             if (md.name == methodName) { desc = &md; break; }
         }
         if (!desc) {
-            std::cerr << "tollvm: unknown method '" << methodName
+            std::cerr << "lux: unknown method '" << methodName
                       << "' on type '" << receiverTI->name << "'\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -8616,7 +8616,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
                 recvPtr = it->second.alloca;
         }
         if (!recvPtr) {
-            std::cerr << "tollvm: cannot get address of extended type for method call\n";
+            std::cerr << "lux: cannot get address of extended type for method call\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -8723,7 +8723,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
                 // by value. Try to get the alloca from the argument expression.
                 if (auto* argList = ctx->argList()) {
                     auto* argExpr = argList->expression(i);
-                    if (auto* identArg = dynamic_cast<ToLLVMParser::IdentExprContext*>(argExpr)) {
+                    if (auto* identArg = dynamic_cast<LuxParser::IdentExprContext*>(argExpr)) {
                         auto ait = locals_.find(identArg->IDENTIFIER()->getText());
                         if (ait != locals_.end())
                             argVal = ait->second.alloca;
@@ -8883,9 +8883,9 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             if (methodName == "contains" || methodName == "startsWith" ||
                 methodName == "endsWith") {
                 static const std::unordered_map<std::string, std::string> boolFns = {
-                    {"contains",   "tollvm_contains"},
-                    {"startsWith", "tollvm_startsWith"},
-                    {"endsWith",   "tollvm_endsWith"},
+                    {"contains",   "lux_contains"},
+                    {"startsWith", "lux_startsWith"},
+                    {"endsWith",   "lux_endsWith"},
                 };
                 std::vector<llvm::Value*> callArgs = {strPtr, strLen};
                 extractStr(mArgs[0], callArgs);
@@ -8898,8 +8898,8 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             // (receiver, string) → int64
             if (methodName == "indexOf" || methodName == "lastIndexOf") {
                 static const std::unordered_map<std::string, std::string> idxFns = {
-                    {"indexOf",     "tollvm_indexOf"},
-                    {"lastIndexOf", "tollvm_lastIndexOf"},
+                    {"indexOf",     "lux_indexOf"},
+                    {"lastIndexOf", "lux_lastIndexOf"},
                 };
                 std::vector<llvm::Value*> callArgs = {strPtr, strLen};
                 extractStr(mArgs[0], callArgs);
@@ -8911,7 +8911,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             if (methodName == "count") {
                 std::vector<llvm::Value*> callArgs = {strPtr, strLen};
                 extractStr(mArgs[0], callArgs);
-                auto callee = declareBuiltin("tollvm_count", usizeTy,
+                auto callee = declareBuiltin("lux_count", usizeTy,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 return static_cast<llvm::Value*>(
                     builder_->CreateCall(callee, callArgs, "count"));
@@ -8921,12 +8921,12 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
                 methodName == "trim"     || methodName == "trimLeft" ||
                 methodName == "trimRight"|| methodName == "reverse") {
                 static const std::unordered_map<std::string, std::string> xformFns = {
-                    {"toUpper",   "tollvm_toUpper"},
-                    {"toLower",   "tollvm_toLower"},
-                    {"trim",      "tollvm_trim"},
-                    {"trimLeft",  "tollvm_trimLeft"},
-                    {"trimRight", "tollvm_trimRight"},
-                    {"reverse",   "tollvm_reverse"},
+                    {"toUpper",   "lux_toUpper"},
+                    {"toLower",   "lux_toLower"},
+                    {"trim",      "lux_trim"},
+                    {"trimLeft",  "lux_trimLeft"},
+                    {"trimRight", "lux_trimRight"},
+                    {"reverse",   "lux_reverse"},
                 };
                 auto callee = declareBuiltin(xformFns.at(methodName), strTy, {ptrTy, usizeTy});
                 auto* r = builder_->CreateCall(callee, {strPtr, strLen}, methodName);
@@ -8937,7 +8937,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
                 auto* length = mArgs[1];
                 if (start->getType()  != usizeTy) start  = builder_->CreateIntCast(start,  usizeTy, false);
                 if (length->getType() != usizeTy) length = builder_->CreateIntCast(length, usizeTy, false);
-                auto callee = declareBuiltin("tollvm_substring", strTy,
+                auto callee = declareBuiltin("lux_substring", strTy,
                     {ptrTy, usizeTy, usizeTy, usizeTy});
                 auto* r = builder_->CreateCall(callee, {strPtr, strLen, start, length}, "substring");
                 return static_cast<llvm::Value*>(buildStr(r));
@@ -8947,19 +8947,19 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
                 auto* end   = mArgs[1];
                 if (start->getType() != i64Ty) start = builder_->CreateIntCast(start, i64Ty, true);
                 if (end->getType()   != i64Ty) end   = builder_->CreateIntCast(end,   i64Ty, true);
-                auto callee = declareBuiltin("tollvm_slice", strTy, {ptrTy, usizeTy, i64Ty, i64Ty});
+                auto callee = declareBuiltin("lux_slice", strTy, {ptrTy, usizeTy, i64Ty, i64Ty});
                 auto* r = builder_->CreateCall(callee, {strPtr, strLen, start, end}, "slice");
                 return static_cast<llvm::Value*>(buildStr(r));
             }
             if (methodName == "repeat") {
                 auto* n = mArgs[0];
                 if (n->getType() != usizeTy) n = builder_->CreateIntCast(n, usizeTy, false);
-                auto callee = declareBuiltin("tollvm_repeat", strTy, {ptrTy, usizeTy, usizeTy});
+                auto callee = declareBuiltin("lux_repeat", strTy, {ptrTy, usizeTy, usizeTy});
                 auto* r = builder_->CreateCall(callee, {strPtr, strLen, n}, "repeat");
                 return static_cast<llvm::Value*>(buildStr(r));
             }
             if (methodName == "padLeft" || methodName == "padRight") {
-                std::string fname = (methodName == "padLeft") ? "tollvm_padLeft" : "tollvm_padRight";
+                std::string fname = (methodName == "padLeft") ? "lux_padLeft" : "lux_padRight";
                 auto* width = mArgs[0];
                 auto* fill  = mArgs[1];
                 if (width->getType() != usizeTy) width = builder_->CreateIntCast(width, usizeTy, false);
@@ -8968,7 +8968,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(buildStr(r));
             }
             if (methodName == "replace" || methodName == "replaceFirst") {
-                std::string fname = (methodName == "replace") ? "tollvm_replace" : "tollvm_replaceFirst";
+                std::string fname = (methodName == "replace") ? "lux_replace" : "lux_replaceFirst";
                 std::vector<llvm::Value*> callArgs = {strPtr, strLen};
                 extractStr(mArgs[0], callArgs);  // old
                 extractStr(mArgs[1], callArgs);  // rep
@@ -8999,7 +8999,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
         desc = methodRegistry_.lookup(receiverTI->kind, methodName);
 
     if (!desc) {
-        std::cerr << "tollvm: unknown method '" << methodName << "'\n";
+        std::cerr << "lux: unknown method '" << methodName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -9012,7 +9012,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             auto* allocaTy  = arrAlloca->getAllocatedType();
             auto* arrTy     = llvm::dyn_cast<llvm::ArrayType>(allocaTy);
             if (!arrTy) {
-                std::cerr << "tollvm: expected array type for '" << receiverVarName << "'\n";
+                std::cerr << "lux: expected array type for '" << receiverVarName << "'\n";
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
             }
@@ -9056,7 +9056,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             }
             if (methodName == "at") {
                 if (args.empty()) {
-                    std::cerr << "tollvm: at() requires an index argument\n";
+                    std::cerr << "lux: at() requires an index argument\n";
                     return static_cast<llvm::Value*>(llvm::UndefValue::get(elemTy));
                 }
                 auto* idx  = args[0];
@@ -9068,7 +9068,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             }
             if (methodName == "contains") {
                 if (args.empty()) {
-                    std::cerr << "tollvm: contains() requires a value argument\n";
+                    std::cerr << "lux: contains() requires a value argument\n";
                     return static_cast<llvm::Value*>(
                         llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_), 0));
                 }
@@ -9123,7 +9123,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             }
             if (methodName == "indexOf" || methodName == "lastIndexOf") {
                 if (args.empty()) {
-                    std::cerr << "tollvm: " << methodName << "() requires a value argument\n";
+                    std::cerr << "lux: " << methodName << "() requires a value argument\n";
                     return static_cast<llvm::Value*>(
                         llvm::ConstantInt::get(i64Ty, -1));
                 }
@@ -9222,7 +9222,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             }
             if (methodName == "count") {
                 if (args.empty()) {
-                    std::cerr << "tollvm: count() requires a value argument\n";
+                    std::cerr << "lux: count() requires a value argument\n";
                     return static_cast<llvm::Value*>(llvm::ConstantInt::get(usizeTy, 0));
                 }
                 auto* needle = castToElem(args[0]);
@@ -9278,7 +9278,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             }
             if (methodName == "fill") {
                 if (args.empty()) {
-                    std::cerr << "tollvm: fill() requires a value argument\n";
+                    std::cerr << "lux: fill() requires a value argument\n";
                     return static_cast<llvm::Value*>(
                         llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
                 }
@@ -9294,7 +9294,7 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
             }
             if (methodName == "swap") {
                 if (args.size() < 2) {
-                    std::cerr << "tollvm: swap() requires two index arguments\n";
+                    std::cerr << "lux: swap() requires two index arguments\n";
                     return static_cast<llvm::Value*>(
                         llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
                 }
@@ -9336,20 +9336,20 @@ IRGen::visitMethodCallExpr(ToLLVMParser::MethodCallExprContext* ctx) {
 }
 
 // ── spawn expression ────────────────────────────────────────────────────
-// spawn funcName(args) → Task<T> (returns ptr to tollvm_Task)
+// spawn funcName(args) → Task<T> (returns ptr to lux_Task)
 //
 // Implementation:
 //   1. Pack arguments into a heap-allocated struct
 //   2. Create a trampoline function: void* __spawn_N(void* packed) that
 //      unpacks args, calls the target, and returns heap-allocated result
-//   3. Call tollvm_taskCreate(trampoline, packed) → Task*
-std::any IRGen::visitSpawnExpr(ToLLVMParser::SpawnExprContext* ctx) {
+//   3. Call lux_taskCreate(trampoline, packed) → Task*
+std::any IRGen::visitSpawnExpr(LuxParser::SpawnExprContext* ctx) {
     auto* innerExpr = ctx->expression();
 
     // The inner expression must be a function call
-    auto* fnCall = dynamic_cast<ToLLVMParser::FnCallExprContext*>(innerExpr);
+    auto* fnCall = dynamic_cast<LuxParser::FnCallExprContext*>(innerExpr);
     if (!fnCall) {
-        std::cerr << "tollvm: spawn requires a function call expression\n";
+        std::cerr << "lux: spawn requires a function call expression\n";
         return static_cast<llvm::Value*>(
             llvm::ConstantPointerNull::get(
                 llvm::PointerType::getUnqual(*context_)));
@@ -9357,9 +9357,9 @@ std::any IRGen::visitSpawnExpr(ToLLVMParser::SpawnExprContext* ctx) {
 
     // The fnCallExpr has expression()(argList?) — the callee is the inner expression
     auto* calleeExpr = fnCall->expression();
-    auto* identExpr = dynamic_cast<ToLLVMParser::IdentExprContext*>(calleeExpr);
+    auto* identExpr = dynamic_cast<LuxParser::IdentExprContext*>(calleeExpr);
     if (!identExpr) {
-        std::cerr << "tollvm: spawn requires a direct function call (e.g. spawn func())\n";
+        std::cerr << "lux: spawn requires a direct function call (e.g. spawn func())\n";
         return static_cast<llvm::Value*>(
             llvm::ConstantPointerNull::get(
                 llvm::PointerType::getUnqual(*context_)));
@@ -9377,7 +9377,7 @@ std::any IRGen::visitSpawnExpr(ToLLVMParser::SpawnExprContext* ctx) {
     // Look up the target function
     auto* targetFn = module_->getFunction(targetName);
     if (!targetFn) {
-        std::cerr << "tollvm: spawn target function '" << targetName << "' not found\n";
+        std::cerr << "lux: spawn target function '" << targetName << "' not found\n";
         return static_cast<llvm::Value*>(
             llvm::ConstantPointerNull::get(
                 llvm::PointerType::getUnqual(*context_)));
@@ -9492,8 +9492,8 @@ std::any IRGen::visitSpawnExpr(ToLLVMParser::SpawnExprContext* ctx) {
     locals_ = savedLocals;
     builder_->SetInsertPoint(savedBB);
 
-    // ── Step 3: Call tollvm_taskCreate(trampoline, packed) ──────────────
-    auto taskCreateFn = declareBuiltin("tollvm_taskCreate", ptrTy,
+    // ── Step 3: Call lux_taskCreate(trampoline, packed) ──────────────
+    auto taskCreateFn = declareBuiltin("lux_taskCreate", ptrTy,
         {ptrTy, ptrTy});
     auto* task = builder_->CreateCall(taskCreateFn,
         {trampolineFn, packedPtr}, "task");
@@ -9503,7 +9503,7 @@ std::any IRGen::visitSpawnExpr(ToLLVMParser::SpawnExprContext* ctx) {
 
 // ── await expression ────────────────────────────────────────────────────
 // await task → T (extracts result from Task<T>)
-std::any IRGen::visitAwaitExpr(ToLLVMParser::AwaitExprContext* ctx) {
+std::any IRGen::visitAwaitExpr(LuxParser::AwaitExprContext* ctx) {
     auto* taskVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
 
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
@@ -9513,13 +9513,13 @@ std::any IRGen::visitAwaitExpr(ToLLVMParser::AwaitExprContext* ctx) {
         taskVal = builder_->CreateLoad(ptrTy, alloca, "task_ptr");
     }
 
-    // Call tollvm_taskAwait(task) → void* (result pointer)
-    auto awaitFn = declareBuiltin("tollvm_taskAwait", ptrTy, {ptrTy});
+    // Call lux_taskAwait(task) → void* (result pointer)
+    auto awaitFn = declareBuiltin("lux_taskAwait", ptrTy, {ptrTy});
     auto* resultPtr = builder_->CreateCall(awaitFn, {taskVal}, "await_result");
 
     // Resolve the Task<T> element type to know what to load from result
     const TypeInfo* taskTI = nullptr;
-    if (auto* identExpr = dynamic_cast<ToLLVMParser::IdentExprContext*>(
+    if (auto* identExpr = dynamic_cast<LuxParser::IdentExprContext*>(
             ctx->expression())) {
         auto it = locals_.find(identExpr->IDENTIFIER()->getText());
         if (it != locals_.end())
@@ -9538,7 +9538,7 @@ std::any IRGen::visitAwaitExpr(ToLLVMParser::AwaitExprContext* ctx) {
             llvm::Type::getVoidTy(*context_), {ptrTy});
         builder_->CreateCall(freeFn, {resultPtr});
 
-        auto taskFreeFn = declareBuiltin("tollvm_taskFree",
+        auto taskFreeFn = declareBuiltin("lux_taskFree",
             llvm::Type::getVoidTy(*context_), {ptrTy});
         builder_->CreateCall(taskFreeFn, {taskVal});
 
@@ -9546,7 +9546,7 @@ std::any IRGen::visitAwaitExpr(ToLLVMParser::AwaitExprContext* ctx) {
     }
 
     // Void task — just await and free
-    auto taskFreeFn = declareBuiltin("tollvm_taskFree",
+    auto taskFreeFn = declareBuiltin("lux_taskFree",
         llvm::Type::getVoidTy(*context_), {ptrTy});
     builder_->CreateCall(taskFreeFn, {taskVal});
 
@@ -9556,7 +9556,7 @@ std::any IRGen::visitAwaitExpr(ToLLVMParser::AwaitExprContext* ctx) {
 
 // ── lock statement ──────────────────────────────────────────────────────
 // lock(mtx) { ... } → lock, execute block, unlock (even on early return)
-std::any IRGen::visitLockStmt(ToLLVMParser::LockStmtContext* ctx) {
+std::any IRGen::visitLockStmt(LuxParser::LockStmtContext* ctx) {
     auto* mtxVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
 
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
@@ -9567,7 +9567,7 @@ std::any IRGen::visitLockStmt(ToLLVMParser::LockStmtContext* ctx) {
     }
 
     // Lock
-    auto lockFn = declareBuiltin("tollvm_mutexLock",
+    auto lockFn = declareBuiltin("lux_mutexLock",
         llvm::Type::getVoidTy(*context_), {ptrTy});
     builder_->CreateCall(lockFn, {mtxVal});
 
@@ -9577,7 +9577,7 @@ std::any IRGen::visitLockStmt(ToLLVMParser::LockStmtContext* ctx) {
     }
 
     // Unlock
-    auto unlockFn = declareBuiltin("tollvm_mutexUnlock",
+    auto unlockFn = declareBuiltin("lux_mutexUnlock",
         llvm::Type::getVoidTy(*context_), {ptrTy});
     builder_->CreateCall(unlockFn, {mtxVal});
 
@@ -9586,7 +9586,7 @@ std::any IRGen::visitLockStmt(ToLLVMParser::LockStmtContext* ctx) {
 
 // ── try/catch/finally ────────────────────────────────────────────────────────
 
-std::any IRGen::visitTryCatchStmt(ToLLVMParser::TryCatchStmtContext* ctx) {
+std::any IRGen::visitTryCatchStmt(LuxParser::TryCatchStmtContext* ctx) {
     auto* fn     = currentFunction_;
     auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
     auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
@@ -9594,15 +9594,15 @@ std::any IRGen::visitTryCatchStmt(ToLLVMParser::TryCatchStmtContext* ctx) {
     auto* errorTy = llvm::StructType::getTypeByName(*context_, "Error");
 
     // Allocate eh_frame on the heap (opaque, platform-independent size)
-    auto allocFn = declareBuiltin("tollvm_eh_alloc", ptrTy, {});
+    auto allocFn = declareBuiltin("lux_eh_alloc", ptrTy, {});
     auto* framePtr = builder_->CreateCall(allocFn, {}, "eh_frame");
 
     // Push frame onto exception handler stack
-    auto pushFn = declareBuiltin("tollvm_eh_push", voidTy, {ptrTy});
+    auto pushFn = declareBuiltin("lux_eh_push", voidTy, {ptrTy});
     builder_->CreateCall(pushFn, {framePtr});
 
     // Get jmp_buf pointer from frame and call setjmp
-    auto getJmpBufFn = declareBuiltin("tollvm_eh_get_jmpbuf", ptrTy, {ptrTy});
+    auto getJmpBufFn = declareBuiltin("lux_eh_get_jmpbuf", ptrTy, {ptrTy});
     auto* jmpBufPtr  = builder_->CreateCall(getJmpBufFn, {framePtr}, "jmpbuf_ptr");
     auto setjmpFn    = declareBuiltin("setjmp", i32Ty, {ptrTy});
     auto* sjResult   = builder_->CreateCall(setjmpFn, {jmpBufPtr});
@@ -9624,7 +9624,7 @@ std::any IRGen::visitTryCatchStmt(ToLLVMParser::TryCatchStmtContext* ctx) {
         visit(stmt);
 
     // Pop handler after successful try
-    auto popFn = declareBuiltin("tollvm_eh_pop", voidTy, {});
+    auto popFn = declareBuiltin("lux_eh_pop", voidTy, {});
     if (!builder_->GetInsertBlock()->getTerminator()) {
         builder_->CreateCall(popFn, {});
         builder_->CreateBr(finallyBB);
@@ -9637,7 +9637,7 @@ std::any IRGen::visitTryCatchStmt(ToLLVMParser::TryCatchStmtContext* ctx) {
     builder_->CreateCall(popFn, {});
 
     // Load error from frame via helper
-    auto getErrFn = declareBuiltin("tollvm_eh_get_error", ptrTy, {ptrTy});
+    auto getErrFn = declareBuiltin("lux_eh_get_error", ptrTy, {ptrTy});
     auto* errorPtr = builder_->CreateCall(getErrFn, {framePtr}, "error_ptr");
     auto* errorVal = builder_->CreateLoad(errorTy, errorPtr, "caught_error");
 
@@ -9676,7 +9676,7 @@ std::any IRGen::visitTryCatchStmt(ToLLVMParser::TryCatchStmtContext* ctx) {
     }
 
     // Free the heap-allocated frame
-    auto freeFn = declareBuiltin("tollvm_eh_free", voidTy, {ptrTy});
+    auto freeFn = declareBuiltin("lux_eh_free", voidTy, {ptrTy});
     if (!builder_->GetInsertBlock()->getTerminator()) {
         builder_->CreateCall(freeFn, {framePtr});
         builder_->CreateBr(mergeBB);
@@ -9686,7 +9686,7 @@ std::any IRGen::visitTryCatchStmt(ToLLVMParser::TryCatchStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitThrowStmt(ToLLVMParser::ThrowStmtContext* ctx) {
+std::any IRGen::visitThrowStmt(LuxParser::ThrowStmtContext* ctx) {
     auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
     auto* voidTy = llvm::Type::getVoidTy(*context_);
     auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
@@ -9735,11 +9735,11 @@ std::any IRGen::visitThrowStmt(ToLLVMParser::ThrowStmtContext* ctx) {
         llvm::ConstantInt::get(i32Ty, srcCol), colVal);
     errorVal = builder_->CreateInsertValue(errorVal, colFinal, {3});
 
-    // Store to temp alloca and pass by pointer to tollvm_eh_throw
+    // Store to temp alloca and pass by pointer to lux_eh_throw
     auto* errAlloca = builder_->CreateAlloca(errorTy, nullptr, "throw_err");
     builder_->CreateStore(errorVal, errAlloca);
 
-    auto throwFn = declareBuiltin("tollvm_eh_throw", voidTy, {ptrTy});
+    auto throwFn = declareBuiltin("lux_eh_throw", voidTy, {ptrTy});
     builder_->CreateCall(throwFn, {errAlloca});
 
     builder_->CreateUnreachable();
@@ -9751,22 +9751,22 @@ std::any IRGen::visitThrowStmt(ToLLVMParser::ThrowStmtContext* ctx) {
     return {};
 }
 
-std::any IRGen::visitTryExpr(ToLLVMParser::TryExprContext* ctx) {
+std::any IRGen::visitTryExpr(LuxParser::TryExprContext* ctx) {
     auto* fn     = currentFunction_;
     auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
     auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
     auto* voidTy = llvm::Type::getVoidTy(*context_);
 
     // Allocate eh_frame on the heap
-    auto allocFn = declareBuiltin("tollvm_eh_alloc", ptrTy, {});
+    auto allocFn = declareBuiltin("lux_eh_alloc", ptrTy, {});
     auto* framePtr = builder_->CreateCall(allocFn, {}, "try_frame");
 
     // Push frame onto exception handler stack
-    auto pushFn = declareBuiltin("tollvm_eh_push", voidTy, {ptrTy});
+    auto pushFn = declareBuiltin("lux_eh_push", voidTy, {ptrTy});
     builder_->CreateCall(pushFn, {framePtr});
 
     // Get jmp_buf pointer and call setjmp
-    auto getJmpBufFn = declareBuiltin("tollvm_eh_get_jmpbuf", ptrTy, {ptrTy});
+    auto getJmpBufFn = declareBuiltin("lux_eh_get_jmpbuf", ptrTy, {ptrTy});
     auto* jmpBufPtr  = builder_->CreateCall(getJmpBufFn, {framePtr}, "try_jmpbuf");
     auto setjmpFn    = declareBuiltin("setjmp", i32Ty, {ptrTy});
     auto* sjResult   = builder_->CreateCall(setjmpFn, {jmpBufPtr});
@@ -9783,8 +9783,8 @@ std::any IRGen::visitTryExpr(ToLLVMParser::TryExprContext* ctx) {
     // ── Expression evaluation (no exception) ────────────────────────────
     builder_->SetInsertPoint(exprBB);
 
-    auto popFn  = declareBuiltin("tollvm_eh_pop",  voidTy, {});
-    auto freeFn = declareBuiltin("tollvm_eh_free", voidTy, {ptrTy});
+    auto popFn  = declareBuiltin("lux_eh_pop",  voidTy, {});
+    auto freeFn = declareBuiltin("lux_eh_free", voidTy, {ptrTy});
 
     auto* exprVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
     auto* exprTy  = exprVal->getType();

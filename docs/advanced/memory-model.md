@@ -252,10 +252,10 @@ Before every return statement, after emitting explicit defer cleanups, the compi
 
 | Type | Free function called |
 |------|---------------------|
-| `Vec<int32>` | `tollvm_vec_free_i32()` |
-| `Vec<string>` | `tollvm_vec_free_str()` |
-| `Map<string, int32>` | `tollvm_map_free_str_i32()` |
-| `Set<float64>` | `tollvm_set_free_f64()` |
+| `Vec<int32>` | `lux_vec_free_i32()` |
+| `Vec<string>` | `lux_vec_free_str()` |
+| `Map<string, int32>` | `lux_map_free_str_i32()` |
+| `Set<float64>` | `lux_set_free_f64()` |
 
 ### Cleanup Order
 
@@ -272,8 +272,8 @@ void example() {
 
     // At ret:
     // 1. println("goodbye")          ← defer
-    // 2. tollvm_vec_free_i32(&a)     ← auto cleanup
-    // 3. tollvm_map_free_str_i32(&m) ← auto cleanup
+    // 2. lux_vec_free_i32(&a)     ← auto cleanup
+    // 3. lux_map_free_str_i32(&m) ← auto cleanup
 }
 ```
 
@@ -298,7 +298,7 @@ T uses `setjmp`/`longjmp` for exception handling, with a thread-local stack of e
 
 ```
 ┌─────────────────────────────┐
-│  tollvm_error               │
+│  lux_error               │
 │  ┌─────────────────────┐    │
 │  │ message (string)    │    │
 │  │   ptr + len         │    │
@@ -343,7 +343,7 @@ try {
     // longjmp() jumps back to setjmp location
 } catch (Error e) {
     println(e.message);   // "something went wrong"
-    println(e.file);      // "main.tm"
+    println(e.file);      // "main.lx"
     println(e.line);      // line number of panic()
 }
 ```

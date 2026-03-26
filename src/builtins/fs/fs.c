@@ -21,8 +21,8 @@ static char* make_cstr(const char* s, size_t len) {
 }
 
 /* ── readFile ────────────────────────────────────────────────────────── */
-tollvm_fs_str_result tollvm_readFile(const char* path, size_t path_len) {
-    tollvm_fs_str_result res = {NULL, 0};
+lux_fs_str_result lux_readFile(const char* path, size_t path_len) {
+    lux_fs_str_result res = {NULL, 0};
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return res;
 
@@ -48,7 +48,7 @@ tollvm_fs_str_result tollvm_readFile(const char* path, size_t path_len) {
 }
 
 /* ── writeFile ───────────────────────────────────────────────────────── */
-void tollvm_writeFile(const char* path, size_t path_len,
+void lux_writeFile(const char* path, size_t path_len,
                       const char* data, size_t data_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return;
@@ -62,7 +62,7 @@ void tollvm_writeFile(const char* path, size_t path_len,
 }
 
 /* ── appendFile ──────────────────────────────────────────────────────── */
-void tollvm_appendFile(const char* path, size_t path_len,
+void lux_appendFile(const char* path, size_t path_len,
                        const char* data, size_t data_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return;
@@ -76,7 +76,7 @@ void tollvm_appendFile(const char* path, size_t path_len,
 }
 
 /* ── exists ──────────────────────────────────────────────────────────── */
-int32_t tollvm_exists(const char* path, size_t path_len) {
+int32_t lux_exists(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return 0;
     struct stat st;
@@ -86,7 +86,7 @@ int32_t tollvm_exists(const char* path, size_t path_len) {
 }
 
 /* ── isFile ──────────────────────────────────────────────────────────── */
-int32_t tollvm_isFile(const char* path, size_t path_len) {
+int32_t lux_isFile(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return 0;
     struct stat st;
@@ -96,7 +96,7 @@ int32_t tollvm_isFile(const char* path, size_t path_len) {
 }
 
 /* ── isDir ───────────────────────────────────────────────────────────── */
-int32_t tollvm_isDir(const char* path, size_t path_len) {
+int32_t lux_isDir(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return 0;
     struct stat st;
@@ -106,7 +106,7 @@ int32_t tollvm_isDir(const char* path, size_t path_len) {
 }
 
 /* ── fileSize ────────────────────────────────────────────────────────── */
-int64_t tollvm_fileSize(const char* path, size_t path_len) {
+int64_t lux_fileSize(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return -1;
     struct stat st;
@@ -116,7 +116,7 @@ int64_t tollvm_fileSize(const char* path, size_t path_len) {
 }
 
 /* ── remove ──────────────────────────────────────────────────────────── */
-int32_t tollvm_remove(const char* path, size_t path_len) {
+int32_t lux_remove(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return 0;
     int r = unlink(cpath);
@@ -125,7 +125,7 @@ int32_t tollvm_remove(const char* path, size_t path_len) {
 }
 
 /* ── removeDir ───────────────────────────────────────────────────────── */
-int32_t tollvm_removeDir(const char* path, size_t path_len) {
+int32_t lux_removeDir(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return 0;
     int r = rmdir(cpath);
@@ -133,8 +133,8 @@ int32_t tollvm_removeDir(const char* path, size_t path_len) {
     return r == 0 ? 1 : 0;
 }
 
-/* ── rename (C symbol: tollvm_fsRename to avoid clash with C rename) ─ */
-int32_t tollvm_fsRename(const char* from, size_t from_len,
+/* ── rename (C symbol: lux_fsRename to avoid clash with C rename) ─ */
+int32_t lux_fsRename(const char* from, size_t from_len,
                         const char* to,   size_t to_len) {
     char* cfrom = make_cstr(from, from_len);
     char* cto   = make_cstr(to,   to_len);
@@ -146,7 +146,7 @@ int32_t tollvm_fsRename(const char* from, size_t from_len,
 }
 
 /* ── mkdir ───────────────────────────────────────────────────────────── */
-int32_t tollvm_mkdir(const char* path, size_t path_len) {
+int32_t lux_mkdir(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return 0;
     int r = mkdir(cpath, 0755);
@@ -155,7 +155,7 @@ int32_t tollvm_mkdir(const char* path, size_t path_len) {
 }
 
 /* ── mkdirAll (recursive mkdir -p) ───────────────────────────────────── */
-int32_t tollvm_mkdirAll(const char* path, size_t path_len) {
+int32_t lux_mkdirAll(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return 0;
 
@@ -179,8 +179,8 @@ int32_t tollvm_mkdirAll(const char* path, size_t path_len) {
 }
 
 /* ── cwd ─────────────────────────────────────────────────────────────── */
-tollvm_fs_str_result tollvm_cwd(void) {
-    tollvm_fs_str_result res = {NULL, 0};
+lux_fs_str_result lux_cwd(void) {
+    lux_fs_str_result res = {NULL, 0};
     char buf[PATH_MAX];
     if (getcwd(buf, sizeof(buf))) {
         size_t len = strlen(buf);
@@ -195,7 +195,7 @@ tollvm_fs_str_result tollvm_cwd(void) {
 }
 
 /* ── setCwd ──────────────────────────────────────────────────────────── */
-int32_t tollvm_setCwd(const char* path, size_t path_len) {
+int32_t lux_setCwd(const char* path, size_t path_len) {
     char* cpath = make_cstr(path, path_len);
     if (!cpath) return 0;
     int r = chdir(cpath);
@@ -204,12 +204,12 @@ int32_t tollvm_setCwd(const char* path, size_t path_len) {
 }
 
 /* ── tempDir ─────────────────────────────────────────────────────────── */
-tollvm_fs_str_result tollvm_tempDir(void) {
+lux_fs_str_result lux_tempDir(void) {
     const char* tmp = getenv("TMPDIR");
     if (!tmp) tmp = "/tmp";
     size_t len = strlen(tmp);
     char* out = (char*)malloc(len);
-    tollvm_fs_str_result res;
+    lux_fs_str_result res;
     if (out) {
         memcpy(out, tmp, len);
         res.ptr = out;
@@ -223,7 +223,7 @@ tollvm_fs_str_result tollvm_tempDir(void) {
 
 /* ── Vec-returning functions ─────────────────────────────────────────── */
 
-void tollvm_listDir(tollvm_fs_vec_header* out, const char* path, size_t path_len) {
+void lux_listDir(lux_fs_vec_header* out, const char* path, size_t path_len) {
     typedef struct { const char* ptr; size_t len; } str_elem;
 
     out->ptr = NULL;
@@ -266,7 +266,7 @@ void tollvm_listDir(tollvm_fs_vec_header* out, const char* path, size_t path_len
     out->cap = cap;
 }
 
-void tollvm_readFileBytes(tollvm_fs_vec_header* out, const char* path, size_t path_len) {
+void lux_readFileBytes(lux_fs_vec_header* out, const char* path, size_t path_len) {
     out->ptr = NULL;
     out->len = 0;
     out->cap = 0;
@@ -294,8 +294,8 @@ void tollvm_readFileBytes(tollvm_fs_vec_header* out, const char* path, size_t pa
     out->cap = (size_t)sz;
 }
 
-void tollvm_writeFileBytes(const char* path, size_t path_len,
-                           const tollvm_fs_vec_header* data) {
+void lux_writeFileBytes(const char* path, size_t path_len,
+                           const lux_fs_vec_header* data) {
     char tmp[4096];
     size_t cpLen = path_len < sizeof(tmp) - 1 ? path_len : sizeof(tmp) - 1;
     memcpy(tmp, path, cpLen);

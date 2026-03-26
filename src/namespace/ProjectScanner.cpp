@@ -16,7 +16,7 @@ std::vector<std::string> ProjectScanner::scan(const std::string& rootDir) {
              rootDir, fs::directory_options::skip_permission_denied);
          it != fs::recursive_directory_iterator(); ++it) {
 
-        // Skip hidden directories and .tmbuild
+        // Skip hidden directories and .luxbuild
         if (it->is_directory()) {
             auto dirName = it->path().filename().string();
             if (!dirName.empty() && dirName[0] == '.') {
@@ -27,7 +27,7 @@ std::vector<std::string> ProjectScanner::scan(const std::string& rootDir) {
 
         if (!it->is_regular_file()) continue;
 
-        if (it->path().extension() == ".tm") {
+        if (it->path().extension() == ".lx") {
             files.push_back(fs::canonical(it->path()).string());
         }
     }

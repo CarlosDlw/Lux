@@ -1,6 +1,6 @@
 # Functions
 
-This page covers function declaration, parameters, return values, variadic functions, and function pointers in T.
+This page covers function declaration, parameters, return values, variadic functions, and function pointers in Lux.
 
 ## Declaration
 
@@ -158,7 +158,7 @@ int32 main() {
 }
 ```
 
-This is different from T variadic functions — C variadic arguments are not type-checked and must match the format string.
+This is different from Lux variadic functions — C variadic arguments are not type-checked and must match the format string.
 
 ## Function Pointers
 
@@ -261,7 +261,7 @@ int32 double_value(int32 x) {
 
 ## The `main` Function
 
-Every T program must have a `main` function that:
+Every Lux program must have a `main` function that:
 
 - Returns `int32` (the exit code)
 - Takes no parameters, or a single `Vec<string>` parameter for command-line arguments

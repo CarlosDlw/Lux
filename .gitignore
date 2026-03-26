@@ -3,3 +3,5 @@ build/
 *.vsix
 .luxbuild/
 *.o
+errors/
+node_modules/

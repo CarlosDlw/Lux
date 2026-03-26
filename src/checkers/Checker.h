@@ -12,6 +12,7 @@
 #include "types/ExtendedTypeRegistry.h"
 #include "types/BuiltinRegistry.h"
 #include "namespace/NamespaceRegistry.h"
+#include "lsp/Diagnostic.h"
 
 class CBindings;
 
@@ -20,6 +21,7 @@ public:
     bool check(LuxParser::ProgramContext* tree);
 
     const std::vector<std::string>& errors() const { return errors_; }
+    const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
 
     // Set namespace context for cross-file symbol resolution.
     void setNamespaceContext(const NamespaceRegistry* registry,
@@ -32,6 +34,7 @@ public:
 
 private:
     std::vector<std::string> errors_;
+    std::vector<Diagnostic>  diagnostics_;
     ImportResolver           imports_;
     TypeRegistry             typeRegistry_;
     MethodRegistry           methodRegistry_;
@@ -42,6 +45,9 @@ private:
     struct VarInfo {
         const TypeInfo* type;
         unsigned arrayDims = 0;
+        bool initialized = true;  // false when declared without initializer
+        bool used = false;         // set to true when the variable is read
+        antlr4::Token* declToken = nullptr; // for warning location
     };
     std::unordered_map<std::string, VarInfo> locals_;
 
@@ -80,6 +86,7 @@ private:
     // ── Type queries ─────────────────────────────────────────────────
     bool isNumeric(const TypeInfo* ti);
     bool isInteger(const TypeInfo* ti);
+    bool isConditionType(const TypeInfo* ti);
     bool isAssignable(const TypeInfo* lhs, const TypeInfo* rhs);
     unsigned resolveExprArrayDims(LuxParser::ExpressionContext* expr);
 
@@ -93,6 +100,7 @@ private:
     void checkExternDecl(LuxParser::ExternDeclContext* decl);
     void registerFunctionSignature(LuxParser::FunctionDeclContext* func);
     void checkFunction(LuxParser::FunctionDeclContext* func);
+    bool blockAlwaysReturns(LuxParser::BlockContext* block);
     void registerGlobalBuiltins();
 
     // ── Statement checks ────────────────────────────────────────────
@@ -115,8 +123,19 @@ private:
     void checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
                          const TypeInfo* retType);
 
+    // ── Flow analysis helpers ───────────────────────────────────────
+    bool isTerminatorStmt(LuxParser::StatementContext* stmt);
+    void warnUnusedLocals(LuxParser::FunctionDeclContext* func);
+
     // ── Error reporting with source location ────────────────────────
     void error(antlr4::ParserRuleContext* ctx, const std::string& msg);
+    void warning(antlr4::ParserRuleContext* ctx, const std::string& msg);
+    void warningToken(antlr4::Token* start, antlr4::Token* stop,
+                      const std::string& msg);
+    void errorToken(antlr4::Token* start, antlr4::Token* stop,
+                    const std::string& msg);
+    void emitDiag(antlr4::Token* start, antlr4::Token* stop,
+                  Diagnostic::Severity sev, const std::string& msg);
 
     // ── Namespace context (set by CLI before check) ─────────────────
     const NamespaceRegistry* nsRegistry_  = nullptr;

@@ -147,6 +147,10 @@ set(SOURCES
     src/helpc/HelpCParser.cpp
     src/helpc/HelpCFormatter.cpp
     src/helpc/HelpCSearch.cpp
+    src/lsp/LspTransport.cpp
+    src/lsp/LspServer.cpp
+    src/lsp/DocumentStore.cpp
+    src/lsp/DiagnosticEngine.cpp
 )
 
 # ─── Target ───────────────────────────────────────────────────────────────────

@@ -1,12 +1,16 @@
 {
   "name": "lux",
   "displayName": "Lux Language",
-  "description": "Syntax highlighting for the Lux language (.lx files)",
-  "version": "0.2.0",
+  "description": "Language support for the Lux language (.lx files)",
+  "version": "0.4.0",
   "engines": {
     "vscode": "^1.75.0"
   },
   "categories": ["Programming Languages"],
+  "activationEvents": [
+    "onLanguage:lux"
+  ],
+  "main": "./extension.js",
   "contributes": {
     "languages": [
       {
@@ -22,6 +26,15 @@
         "scopeName": "source.lux",
         "path": "./syntaxes/lux.tmLanguage.json"
       }
+    ],
+    "commands": [
+      {
+        "command": "lux.restartServer",
+        "title": "Lux: Restart Language Server"
+      }
     ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   }
 }

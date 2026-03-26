@@ -3,18 +3,73 @@
 #include "ffi/CBindings.h"
 
 // ═══════════════════════════════════════════════════════════════════════
-//  Error helper — attaches line:col to every diagnostic
+//  Error helpers — attach line:col and full range to every diagnostic
 // ═══════════════════════════════════════════════════════════════════════
+
+void Checker::emitDiag(antlr4::Token* start, antlr4::Token* stop,
+                        Diagnostic::Severity sev, const std::string& msg) {
+    if (!start) {
+        errors_.push_back(msg);
+        Diagnostic d;
+        d.severity = sev;
+        d.message  = msg;
+        diagnostics_.push_back(std::move(d));
+        return;
+    }
+
+    // CLI string format (1-based)
+    auto line = start->getLine();
+    auto col  = start->getCharPositionInLine() + 1;
+    std::string prefix = (sev == Diagnostic::Warning) ? "warning: " : "";
+    errors_.push_back(std::to_string(line) + ":" +
+                      std::to_string(col) + ": " + prefix + msg);
+
+    // Structured diagnostic (0-based)
+    Diagnostic d;
+    d.severity = sev;
+    d.message  = msg;
+    d.line     = (line > 0) ? line - 1 : 0;
+    d.col      = start->getCharPositionInLine();
+
+    if (stop && stop->getLine() > 0) {
+        d.endLine = stop->getLine() - 1;
+        d.endCol  = stop->getCharPositionInLine() + stop->getText().size();
+    } else {
+        d.endLine = d.line;
+        d.endCol  = d.col + start->getText().size();
+    }
+
+    // Ensure endCol > col for single-token ranges
+    if (d.endLine == d.line && d.endCol <= d.col)
+        d.endCol = d.col + 1;
+
+    diagnostics_.push_back(std::move(d));
+}
 
 void Checker::error(antlr4::ParserRuleContext* ctx, const std::string& msg) {
     if (ctx && ctx->getStart()) {
-        auto line = ctx->getStart()->getLine();
-        auto col  = ctx->getStart()->getCharPositionInLine() + 1;
-        errors_.push_back(std::to_string(line) + ":" +
-                          std::to_string(col) + ": " + msg);
+        emitDiag(ctx->getStart(), ctx->getStop(), Diagnostic::Error, msg);
     } else {
-        errors_.push_back(msg);
+        emitDiag(nullptr, nullptr, Diagnostic::Error, msg);
     }
+}
+
+void Checker::warning(antlr4::ParserRuleContext* ctx, const std::string& msg) {
+    if (ctx && ctx->getStart()) {
+        emitDiag(ctx->getStart(), ctx->getStop(), Diagnostic::Warning, msg);
+    } else {
+        emitDiag(nullptr, nullptr, Diagnostic::Warning, msg);
+    }
+}
+
+void Checker::errorToken(antlr4::Token* start, antlr4::Token* stop,
+                          const std::string& msg) {
+    emitDiag(start, stop, Diagnostic::Error, msg);
+}
+
+void Checker::warningToken(antlr4::Token* start, antlr4::Token* stop,
+                            const std::string& msg) {
+    emitDiag(start, stop, Diagnostic::Warning, msg);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -197,7 +252,12 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         }
     }
 
-    return errors_.empty();
+    // Only actual errors (not warnings) should cause a check failure
+    for (auto& d : diagnostics_) {
+        if (d.severity == Diagnostic::Error)
+            return false;
+    }
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -431,12 +491,39 @@ const TypeInfo* Checker::resolveBuiltinReturnType(const std::string& retName) {
 //  Type query helpers
 // ═══════════════════════════════════════════════════════════════════════
 
+static std::string formatParamTypes(const std::vector<const TypeInfo*>& types) {
+    std::string result = "(";
+    for (size_t i = 0; i < types.size(); i++) {
+        if (i > 0) result += ", ";
+        result += types[i] ? types[i]->name : "?";
+    }
+    result += ")";
+    return result;
+}
+
+static std::string formatParamTypes(const std::vector<std::string>& types) {
+    std::string result = "(";
+    for (size_t i = 0; i < types.size(); i++) {
+        if (i > 0) result += ", ";
+        result += types[i];
+    }
+    result += ")";
+    return result;
+}
+
 bool Checker::isNumeric(const TypeInfo* ti) {
     return ti && (ti->kind == TypeKind::Integer || ti->kind == TypeKind::Float);
 }
 
 bool Checker::isInteger(const TypeInfo* ti) {
     return ti && ti->kind == TypeKind::Integer;
+}
+
+bool Checker::isConditionType(const TypeInfo* ti) {
+    if (!ti) return true;  // null → unknown, don't flag
+    return ti->kind == TypeKind::Bool ||
+           ti->kind == TypeKind::Integer ||
+           ti->kind == TypeKind::Float;
 }
 
 bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
@@ -514,8 +601,14 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
         auto name = id->IDENTIFIER()->getText();
         auto it = locals_.find(name);
-        if (it != locals_.end())
+        if (it != locals_.end()) {
+            // Warn on use of uninitialized variable
+            if (!it->second.initialized) {
+                warning(id, "variable '" + name + "' is used before being initialized");
+            }
+            it->second.used = true;
             return it->second.type;
+        }
 
         auto fit = functions_.find(name);
         if (fit != functions_.end())
@@ -994,9 +1087,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 if (field.name == methodName && field.typeInfo &&
                     field.typeInfo->kind == TypeKind::Function) {
                     if (argTypes.size() != field.typeInfo->paramTypes.size()) {
-                        error(expr, "function call expects " +
+                        error(expr, "function '" + methodName + "' expects " +
                             std::to_string(field.typeInfo->paramTypes.size()) +
-                            " arguments, got " + std::to_string(argTypes.size()));
+                            " arguments " + formatParamTypes(field.typeInfo->paramTypes) +
+                            ", got " + std::to_string(argTypes.size()));
                     }
                     return field.typeInfo->returnType;
                 }
@@ -1009,7 +1103,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                         if (argTypes.size() != sm.paramTypes.size()) {
                             error(expr, "method '" + methodName + "' expects " +
                                 std::to_string(sm.paramTypes.size()) +
-                                " arguments, got " + std::to_string(argTypes.size()));
+                                " arguments " + formatParamTypes(sm.paramTypes) +
+                                ", got " + std::to_string(argTypes.size()));
                         }
                         return sm.returnType;
                     }
@@ -1072,7 +1167,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (argTypes.size() != desc->paramTypes.size()) {
             error(expr, "method '" + methodName + "' expects " +
                 std::to_string(desc->paramTypes.size()) +
-                " arguments, got " + std::to_string(argTypes.size()));
+                " arguments " + formatParamTypes(desc->paramTypes) +
+                ", got " + std::to_string(argTypes.size()));
             return nullptr;
         }
 
@@ -1150,7 +1246,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 if (argTypes.size() < minArgs) {
                     error(expr, "function call expects at least " +
                                      std::to_string(minArgs) +
-                                     " arguments, got " +
+                                     " arguments " + formatParamTypes(calleeType->paramTypes) +
+                                     ", got " +
                                      std::to_string(argTypes.size()));
                 }
                 // Validate fixed parameter types
@@ -1168,7 +1265,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 if (argTypes.size() != paramCount) {
                     error(expr, "function call expects " +
                                      std::to_string(paramCount) +
-                                     " arguments, got " +
+                                     " arguments " + formatParamTypes(calleeType->paramTypes) +
+                                     ", got " +
                                      std::to_string(argTypes.size()));
                 } else if (calleeName != "toString") {
                     for (size_t i = 0; i < argTypes.size(); i++) {
@@ -1195,13 +1293,15 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                     if (argTypes.size() < sig->paramTypes.size()) {
                         error(expr, "'" + calleeName + "' expects at least " +
                             std::to_string(sig->paramTypes.size()) +
-                            " argument(s), got " +
+                            " argument(s) " + formatParamTypes(sig->paramTypes) +
+                            ", got " +
                             std::to_string(argTypes.size()));
                     }
                 } else if (argTypes.size() != sig->paramTypes.size()) {
                     error(expr, "'" + calleeName + "' expects " +
                         std::to_string(sig->paramTypes.size()) +
-                        " argument(s), got " +
+                        " argument(s) " + formatParamTypes(sig->paramTypes) +
+                        ", got " +
                         std::to_string(argTypes.size()));
                 } else if (!sig->isPolymorphic) {
                     // Validate argument types
@@ -1379,7 +1479,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 if (argTypes.size() != sm.paramTypes.size()) {
                     error(expr, "static method '" + structName + "::" + methodName +
                         "' expects " + std::to_string(sm.paramTypes.size()) +
-                        " arguments, got " + std::to_string(argTypes.size()));
+                        " arguments " + formatParamTypes(sm.paramTypes) +
+                        ", got " + std::to_string(argTypes.size()));
                 }
                 return sm.returnType;
             }
@@ -1469,7 +1570,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (hadPrev) prevInfo = prev->second;
 
         if (varType)
-            locals_[varName] = { varType, varDims };
+            locals_[varName] = { varType, varDims, true, true, nullptr };
 
         // Resolve iterable expression
         resolveExprType(lc->expression(1));
@@ -1804,6 +1905,12 @@ void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
 void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
     auto funcName = func->IDENTIFIER()->getText();
 
+    // Detect duplicate function definitions (skip builtins/externs)
+    if (functions_.count(funcName) && !globalBuiltins_.count(funcName)) {
+        error(func, "function '" + funcName + "' already defined");
+        return;
+    }
+
     unsigned retDims = 0;
     auto* retType = resolveTypeSpec(func->typeSpec(), retDims);
     if (!retType) return;
@@ -1842,7 +1949,7 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
     auto* retType = resolveTypeSpec(func->typeSpec(), retDims);
     if (!retType) return;
 
-    // Register parameters as locals
+    // Register parameters as locals (params are always initialized and used)
     if (auto* paramList = func->paramList()) {
         for (auto* param : paramList->param()) {
             auto paramName = param->IDENTIFIER()->getText();
@@ -1857,18 +1964,150 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
 
             // Variadic param is treated as array inside the function
             if (param->SPREAD())
-                locals_[paramName] = {pType, 1};
+                locals_[paramName] = {pType, 1, true, true, nullptr};
             else
-                locals_[paramName] = {pType, pDims};
+                locals_[paramName] = {pType, pDims, true, true, nullptr};
         }
     }
 
     checkBlock(func->block(), retType);
+
+    if (retType->kind != TypeKind::Void) {
+        if (!blockAlwaysReturns(func->block())) {
+            error(func, "function '" + func->IDENTIFIER()->getText() +
+                        "' must return a value of type '" + retType->name +
+                        "' on all code paths");
+        }
+    }
+
+    // Warn about unused local variables
+    warnUnusedLocals(func);
+}
+
+bool Checker::blockAlwaysReturns(LuxParser::BlockContext* block) {
+    auto stmts = block->statement();
+    for (auto* stmt : stmts) {
+        if (stmt->returnStmt()) {
+            return true;
+        }
+
+        // throw always exits the current function
+        if (stmt->throwStmt()) {
+            return true;
+        }
+
+        // Detect noreturn function calls: panic(), exit(), unreachable()
+        if (auto* cs = stmt->callStmt()) {
+            auto name = cs->IDENTIFIER()->getText();
+            if (name == "panic" || name == "exit" || name == "unreachable")
+                return true;
+        }
+        if (auto* es = stmt->exprStmt()) {
+            if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(es->expression())) {
+                if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+                    auto name = ident->IDENTIFIER()->getText();
+                    if (name == "panic" || name == "exit" || name == "unreachable")
+                        return true;
+                }
+            }
+        }
+
+        // loop { body } — if the body always returns, the loop always returns
+        if (auto* ls = stmt->loopStmt()) {
+            if (blockAlwaysReturns(ls->block()))
+                return true;
+        }
+
+        if (auto* ifS = stmt->ifStmt()) {
+            // if/else-if/else chain: all branches must return
+            if (!ifS->elseClause()) continue;
+
+            bool ifReturns = blockAlwaysReturns(ifS->block());
+            if (!ifReturns) continue;
+
+            bool allElseIfsReturn = true;
+            for (auto* elseIf : ifS->elseIfClause()) {
+                if (!blockAlwaysReturns(elseIf->block())) {
+                    allElseIfsReturn = false;
+                    break;
+                }
+            }
+            if (!allElseIfsReturn) continue;
+
+            if (blockAlwaysReturns(ifS->elseClause()->block()))
+                return true;
+        }
+
+        if (auto* sw = stmt->switchStmt()) {
+            // switch with default: all cases + default must return
+            if (!sw->defaultClause()) continue;
+
+            bool allReturn = true;
+            for (auto* cc : sw->caseClause()) {
+                if (!blockAlwaysReturns(cc->block())) {
+                    allReturn = false;
+                    break;
+                }
+            }
+            if (allReturn && blockAlwaysReturns(sw->defaultClause()->block()))
+                return true;
+        }
+
+        // try/catch: if all catch blocks + try block return, the whole thing returns
+        if (auto* tc = stmt->tryCatchStmt()) {
+            bool tryReturns = blockAlwaysReturns(tc->block());
+            if (tryReturns) {
+                bool allCatchReturn = true;
+                for (auto* cc : tc->catchClause()) {
+                    if (!blockAlwaysReturns(cc->block())) {
+                        allCatchReturn = false;
+                        break;
+                    }
+                }
+                if (allCatchReturn) {
+                    // finally doesn't affect return — it always runs regardless
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool Checker::isTerminatorStmt(LuxParser::StatementContext* stmt) {
+    if (stmt->returnStmt()) return true;
+    if (stmt->throwStmt())  return true;
+    if (stmt->breakStmt())  return true;
+    if (stmt->continueStmt()) return true;
+
+    // Noreturn function calls: panic(), exit(), unreachable()
+    if (auto* cs = stmt->callStmt()) {
+        auto name = cs->IDENTIFIER()->getText();
+        if (name == "panic" || name == "exit" || name == "unreachable")
+            return true;
+    }
+    if (auto* es = stmt->exprStmt()) {
+        if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(es->expression())) {
+            if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+                auto name = ident->IDENTIFIER()->getText();
+                if (name == "panic" || name == "exit" || name == "unreachable")
+                    return true;
+            }
+        }
+    }
+    return false;
 }
 
 void Checker::checkBlock(LuxParser::BlockContext* block,
                          const TypeInfo* retType) {
+    bool terminated = false;
     for (auto* stmt : block->statement()) {
+        // Unreachable code detection: warn on any statement after a terminator
+        if (terminated) {
+            warning(stmt, "unreachable code");
+            break;  // only one warning per block
+        }
+
         if (auto* varDecl = stmt->varDeclStmt()) {
             checkVarDeclStmt(varDecl);
         } else if (auto* assign = stmt->assignStmt()) {
@@ -1903,7 +2142,10 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
             checkBlock(stmt->loopStmt()->block(), retType);
             loopDepth_--;
         } else if (auto* ws = stmt->whileStmt()) {
-            resolveExprType(ws->expression());
+            auto* wCondType = resolveExprType(ws->expression());
+            if (wCondType && !isConditionType(wCondType))
+                error(ws, "condition has type '" + wCondType->name +
+                          "', expected 'bool' or numeric type");
             loopDepth_++;
             checkBlock(ws->block(), retType);
             loopDepth_--;
@@ -1911,7 +2153,10 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
             loopDepth_++;
             checkBlock(dw->block(), retType);
             loopDepth_--;
-            resolveExprType(dw->expression());
+            auto* dwCondType = resolveExprType(dw->expression());
+            if (dwCondType && !isConditionType(dwCondType))
+                error(dw, "condition has type '" + dwCondType->name +
+                          "', expected 'bool' or numeric type");
         } else if (stmt->breakStmt()) {
             if (loopDepth_ == 0)
                 error(stmt, "'break' used outside of a loop");
@@ -1923,20 +2168,56 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
         } else if (auto* lk = stmt->lockStmt()) {
             resolveExprType(lk->expression());
             checkBlock(lk->block(), retType);
+        } else if (auto* tc = stmt->tryCatchStmt()) {
+            // Check try block
+            checkBlock(tc->block(), retType);
+            // Check catch clauses (register catch variable in scope)
+            for (auto* cc : tc->catchClause()) {
+                auto catchVarName = cc->IDENTIFIER()->getText();
+                unsigned catchDims = 0;
+                auto* catchType = resolveTypeSpec(cc->typeSpec(), catchDims);
+                auto prev = locals_.find(catchVarName);
+                bool hadPrev = prev != locals_.end();
+                VarInfo prevInfo;
+                if (hadPrev) prevInfo = prev->second;
+                if (catchType)
+                    locals_[catchVarName] = {catchType, catchDims, true, true, nullptr};
+                checkBlock(cc->block(), retType);
+                if (hadPrev)
+                    locals_[catchVarName] = prevInfo;
+                else
+                    locals_.erase(catchVarName);
+            }
+            // Check finally clause
+            if (auto* fin = tc->finallyClause()) {
+                checkBlock(fin->block(), retType);
+            }
+        } else if (stmt->throwStmt()) {
+            resolveExprType(stmt->throwStmt()->expression());
+        } else if (auto* ifa = stmt->indexFieldAssignStmt()) {
+            // arr[i].field = val — validate expressions
+            for (auto* e : ifa->expression()) {
+                resolveExprType(e);
+            }
         } else if (auto* def = stmt->deferStmt()) {
             if (def->callStmt())
                 checkCallStmt(def->callStmt());
             else if (def->exprStmt())
                 checkExprStmt(def->exprStmt());
         }
+
+        // Mark this block as terminated if this statement exits unconditionally
+        if (isTerminatorStmt(stmt))
+            terminated = true;
     }
 }
 
 void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
                               const TypeInfo* retType) {
     auto* exprType = resolveExprType(stmt->expression());
-    if (exprType && !isInteger(exprType) && exprType->name != "char") {
-        error(stmt, "switch expression must be an integer or char type, got '" +
+    if (exprType && !isInteger(exprType) && exprType->name != "char" &&
+        exprType->kind != TypeKind::Enum) {
+        error(stmt, "switch expression must be an integer, char or enum type, got '" +
               exprType->name + "'");
     }
     for (auto* cc : stmt->caseClause()) {
@@ -1948,19 +2229,58 @@ void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
     if (auto* dc = stmt->defaultClause()) {
         checkBlock(dc->block(), retType);
     }
+
+    // Enum exhaustiveness check: warn if switch on enum has no default
+    // and doesn't cover all variants
+    if (exprType && exprType->kind == TypeKind::Enum && !stmt->defaultClause()) {
+        std::unordered_set<std::string> coveredVariants;
+        for (auto* cc : stmt->caseClause()) {
+            for (auto* caseExpr : cc->expression()) {
+                // Enum access: Enum::Variant
+                if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(caseExpr)) {
+                    auto ids = ea->IDENTIFIER();
+                    if (ids.size() >= 2)
+                        coveredVariants.insert(ids[1]->getText());
+                }
+            }
+        }
+
+        std::vector<std::string> missing;
+        for (auto& variant : exprType->enumVariants) {
+            if (!coveredVariants.count(variant))
+                missing.push_back(variant);
+        }
+
+        if (!missing.empty()) {
+            std::string msg = "switch on enum '" + exprType->name +
+                "' is not exhaustive. Missing: ";
+            for (size_t i = 0; i < missing.size(); i++) {
+                if (i > 0) msg += ", ";
+                msg += "'" + exprType->name + "::" + missing[i] + "'";
+            }
+            msg += ". Add a 'default' clause or handle all variants";
+            warning(stmt, msg);
+        }
+    }
 }
 
 void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
                            const TypeInfo* retType) {
     // Check the if condition
-    resolveExprType(stmt->expression());
+    auto* condType = resolveExprType(stmt->expression());
+    if (condType && !isConditionType(condType))
+        error(stmt, "condition has type '" + condType->name +
+                    "', expected 'bool' or numeric type");
 
     // Check the if body
     checkBlock(stmt->block(), retType);
 
     // Check else-if clauses
     for (auto* elseIf : stmt->elseIfClause()) {
-        resolveExprType(elseIf->expression());
+        auto* eifCondType = resolveExprType(elseIf->expression());
+        if (eifCondType && !isConditionType(eifCondType))
+            error(elseIf, "condition has type '" + eifCondType->name +
+                          "', expected 'bool' or numeric type");
         checkBlock(elseIf->block(), retType);
     }
 
@@ -1980,7 +2300,7 @@ void Checker::checkForInStmt(LuxParser::ForInStmtContext* stmt,
 
     // Register the loop variable
     if (iterType)
-        locals_[iterName] = {iterType, dims};
+        locals_[iterName] = {iterType, dims, true, true, nullptr};
 
     loopDepth_++;
     checkBlock(stmt->block(), retType);
@@ -2005,10 +2325,13 @@ void Checker::checkForClassicStmt(LuxParser::ForClassicStmtContext* stmt,
 
     // Register the loop variable
     if (varType)
-        locals_[varName] = {varType, dims};
+        locals_[varName] = {varType, dims, true, true, nullptr};
 
     // Check condition expression
-    resolveExprType(exprs[1]);
+    auto* condType = resolveExprType(exprs[1]);
+    if (condType && !isConditionType(condType))
+        error(stmt, "for condition has type '" + condType->name +
+                    "', expected 'bool' or numeric type");
 
     // Check update expression
     resolveExprType(exprs[2]);
@@ -2038,7 +2361,10 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
 
     // Declaration without initializer: int32 x;
     if (!stmt->expression()) {
-        locals_[name] = {typeInfo, arrayDims};
+        VarInfo vi{typeInfo, arrayDims, false, false, nullptr};
+        if (stmt->IDENTIFIER() && stmt->IDENTIFIER()->getSymbol())
+            vi.declToken = stmt->IDENTIFIER()->getSymbol();
+        locals_[name] = vi;
         return;
     }
 
@@ -2067,7 +2393,10 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
                          typeInfo->name + "'");
     }
 
-    locals_[name] = {typeInfo, arrayDims};
+    VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
+    if (stmt->IDENTIFIER() && stmt->IDENTIFIER()->getSymbol())
+        vi.declToken = stmt->IDENTIFIER()->getSymbol();
+    locals_[name] = vi;
 }
 
 void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
@@ -2078,6 +2407,9 @@ void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
         error(stmt, "undefined variable '" + name + "'");
         return;
     }
+
+    // Mark variable as initialized on assignment
+    it->second.initialized = true;
 
     // Validate index expressions and RHS
     auto indexExprs = stmt->expression();
@@ -2350,7 +2682,8 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
             if (argCount < minArgs) {
                 error(stmt, "function '" + name + "' expects at least " +
                                  std::to_string(minArgs) +
-                                 " arguments, got " + std::to_string(argCount));
+                                 " arguments " + formatParamTypes(fnType->paramTypes) +
+                                 ", got " + std::to_string(argCount));
             }
             // Validate fixed parameter types
             for (size_t i = 0; i < std::min(argCount, paramCount); i++) {
@@ -2367,7 +2700,8 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
             if (argCount != paramCount) {
                 error(stmt, "function '" + name + "' expects " +
                                  std::to_string(paramCount) +
-                                 " arguments, got " + std::to_string(argCount));
+                                 " arguments " + formatParamTypes(fnType->paramTypes) +
+                                 ", got " + std::to_string(argCount));
             }
         }
         return;
@@ -2382,13 +2716,15 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
         if (argCount < sig->paramTypes.size()) {
             error(stmt, "'" + name + "' expects at least " +
                              std::to_string(sig->paramTypes.size()) +
-                             " argument(s), got " + std::to_string(argCount));
+                             " argument(s) " + formatParamTypes(sig->paramTypes) +
+                             ", got " + std::to_string(argCount));
             return;
         }
     } else if (argCount != sig->paramTypes.size()) {
         error(stmt, "'" + name + "' expects " +
                          std::to_string(sig->paramTypes.size()) +
-                         " argument(s), got " + std::to_string(argCount));
+                         " argument(s) " + formatParamTypes(sig->paramTypes) +
+                         ", got " + std::to_string(argCount));
         return;
     }
 
@@ -2430,6 +2766,12 @@ void Checker::checkReturnStmt(LuxParser::ReturnStmtContext* stmt,
         return;
     }
 
+    // void function should not return a value
+    if (expectedType->kind == TypeKind::Void) {
+        error(stmt, "void function should not return a value");
+        return;
+    }
+
     auto* exprType = resolveExprType(expr);
     if (exprType && expectedType && !isAssignable(expectedType, exprType)) {
         error(stmt, "return type mismatch: expected '" +
@@ -2448,4 +2790,18 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
         return baseDims > 0 ? baseDims - 1 : 0;
     }
     return 0;
+}
+
+void Checker::warnUnusedLocals(LuxParser::FunctionDeclContext* func) {
+    for (auto& [name, info] : locals_) {
+        if (!info.used && name != "_") {
+            if (info.declToken) {
+                warningToken(info.declToken, info.declToken,
+                             "variable '" + name + "' is declared but never used");
+            } else {
+                // Fallback — warn on the function itself
+                warning(func, "variable '" + name + "' is declared but never used");
+            }
+        }
+    }
 }

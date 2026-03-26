@@ -1,0 +1,86 @@
+#include "lsp/DiagnosticEngine.h"
+#include "parser/Parser.h"
+#include "checkers/Checker.h"
+#include "ffi/CBindings.h"
+#include "ffi/CHeaderResolver.h"
+
+// Parse checker error string "line:col: message" into a Diagnostic.
+static Diagnostic parseCheckerError(const std::string& err) {
+    Diagnostic d;
+    d.severity = Diagnostic::Error;
+
+    // Format: "line:col: message" (1-based)
+    size_t firstColon = err.find(':');
+    if (firstColon == std::string::npos) {
+        d.message = err;
+        return d;
+    }
+
+    size_t secondColon = err.find(':', firstColon + 1);
+    if (secondColon == std::string::npos) {
+        d.message = err;
+        return d;
+    }
+
+    int line = std::atoi(err.substr(0, firstColon).c_str());
+    int col  = std::atoi(err.substr(firstColon + 1, secondColon - firstColon - 1).c_str());
+
+    // Skip ": " after second colon
+    size_t msgStart = secondColon + 1;
+    if (msgStart < err.size() && err[msgStart] == ' ') {
+        msgStart++;
+    }
+
+    d.line    = (line > 0) ? static_cast<size_t>(line - 1) : 0;  // to 0-based
+    d.col     = (col > 0) ? static_cast<size_t>(col - 1) : 0;    // to 0-based
+    d.endLine = d.line;
+    d.endCol  = d.col + 1;
+    d.message = err.substr(msgStart);
+
+    return d;
+}
+
+std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source) {
+    std::vector<Diagnostic> result;
+
+    // Step 1: Parse
+    auto parsed = Parser::parseString(source);
+
+    // Collect parse errors (syntax errors are always valid without project context)
+    for (auto& d : parsed.diagnostics) {
+        result.push_back(std::move(d));
+    }
+
+    // Step 2: Semantic checking
+    if (parsed.tree && !parsed.hasErrors) {
+        Checker checker;
+
+        // Resolve C header includes so FFI functions are known
+        CBindings cBindings;
+        TypeRegistry cTypeReg;
+        auto includes = parsed.tree->includeDecl();
+        if (!includes.empty()) {
+            CHeaderResolver resolver(cTypeReg, cBindings);
+            for (auto* incl : includes) {
+                auto text = incl->getText();
+                if (incl->INCLUDE_SYS()) {
+                    auto header = CHeaderResolver::extractSystemHeader(text);
+                    if (!header.empty())
+                        resolver.resolveSystemHeader(header);
+                } else if (incl->INCLUDE_LOCAL()) {
+                    auto header = CHeaderResolver::extractLocalHeader(text);
+                    if (!header.empty())
+                        resolver.resolveLocalHeader(header, ".");
+                }
+            }
+            checker.setCBindings(&cBindings);
+        }
+
+        checker.check(parsed.tree);
+        for (auto& d : checker.diagnostics()) {
+            result.push_back(d);
+        }
+    }
+
+    return result;
+}

@@ -8,6 +8,7 @@
 #include "namespace/NamespaceRegistry.h"
 
 struct CLIOptions {
+    bool isLSP = false;
     std::string inputFile;
     std::string outputFile;
     int         optimizationLevel = 0;
@@ -37,6 +38,7 @@ private:
     int    argc_ = 0;
     char** argv_ = nullptr;
     bool   isHelpC_ = false;
+    bool   isLSP_   = false;
 
     bool parse(int argc, char* argv[]);
     void printHelp()    const;

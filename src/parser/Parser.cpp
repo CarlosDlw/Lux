@@ -33,3 +33,36 @@ ParseResult Parser::parse(const std::string& filePath) {
 
     return result;
 }
+
+ParseResult Parser::parseString(const std::string& source) {
+    ParseResult result;
+
+    result.input  = std::make_unique<antlr4::ANTLRInputStream>(source);
+    result.lexer  = std::make_unique<LuxLexer>(result.input.get());
+    result.tokens = std::make_unique<antlr4::CommonTokenStream>(result.lexer.get());
+    result.parser = std::make_unique<LuxParser>(result.tokens.get());
+
+    // Collect-mode listener: errors stored in result.diagnostics
+    auto errorListener = std::make_unique<DiagnosticErrorListener>();
+    errorListener->setCollectMode(true);
+
+    result.lexer->removeErrorListeners();
+    result.lexer->addErrorListener(errorListener.get());
+    result.parser->removeErrorListeners();
+    result.parser->addErrorListener(errorListener.get());
+
+    result.tree = result.parser->program();
+
+    result.hasErrors = result.parser->getNumberOfSyntaxErrors() > 0
+                    || result.lexer->getNumberOfSyntaxErrors()  > 0;
+
+    result.diagnostics = errorListener->takeDiagnostics();
+
+    // Keep the listener alive as long as the ParseResult (move into input's deleter won't work,
+    // so we just release it — it's small and short-lived in LSP context).
+    // For proper lifetime, store it in ParseResult:
+    // NOTE: The unique_ptr goes out of scope here, but we've already taken diagnostics.
+    // The parse tree doesn't reference the listener after parsing is complete.
+
+    return result;
+}

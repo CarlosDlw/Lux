@@ -10,6 +10,7 @@
 #include "ffi/CBindings.h"
 #include "ffi/CHeaderResolver.h"
 #include "helpc/HelpC.h"
+#include "lsp/LspServer.h"
 
 #include <iostream>
 #include <string>
@@ -21,9 +22,13 @@ namespace fs = std::filesystem;
 CLI::CLI(int argc, char* argv[])
     : argc_(argc), argv_(argv)
 {
-    // Check for helpc subcommand early
+    // Check for subcommands early
     if (argc >= 2 && std::string(argv[1]) == "helpc") {
         isHelpC_ = true;
+        return;
+    }
+    if (argc >= 2 && std::string(argv[1]) == "lsp") {
+        isLSP_ = true;
         return;
     }
     if (!parse(argc, argv)) {
@@ -86,6 +91,7 @@ void CLI::printHelp() const {
         << "  lux <file.lx> <output>     Compile and emit native binary\n"
         << "  lux <file.lx> <output> -oN Compile with optimization level N (1, 2, or 3)\n"
         << "  lux helpc <lib> [symbol]   C library reference helper\n"
+        << "  lux lsp                    Start LSP server (for editor integration)\n"
         << "  lux help                   Show this help message\n"
         << "  lux version                Show compiler version\n\n"
         << "Linker flags:\n"
@@ -103,6 +109,10 @@ void CLI::printVersion() const {
 }
 
 int CLI::run() {
+    if (isLSP_) {
+        LspServer server;
+        return server.run();
+    }
     if (isHelpC_) {
         HelpCCommand cmd;
         if (!HelpC::parseArgs(argc_, argv_, cmd)) {
@@ -319,12 +329,13 @@ int CLI::compile() {
         Checker checker;
         checker.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         checker.setCBindings(&cBindings);
-        if (!checker.check(unit.parseResult.tree)) {
-            for (auto& err : checker.errors()) {
-                std::cerr << "lux: " << unit.filePath << ": " << err << "\n";
-            }
-            anyCheckError = true;
+        bool passed = checker.check(unit.parseResult.tree);
+        // Always print diagnostics (errors and warnings)
+        for (auto& err : checker.errors()) {
+            std::cerr << "lux: " << unit.filePath << ": " << err << "\n";
         }
+        if (!passed)
+            anyCheckError = true;
     }
     if (anyCheckError) return 1;
 

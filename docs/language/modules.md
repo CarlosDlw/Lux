@@ -1,0 +1,131 @@
+# Modules
+
+T uses a `use` declaration system to import symbols from the standard library and user-defined modules.
+
+---
+
+## Importing from the Standard Library
+
+The standard library is organized into modules under `std::`. Individual symbols are imported with `use`:
+
+```tm
+use std::log::println;
+use std::math::sqrt;
+use std::mem::alloc;
+```
+
+### Grouped Imports
+
+Multiple symbols from the same module can be imported in a single `use` declaration with braces:
+
+```tm
+use std::log::{ println, print, dbg };
+use std::collections::{ Vec, Map, Set };
+```
+
+### Available Standard Library Modules
+
+| Module | Description |
+|--------|-------------|
+| `std::log` | Output: `println`, `print`, `eprint`, `eprintln`, `dbg`, `sprintf` |
+| `std::io` | Input: `readLine`, `readInt`, `prompt`, etc. |
+| `std::math` | Math functions and constants: `PI`, `sqrt`, `sin`, etc. |
+| `std::str` | String utilities: `split`, `parseInt`, `parseFloat`, etc. |
+| `std::mem` | Memory: `alloc`, `free`, `copy`, `zero`, etc. |
+| `std::random` | Random: `randInt`, `randFloat`, `randBool`, etc. |
+| `std::time` | Time: `now`, `sleep`, `clock`, etc. |
+| `std::fs` | File system: `readFile`, `writeFile`, `exists`, etc. |
+| `std::process` | Process: `exit`, `env`, `exec`, etc. |
+| `std::conv` | Conversion: `itoa`, `atoi`, `toHex`, etc. |
+| `std::hash` | Hashing: `hashString`, `crc32`, etc. |
+| `std::bits` | Bit ops: `popcount`, `ctz`, `clz`, etc. |
+| `std::ascii` | ASCII: `isAlpha`, `toUpper`, etc. |
+| `std::path` | Path ops: `join`, `parent`, `extension`, etc. |
+| `std::fmt` | Formatting: `lpad`, `hex`, `commas`, etc. |
+| `std::regex` | Regex: `match`, `find`, `regexReplace`, etc. |
+| `std::encoding` | Encoding: `base64EncodeStr`, `urlEncode`, etc. |
+| `std::os` | OS: `getpid`, `hostname`, `errno`, etc. |
+| `std::test` | Testing: `assertEqual`, `assertTrue`, `log`, etc. |
+| `std::crypto` | Crypto: `sha256String`, `hmacSha256`, etc. |
+| `std::compress` | Compression: `gzipCompress`, `deflate`, etc. |
+| `std::net` | Networking: `tcpConnect`, `tcpSend`, etc. |
+| `std::thread` | Threading: `cpuCount`, `Task`, `Mutex`, etc. |
+| `std::collections` | Collections: `Vec`, `Map`, `Set` |
+
+---
+
+## Importing from User Modules
+
+User-defined functions can be imported from other `.tm` files using the namespace name:
+
+```tm
+// math.tm
+namespace Math;
+
+int32 add(int32 a, int32 b) {
+    ret a + b;
+}
+
+int32 multiply(int32 a, int32 b) {
+    ret a * b;
+}
+```
+
+```tm
+// main.tm
+namespace Main;
+
+use Math::add;
+use Math::multiply;
+
+int32 main() {
+    println(add(3, 4));       // 7
+    println(multiply(5, 6));  // 30
+    ret 0;
+}
+```
+
+Both files are passed to the compiler together. The `use` declaration resolves symbols by namespace name, not by file path.
+
+---
+
+## Including C Headers
+
+C headers are included with the `#include` directive (not `use`):
+
+```tm
+#include <stdio.h>       // System header
+#include "mylib.h"       // Local header
+```
+
+Functions, structs, enums, and constants from the header are automatically parsed via libclang and made available in scope.
+
+See [C Interop](../ffi/c-interop.md) for details on FFI usage.
+
+---
+
+## Global Builtins
+
+Some functions are available without any `use` import:
+
+| Function | Description |
+|----------|-------------|
+| `exit(int32)` | Exit the program |
+| `panic(string)` | Abort with message |
+| `assert(bool)` | Abort if false |
+| `assertMsg(bool, string)` | Abort if false, with message |
+| `unreachable()` | Mark unreachable code |
+| `toString(T)` | Convert any primitive to string |
+| `toInt(string)` | Parse string to int64 |
+| `toFloat(string)` | Parse string to float64 |
+| `toBool(string)` | Parse string to bool |
+| `cstr(string)` | Convert to C string `*char` |
+| `fromCStr(*char)` | Convert from C string |
+| `fromCStrLen(*char, usize)` | Convert from C string with length |
+
+---
+
+## See Also
+
+- [Namespaces](namespaces.md) — Namespace declaration and multi-file projects
+- [Syntax](syntax.md) — General syntax rules

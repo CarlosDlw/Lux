@@ -1,0 +1,142 @@
+namespace Main006;
+
+// FFI Step 1: extern function declarations
+extern int32 puts(*char s);
+extern int32 printf(*char fmt, ...);
+extern float64 sqrt(float64 x);
+extern float64 sin(float64 x);
+extern float64 cos(float64 x);
+extern *void malloc(usize size);
+extern void free(*void ptr);
+extern *void memset(*void s, int32 c, usize n);
+extern int32 strcmp(*char s1, *char s2);
+extern usize strlen(*char s);
+
+union IntOrFloat {
+    int32 i;
+    float32 f;
+}
+
+int32 main() {
+    // Step 1: basic extern call
+    puts(c"=== FFI Test Suite ===");
+
+    // Step 2: C string literals c"..."
+    puts(c"[PASS] c string literals work");
+
+    // Step 3: C variadic with printf
+    printf(c"[PASS] printf with int: %d\n", 42);
+    printf(c"[PASS] printf with float: %.4f\n", 3.1415);
+    printf(c"[PASS] printf with string: %s\n", c"hello from TM");
+    printf(c"[PASS] printf with multiple args: %d + %d = %d\n", 3, 4, 7);
+
+    // Math functions from libm (linked via libc)
+    float64 val = sqrt(144.0);
+    printf(c"[PASS] sqrt(144) = %.0f\n", val);
+
+    float64 pi = 3.14159265358979323846;
+    float64 sinVal = sin(pi / 2.0);
+    printf(c"[PASS] sin(pi/2) = %.6f\n", sinVal);
+
+    float64 cosVal = cos(0.0);
+    printf(c"[PASS] cos(0) = %.6f\n", cosVal);
+
+    // Memory allocation via malloc/free
+    *void buf = malloc(64);
+    memset(buf, 65, 10);
+    *char cbuf = buf as *char;
+    puts(c"[PASS] malloc + memset work");
+    free(buf);
+    puts(c"[PASS] free works");
+
+    // Step 4: cstr / fromCStr / fromCStrLen builtins
+    string name = "TollVM";
+    *char cname = cstr(name);
+    int32 cmp = strcmp(cname, c"TollVM");
+    assert(cmp == 0);
+    puts(c"[PASS] cstr() converts string to *char");
+    free(cname as *void);
+
+    *char raw = c"Hello from C";
+    string s = fromCStr(raw);
+    usize sLen = strlen(raw);
+    assert(sLen == 12);
+    puts(c"[PASS] fromCStr() converts *char to string");
+
+    string s2 = fromCStrLen(c"Hello World!!!!", 5);
+    *char cs2 = cstr(s2);
+    int32 cmp2 = strcmp(cs2, c"Hello");
+    assert(cmp2 == 0);
+    puts(c"[PASS] fromCStrLen() converts *char + len to string");
+    free(cs2 as *void);
+
+    // Round-trip: string -> cstr -> fromCStr -> cstr -> strcmp
+    string original = "Round Trip Test";
+    *char c1 = cstr(original);
+    string back = fromCStr(c1);
+    *char c2 = cstr(back);
+    int32 cmp3 = strcmp(c1, c2);
+    assert(cmp3 == 0);
+    puts(c"[PASS] string <-> *char round-trip works");
+    free(c1 as *void);
+    free(c2 as *void);
+
+    // Step 5: cstring type alias (sugar for *char)
+    cstring greeting = c"Hello cstring!";
+    puts(greeting);
+    puts(c"[PASS] cstring type alias works");
+
+    cstring converted = cstr("from TM string");
+    int32 cmp4 = strcmp(converted, c"from TM string");
+    assert(cmp4 == 0);
+    puts(c"[PASS] cstring with cstr() works");
+    free(converted as *void);
+
+    // Step 6: fixed-size arrays [N]T
+    [5]int32 nums = [10, 20, 30, 40, 50];
+    assert(nums[0] == 10);
+    assert(nums[4] == 50);
+    puts(c"[PASS] [N]int32 fixed-size array works");
+
+    [3]float64 coords = [1.0, 2.5, 3.7];
+    assert(coords[0] == 1.0);
+    assert(coords[2] == 3.7);
+    puts(c"[PASS] [N]float64 fixed-size array works");
+
+    // Array decay: [N]char -> *char (passing fixed array to C function)
+    [6]char hello = ['H', 'e', 'l', 'l', 'o', '\0'];
+    puts(&hello as *char);
+    puts(c"[PASS] [N]char array decay to *char works");
+
+    // Step 7: union type (fields share memory)
+    IntOrFloat u = IntOrFloat { i: 42 };
+    printf(c"[PASS] union literal, i = %d\n", u.i);
+
+    u.f = 3.14 as float32;
+    printf(c"[PASS] union field assign, f = %f\n", u.f as float64);
+
+    // Verify memory sharing: writing to .f changed .i
+    int32 raw_i = u.i;
+    printf(c"[INFO] after f=3.14, raw i = %d (expected != 42)\n", raw_i);
+    assert(raw_i != 42);
+    puts(c"[PASS] union fields share memory");
+
+    // Step 8: float80 and float128 types
+    float80 ld = 3.14159265358979323846 as float80;
+    float64 ld_d = ld as float64;
+    printf(c"[PASS] float80 value = %.15f\n", ld_d);
+
+    float128 qd = 2.71828182845904523536 as float128;
+    float64 qd_d = qd as float64;
+    printf(c"[PASS] float128 value = %.15f\n", qd_d);
+
+    // Cast chain: float32 -> float80 -> float64
+    float32 small = 1.5 as float32;
+    float80 mid = small as float80;
+    float64 result = mid as float64;
+    assert(result == 1.5);
+    puts(c"[PASS] float32 -> float80 -> float64 cast chain works");
+
+    puts(c"=== All FFI tests passed ===");
+    ret 0;
+}

@@ -1,0 +1,181 @@
+cmake_minimum_required(VERSION 3.20)
+project(tollvm VERSION 0.1.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# ─── LLVM ─────────────────────────────────────────────────────────────────────
+find_package(LLVM REQUIRED CONFIG)
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION} at ${LLVM_DIR}")
+
+include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
+add_definitions(${LLVM_DEFINITIONS})
+
+# Detect whether LLVM was installed as a monolithic shared library (e.g. LLVM 15+
+# on Debian/Ubuntu ships as libLLVM-<ver>.so instead of individual component .a files).
+execute_process(
+    COMMAND llvm-config --libs core support irreader passes native nativecodegen
+                              mc mcparser target analysis transformutils scalaropts
+                              instcombine ipo linker bitwriter
+    OUTPUT_VARIABLE LLVM_LIBS_RAW
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if(LLVM_LIBS_RAW MATCHES "^-lLLVM-")
+    # Monolithic build — link against the single shared lib
+    separate_arguments(LLVM_LIBS UNIX_COMMAND "${LLVM_LIBS_RAW}")
+    message(STATUS "LLVM is monolithic: ${LLVM_LIBS}")
+else()
+    # Component build — use the CMake helper
+    llvm_map_components_to_libnames(LLVM_LIBS
+        core support irreader passes native nativecodegen
+        mc mcparser target analysis transformutils scalaropts
+        instcombine ipo linker bitwriter
+    )
+    message(STATUS "LLVM component libs: ${LLVM_LIBS}")
+endif()
+
+# ─── ANTLR4 Runtime ───────────────────────────────────────────────────────────
+find_path(ANTLR4_INCLUDE_DIR
+    NAMES antlr4-runtime.h
+    HINTS
+        /usr/include/antlr4-runtime
+        /usr/local/include/antlr4-runtime
+        /usr/include
+        /usr/local/include
+)
+
+find_library(ANTLR4_LIB
+    NAMES antlr4-runtime
+    HINTS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
+)
+
+if(NOT ANTLR4_INCLUDE_DIR OR NOT ANTLR4_LIB)
+    message(FATAL_ERROR
+        "ANTLR4 C++ runtime not found.\n"
+        "Install with: sudo apt install libantlr4-runtime-dev"
+    )
+endif()
+message(STATUS "Found ANTLR4: ${ANTLR4_LIB}")
+
+# ─── libclang (C API for parsing C headers) ───────────────────────────────────
+find_path(LIBCLANG_INCLUDE_DIR
+    NAMES clang-c/Index.h
+    HINTS /usr/include /usr/local/include
+)
+
+find_library(LIBCLANG_LIB
+    NAMES clang
+    HINTS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
+)
+
+if(NOT LIBCLANG_INCLUDE_DIR OR NOT LIBCLANG_LIB)
+    message(FATAL_ERROR
+        "libclang not found.\n"
+        "Install with: sudo pacman -S clang  (or equivalent for your distro)"
+    )
+endif()
+message(STATUS "Found libclang: ${LIBCLANG_LIB}")
+
+# ─── Builtins (C library linked into every compiled binary) ───────────────────
+add_library(tollvm_builtins STATIC
+    src/builtins/log/log.c
+    src/builtins/collections/vec.c
+    src/builtins/collections/map.c
+    src/builtins/collections/set.c
+    src/builtins/global/global.c
+    src/builtins/io/io.c
+    src/builtins/math/math.c
+    src/builtins/string/string.c
+    src/builtins/mem/mem.c
+    src/builtins/random/random.c
+    src/builtins/time/time.c
+    src/builtins/fs/fs.c
+    src/builtins/process/process.c
+    src/builtins/conv/conv.c
+    src/builtins/hash/hash.c
+    src/builtins/bits/bits.c
+    src/builtins/char/char.c
+    src/builtins/path/path.c
+    src/builtins/fmt/fmt.c
+    src/builtins/regex/regex.c
+    src/builtins/encoding/encoding.c
+    src/builtins/os/os.c
+    src/builtins/test/test.c
+    src/builtins/crypto/crypto.c
+    src/builtins/compress/compress.c
+    src/builtins/net/net.c
+    src/builtins/thread/thread.c
+    src/builtins/error/error.c
+)
+target_include_directories(tollvm_builtins PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/builtins
+)
+target_link_libraries(tollvm_builtins PRIVATE z pthread)
+
+# ─── Sources ──────────────────────────────────────────────────────────────────
+set(GENERATED_SOURCES
+    src/generated/ToLLVMLexer.cpp
+    src/generated/ToLLVMParser.cpp
+    src/generated/ToLLVMParserBaseVisitor.cpp
+    src/generated/ToLLVMParserVisitor.cpp
+)
+
+set(SOURCES
+    src/main.cpp
+    src/cli/CLI.cpp
+    src/parser/Parser.cpp
+    src/checkers/Checker.cpp
+    src/IRBuilder/IRGen.cpp
+    src/LLVM_IR/IRModule.cpp
+    src/LLVM_Optimizer/Optimizer.cpp
+    src/machine_code/CodeGen.cpp
+    src/imports/ImportResolver.cpp
+    src/namespace/ProjectScanner.cpp
+    src/namespace/NamespaceRegistry.cpp
+    src/types/TypeInfo.cpp
+    src/types/TypeRegistry.cpp
+    src/types/MethodRegistry.cpp
+    src/types/ExtendedTypeRegistry.cpp
+    src/types/BuiltinRegistry.cpp
+    src/ffi/CBindings.cpp
+    src/ffi/CTypeMapper.cpp
+    src/ffi/CHeaderResolver.cpp
+    src/ffi/ABIInfo.cpp
+    src/helpc/HelpC.cpp
+    src/helpc/HelpCParser.cpp
+    src/helpc/HelpCFormatter.cpp
+    src/helpc/HelpCSearch.cpp
+)
+
+# ─── Target ───────────────────────────────────────────────────────────────────
+add_executable(tollvm ${SOURCES} ${GENERATED_SOURCES})
+
+target_include_directories(tollvm PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/generated
+    ${CMAKE_SOURCE_DIR}/src/builtins
+    ${ANTLR4_INCLUDE_DIR}
+    ${LIBCLANG_INCLUDE_DIR}
+)
+
+# Compatibility flags for LLVM API differences across versions
+if(LLVM_VERSION_MAJOR GREATER_EQUAL 15)
+    target_compile_definitions(tollvm PRIVATE LLVM_VERSION_15_OR_NEWER)
+endif()
+if(LLVM_VERSION_MAJOR GREATER_EQUAL 18)
+    target_compile_definitions(tollvm PRIVATE LLVM_VERSION_18_OR_NEWER)
+endif()
+
+target_link_libraries(tollvm PRIVATE
+    tollvm_builtins
+    ${ANTLR4_LIB}
+    ${LLVM_LIBS}
+    ${LIBCLANG_LIB}
+)
+
+# ─── Build instructions ───────────────────────────────────────────────────────
+# mkdir build && cd build && cmake .. && make -j$(nproc)
+# ./tollvm ../examples/main.tm
+# ./tollvm ../examples/main.tm ./out -o2

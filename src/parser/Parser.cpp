@@ -1,0 +1,35 @@
+#include "parser/Parser.h"
+#include "parser/DiagnosticErrorListener.h"
+
+#include <fstream>
+#include <iostream>
+
+ParseResult Parser::parse(const std::string& filePath) {
+    ParseResult result;
+
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        std::cerr << "tollvm: cannot open file '" << filePath << "'\n";
+        result.hasErrors = true;
+        return result;
+    }
+
+    result.input  = std::make_unique<antlr4::ANTLRInputStream>(file);
+    result.lexer  = std::make_unique<ToLLVMLexer>(result.input.get());
+    result.tokens = std::make_unique<antlr4::CommonTokenStream>(result.lexer.get());
+    result.parser = std::make_unique<ToLLVMParser>(result.tokens.get());
+
+    // Replace ANTLR's default stderr output with our formatted diagnostics
+    static DiagnosticErrorListener errorListener;
+    result.lexer->removeErrorListeners();
+    result.lexer->addErrorListener(&errorListener);
+    result.parser->removeErrorListeners();
+    result.parser->addErrorListener(&errorListener);
+
+    result.tree = result.parser->program();
+
+    result.hasErrors = result.parser->getNumberOfSyntaxErrors() > 0
+                    || result.lexer->getNumberOfSyntaxErrors()  > 0;
+
+    return result;
+}

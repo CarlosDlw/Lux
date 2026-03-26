@@ -1,0 +1,40 @@
+#pragma once
+
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+// Describes a single imported symbol (e.g. "println" from "std::log").
+struct ImportedSymbol {
+    std::string modulePath;  // e.g. "std::log"
+    std::string name;        // e.g. "println"
+};
+
+// Manages all `use` declarations in a file and resolves
+// which builtin C function to call for a given ToLLVM symbol.
+class ImportResolver {
+public:
+    // Register a single import:  use std::log::println;
+    void addImport(const std::string& modulePath, const std::string& symbol);
+
+    // Returns true if `symbol` was imported by any `use` declaration.
+    bool isImported(const std::string& symbol) const;
+
+    // Given an imported symbol and the LLVM type suffix (e.g. "i32", "i64"),
+    // returns the mangled C function name (e.g. "tollvm_println_i32").
+    // Returns empty string if the symbol is unknown.
+    std::string resolve(const std::string& symbol,
+                        const std::string& typeSuffix) const;
+
+    // Returns all registered imports (mainly for the checker).
+    const std::vector<ImportedSymbol>& imports() const { return imports_; }
+
+private:
+    std::vector<ImportedSymbol>        imports_;
+    std::unordered_set<std::string>    symbols_;  // fast lookup
+
+    // Known builtin modules and their exported symbols
+    static const std::unordered_map<std::string,
+                                    std::unordered_set<std::string>> knownModules_;
+};

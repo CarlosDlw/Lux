@@ -1,0 +1,10 @@
+{
+    "antlr4.generation": {
+        "mode": "external",
+        "listeners": false,
+        "visitors": true,
+        "language": "Cpp",
+        "outputDir": "../src/generated",
+        "alternativeJar": "../antlr-4.13.2-complete.jar",
+    }
+}

@@ -1,0 +1,68 @@
+namespace ProcessTest;
+
+use std::process::env;
+use std::process::setEnv;
+use std::process::hasEnv;
+use std::process::exec;
+use std::process::execOutput;
+use std::process::pid;
+use std::process::platform;
+use std::process::arch;
+use std::process::homeDir;
+use std::process::executablePath;
+use std::log::println;
+use std::str::contains;
+use std::str::startsWith;
+
+int32 main() {
+    /* platform & arch */
+    string plat = platform();
+    println(plat);
+
+    string ar = arch();
+    println(ar);
+
+    /* pid */
+    int32 p = pid();
+    bool pidOk = p > 0;
+    println(pidOk);
+
+    /* homeDir */
+    string home = homeDir();
+    bool homeOk = startsWith(home, "/");
+    println(homeOk);
+
+    /* executablePath */
+    string exePath = executablePath();
+    bool exeOk = startsWith(exePath, "/");
+    println(exeOk);
+
+    /* setEnv + env + hasEnv */
+    setEnv("TOLLVM_TEST_VAR", "hello123");
+    bool has = hasEnv("TOLLVM_TEST_VAR");
+    println(has);
+
+    string val = env("TOLLVM_TEST_VAR");
+    println(val);
+
+    bool noVar = hasEnv("TOLLVM_NONEXISTENT_VAR_XYZ");
+    println(noVar);
+
+    /* exec (as statement, discard return) */
+    exec("true");
+
+    /* exec (capture exit code) */
+    int32 code = exec("true");
+    println(code);
+
+    int32 code2 = exec("false");
+    println(code2);
+
+    /* execOutput */
+    string out = execOutput("echo hello_from_exec");
+    bool outOk = contains(out, "hello_from_exec");
+    println(outOk);
+
+    println("all process tests passed");
+    ret 0;
+}

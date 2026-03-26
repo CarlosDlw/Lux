@@ -5,3 +5,4 @@ build/
 *.o
 errors/
 node_modules/
+ztests/

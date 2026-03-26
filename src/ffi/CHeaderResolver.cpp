@@ -168,6 +168,40 @@ std::string CHeaderResolver::extractLocalHeader(const std::string& tokenText) {
     return tokenText.substr(first + 1, second - first - 1);
 }
 
+std::vector<std::string> CHeaderResolver::listSystemHeaders() {
+    namespace fs = std::filesystem;
+    std::vector<std::string> result;
+    std::unordered_set<std::string> seen;
+
+    auto sysIncludes = discoverSystemIncludes();
+    for (auto& si : sysIncludes) {
+        std::string dir = si.substr(8); // strip "-isystem"
+        while (!dir.empty() && dir.front() == ' ') dir.erase(dir.begin());
+
+        std::error_code ec;
+        if (!fs::is_directory(dir, ec)) continue;
+
+        for (auto& entry : fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec)) {
+            if (ec) break;
+            if (!entry.is_regular_file(ec)) continue;
+
+            auto ext = entry.path().extension().string();
+            if (ext != ".h" && ext != ".H") continue;
+
+            // Get relative path from the include directory
+            auto rel = fs::relative(entry.path(), dir, ec);
+            if (ec) continue;
+
+            std::string headerName = rel.string();
+            if (seen.insert(headerName).second)
+                result.push_back(headerName);
+        }
+    }
+
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
 bool CHeaderResolver::resolveSystemHeader(const std::string& headerName) {
     if (parsedHeaders_.count(headerName)) return true;
 
@@ -186,6 +220,21 @@ bool CHeaderResolver::resolveSystemHeader(const std::string& headerName) {
 
     if (!parseHeader(source, clangArgs)) return false;
     parsedHeaders_.insert(headerName);
+
+    // Resolve and store the absolute path of the header for goto-definition.
+    namespace fs = std::filesystem;
+    for (auto& si : systemIncludes_) {
+        // Strip leading "-isystem" and any space
+        std::string dir = si.substr(8);
+        while (!dir.empty() && dir.front() == ' ') dir.erase(dir.begin());
+        auto candidate = fs::path(dir) / headerName;
+        std::error_code ec;
+        auto canonical = fs::canonical(candidate, ec);
+        if (!ec && fs::exists(canonical)) {
+            bindings_.addHeaderPath(headerName, canonical.string());
+            break;
+        }
+    }
 
     // Detect required linker library for this header
     detectRequiredLib(headerName);
@@ -214,6 +263,29 @@ bool CHeaderResolver::resolveLocalHeader(const std::string& headerName,
 
     if (!parseHeader(source, clangArgs)) return false;
     parsedHeaders_.insert(key);
+
+    // Resolve and store the absolute path of the header for goto-definition.
+    namespace fs = std::filesystem;
+    {
+        std::error_code ec;
+        auto candidate = fs::path(basePath) / headerName;
+        auto canonical = fs::canonical(candidate, ec);
+        if (!ec && fs::exists(canonical)) {
+            bindings_.addHeaderPath(headerName, canonical.string());
+        } else {
+            // Also try extra include paths
+            for (auto& ip : includePaths_) {
+                std::string dir = (ip.size() > 2 && ip[0] == '-' && ip[1] == 'I')
+                                  ? ip.substr(2) : ip;
+                auto c2 = fs::path(dir) / headerName;
+                auto ca2 = fs::canonical(c2, ec);
+                if (!ec && fs::exists(ca2)) {
+                    bindings_.addHeaderPath(headerName, ca2.string());
+                    break;
+                }
+            }
+        }
+    }
     return true;
 }
 
@@ -488,6 +560,22 @@ static bool tryEvalStructLiteralMacro(const std::vector<std::string>& tokens,
 
 // ── libclang visitor callback ────────────────────────────────────────────
 
+// Returns the absolute path of the file where the cursor is defined (via
+// spelling location), and sets *outLine to the 0-based line number.
+static std::string extractCursorSourceFile(CXCursor cursor,
+                                            unsigned* outLine = nullptr) {
+    CXSourceLocation loc = clang_getCursorLocation(cursor);
+    CXFile   cxFile  = nullptr;
+    unsigned ln = 0, col = 0, offset = 0;
+    clang_getSpellingLocation(loc, &cxFile, &ln, &col, &offset);
+    if (outLine) *outLine = (ln > 0 ? ln - 1 : 0); // convert to 0-based
+    if (!cxFile) return {};
+    CXString fn = clang_getFileName(cxFile);
+    std::string path = clang_getCString(fn);
+    clang_disposeString(fn);
+    return path;
+}
+
 static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
                                          CXClientData clientData) {
     auto* data = static_cast<VisitorData*>(clientData);
@@ -542,6 +630,7 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         cfunc.returnType = retTI;
         cfunc.paramTypes = std::move(paramTypes);
         cfunc.isVariadic = isVariadic;
+        cfunc.sourceFile = extractCursorSourceFile(cursor, &cfunc.line);
         data->bindings->addFunction(std::move(cfunc));
     }
 
@@ -565,6 +654,12 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         // mapStruct handles field extraction + registration
         // (unions are handled via byte-size representation)
         data->mapper->mapStruct(cursor);
+
+        // Update source location now that binding exists
+        unsigned srcLine = 0;
+        std::string srcFile = extractCursorSourceFile(cursor, &srcLine);
+        if (!srcFile.empty())
+            data->bindings->setStructLocation(name, srcFile, srcLine);
     }
 
     // ── Enum declarations ────────────────────────────────────────────
@@ -581,9 +676,10 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
             return CXChildVisit_Continue;
 
         CEnum cenum;
-        cenum.name = name;
+        cenum.name       = name;
+        cenum.sourceFile = extractCursorSourceFile(cursor, &cenum.line);
 
-        // Visit enum constants
+        // Visit enum constants — also capture per-constant locations
         clang_visitChildren(cursor,
             [](CXCursor child, CXCursor /*parent*/, CXClientData data)
                 -> CXChildVisitResult {
@@ -597,6 +693,13 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
 
                 int64_t value = clang_getEnumConstantDeclValue(child);
                 cenum->values.push_back({ constName, value });
+
+                // Store per-constant source location
+                unsigned constLine = 0;
+                std::string constFile = extractCursorSourceFile(child, &constLine);
+                if (!constFile.empty())
+                    cenum->valueLocs[constName] = { constFile, constLine };
+
                 return CXChildVisit_Continue;
             },
             &cenum
@@ -620,8 +723,9 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         if (!underlyingTI) return CXChildVisit_Continue;
 
         CTypedef ctdef;
-        ctdef.name = name;
+        ctdef.name       = name;
         ctdef.underlying = underlyingTI;
+        ctdef.sourceFile = extractCursorSourceFile(cursor, &ctdef.line);
         data->bindings->addTypedef(std::move(ctdef));
     }
 
@@ -667,9 +771,10 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         bool isNull = false;
         if (tryEvalMacroTokens(bodyTokens, value, isNull)) {
             CMacro cm;
-            cm.name   = name;
-            cm.value  = value;
-            cm.isNull = isNull;
+            cm.name     = name;
+            cm.value    = value;
+            cm.isNull   = isNull;
+            cm.sourceFile = extractCursorSourceFile(cursor, &cm.line);
             data->bindings->addMacro(std::move(cm));
         } else {
             // Try as struct compound literal: CLITERAL(Type){...} or (Type){...}
@@ -677,9 +782,10 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
             std::vector<int64_t> fieldValues;
             if (tryEvalStructLiteralMacro(bodyTokens, structType, fieldValues)) {
                 CStructMacro sm;
-                sm.name        = name;
-                sm.structType  = structType;
+                sm.name       = name;
+                sm.structType = structType;
                 sm.fieldValues = std::move(fieldValues);
+                sm.sourceFile  = extractCursorSourceFile(cursor, &sm.line);
                 data->bindings->addStructMacro(std::move(sm));
             }
         }
@@ -707,8 +813,9 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         if (!varTI) return CXChildVisit_Continue;
 
         CGlobalVar gv;
-        gv.name = name;
-        gv.type = varTI;
+        gv.name      = name;
+        gv.type      = varTI;
+        gv.sourceFile = extractCursorSourceFile(cursor, &gv.line);
         data->bindings->addGlobal(std::move(gv));
     }
 

@@ -438,4 +438,19 @@ BuiltinRegistry::BuiltinRegistry() {
     add("cpuCount",  "uint32", {});
     add("threadId",  "uint64", {});
     add("yield",     "void",   {});
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Global builtins (always available, no import needed)
+    // ═════════════════════════════════════════════════════════════════════
+    add("panic",         "void",    {"string"});
+    add("assert",        "void",    {"bool"});
+    add("assertMsg",     "void",    {"bool", "string"});
+    add("unreachable",   "void",    {});
+    add("toInt",         "int64",   {"string"});
+    add("toFloat",       "float64", {"string"});
+    add("toBool",        "bool",    {"string"});
+    add("toString",      "string",  {"_any"}, true);
+    add("cstr",          "*char",   {"string"});
+    add("fromCStr",      "string",  {"*char"});
+    add("fromCStrLen",   "string",  {"*char", "usize"});
 }

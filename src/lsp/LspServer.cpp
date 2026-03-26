@@ -1,6 +1,11 @@
 #include "lsp/LspServer.h"
+#include "lsp/ProjectContext.h"
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+
+namespace fs = std::filesystem;
 
 // LSP error codes
 static constexpr int kParseError     = -32700;
@@ -26,9 +31,6 @@ int LspServer::run() {
             msg = json::parse(*raw);
         } catch (const json::parse_error& e) {
             std::cerr << "[lux-lsp] JSON parse error: " << e.what() << "\n";
-            if (msg.contains("id")) {
-                sendError(msg["id"], kParseError, "JSON parse error");
-            }
             continue;
         }
 
@@ -67,6 +69,12 @@ void LspServer::dispatch(const json& msg) {
         handleDidSave(msg);
     } else if (method == "textDocument/didClose") {
         handleDidClose(msg);
+    } else if (method == "textDocument/hover") {
+        handleHover(msg);
+    } else if (method == "textDocument/definition") {
+        handleDefinition(msg);
+    } else if (method == "textDocument/completion") {
+        handleCompletion(msg);
     } else {
         // Unknown method — if it has an id, it's a request → respond with error
         if (msg.contains("id")) {
@@ -89,6 +97,12 @@ void LspServer::handleInitialize(const json& msg) {
             {"openClose", true},
             {"save", {{"includeText", true}}},
             {"change", 1}  // Full document sync
+        }},
+        {"hoverProvider", true},
+        {"definitionProvider", true},
+        {"completionProvider", {
+            {"triggerCharacters", {".", ":", ">"}},
+            {"resolveProvider", false}
         }}
     };
 
@@ -115,6 +129,82 @@ void LspServer::handleShutdown(const json& msg) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  Main file discovery
+// ═══════════════════════════════════════════════════════════════════════
+
+// Quick text-based search for the file that has `namespace Main` and a `main`
+// function. Avoids full parsing — just looks for the two markers in source text.
+std::string LspServer::findMainFile(const std::string& projectRoot) {
+    if (projectRoot.empty()) return {};
+    try {
+        for (auto& entry : fs::recursive_directory_iterator(
+                 projectRoot, fs::directory_options::skip_permission_denied)) {
+            if (!entry.is_regular_file()) continue;
+            if (entry.path().extension() != ".lx") continue;
+
+            std::ifstream f(entry.path());
+            if (!f) continue;
+
+            std::string content((std::istreambuf_iterator<char>(f)),
+                                 std::istreambuf_iterator<char>());
+
+            // Must declare the Main namespace
+            if (content.find("namespace Main") == std::string::npos) continue;
+
+            // Must define a top-level main() — look for common signatures:
+            // "main()" or "main(int" ...
+            bool hasMain = content.find(" main(") != std::string::npos
+                        || content.find("\nmain(") != std::string::npos;
+            if (!hasMain) continue;
+
+            return entry.path().string();
+        }
+    } catch (...) {}
+    return {};
+}
+
+// Rebuilds the ProjectContext, always anchoring to the main file when
+// possible. This prevents the context from becoming stale when the user
+// switches between tabs (VS Code does not re-fire didOpen for already-
+// opened documents).
+void LspServer::rebuildContext(const std::string& filePath) {
+    std::string projectRoot = ProjectContext::findProjectRoot(filePath);
+
+    // (Re-)discover the main file if we don't know it yet, or if this file
+    // IS the main file (so we always prefer the freshest path).
+    if (mainFilePath_.empty()) {
+        mainFilePath_ = findMainFile(projectRoot);
+        if (!mainFilePath_.empty())
+            std::cerr << "[lux-lsp] main file: " << mainFilePath_ << "\n";
+    } else {
+        // If the file being opened/saved declares `namespace Main`, update cache.
+        // (handles renames or new main files added to the project)
+        std::ifstream f(filePath);
+        if (f) {
+            std::string content((std::istreambuf_iterator<char>(f)),
+                                 std::istreambuf_iterator<char>());
+            bool hasNamespaceMain = content.find("namespace Main") != std::string::npos;
+            bool hasMain = content.find(" main(") != std::string::npos
+                        || content.find("\nmain(") != std::string::npos;
+            if (hasNamespaceMain && hasMain)
+                mainFilePath_ = filePath;
+        }
+    }
+
+    // Always build context from the main file so it stays stable across tab
+    // switches. Fall back to the current file if main cannot be found.
+    std::string anchorFile = mainFilePath_.empty() ? filePath : mainFilePath_;
+    if (projectContext_.build(anchorFile)) {
+        std::cerr << "[lux-lsp] project root: "
+                  << projectContext_.projectRoot()
+                  << " (anchored to " << anchorFile << ")\n";
+    } else {
+        std::cerr << "[lux-lsp] project build FAILED for: "
+                  << anchorFile << "\n";
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  Document Sync
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -126,6 +216,9 @@ void LspServer::handleDidOpen(const json& msg) {
 
     documents_.open(uri, text);
     std::cerr << "[lux-lsp] opened: " << uri << "\n";
+
+    std::string filePath = DocumentStore::uriToPath(uri);
+    rebuildContext(filePath);
 
     publishDiagnostics(uri, text);
 }
@@ -144,6 +237,10 @@ void LspServer::handleDidSave(const json& msg) {
     }
 
     std::cerr << "[lux-lsp] saved: " << uri << "\n";
+
+    // Rebuild project context on save (files may have changed).
+    std::string filePath = DocumentStore::uriToPath(uri);
+    rebuildContext(filePath);
 
     publishDiagnostics(uri, text);
 }
@@ -182,7 +279,10 @@ void LspServer::handleDidClose(const json& msg) {
 
 void LspServer::publishDiagnostics(const std::string& uri,
                                     const std::string& source) {
-    auto diags = diagnosticEngine_.run(source);
+    std::string filePath = DocumentStore::uriToPath(uri);
+    auto diags = diagnosticEngine_.run(source, filePath,
+                                        projectContext_.isValid()
+                                            ? &projectContext_ : nullptr);
 
     json lspDiags = json::array();
     for (auto& d : diags) {
@@ -204,6 +304,147 @@ void LspServer::publishDiagnostics(const std::string& uri,
 
     std::cerr << "[lux-lsp] published " << diags.size()
               << " diagnostic(s) for " << uri << "\n";
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Language Features
+// ═══════════════════════════════════════════════════════════════════════
+
+void LspServer::handleHover(const json& msg) {
+    auto& params = msg["params"];
+    std::string uri = params["textDocument"]["uri"];
+    size_t line = params["position"]["line"];
+    size_t col  = params["position"]["character"];
+
+    std::string source = documents_.get(uri);
+    if (source.empty()) {
+        sendResponse(msg["id"], nullptr);
+        return;
+    }
+
+    // Extract file path from URI for project context
+    std::string filePath = uri;
+    if (filePath.rfind("file://", 0) == 0)
+        filePath = filePath.substr(7);
+
+    auto result = hoverProvider_.hover(source, line, col, filePath,
+                                       projectContext_.isValid()
+                                           ? &projectContext_ : nullptr);
+    if (!result) {
+        sendResponse(msg["id"], nullptr);
+        return;
+    }
+
+    json hover = {
+        {"contents", {
+            {"kind", "markdown"},
+            {"value", result->contents}
+        }},
+        {"range", {
+            {"start", {{"line", result->line}, {"character", result->col}}},
+            {"end",   {{"line", result->endLine}, {"character", result->endCol}}}
+        }}
+    };
+
+    sendResponse(msg["id"], hover);
+}
+
+void LspServer::handleDefinition(const json& msg) {
+    try {
+        auto& params = msg["params"];
+        std::string uri = params["textDocument"]["uri"];
+        size_t line = params["position"]["line"];
+        size_t col  = params["position"]["character"];
+
+        std::string source = documents_.get(uri);
+        if (source.empty()) {
+            sendResponse(msg["id"], nullptr);
+            return;
+        }
+
+        std::string filePath = uri;
+        if (filePath.rfind("file://", 0) == 0)
+            filePath = filePath.substr(7);
+
+        auto result = definitionProvider_.definition(source, line, col, filePath,
+                                                     projectContext_.isValid()
+                                                         ? &projectContext_ : nullptr);
+        if (!result) {
+            sendResponse(msg["id"], nullptr);
+            return;
+        }
+
+        json location = {
+            {"uri", result->uri},
+            {"range", {
+                {"start", {{"line", result->line}, {"character", result->col}}},
+                {"end",   {{"line", result->endLine}, {"character", result->endCol}}}
+            }}
+        };
+
+        sendResponse(msg["id"], location);
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] definition error: " << e.what() << "\n";
+        sendResponse(msg["id"], nullptr);
+    } catch (...) {
+        std::cerr << "[lux-lsp] definition unknown error\n";
+        sendResponse(msg["id"], nullptr);
+    }
+}
+
+void LspServer::handleCompletion(const json& msg) {
+    try {
+        auto& params = msg["params"];
+        std::string uri = params["textDocument"]["uri"];
+        size_t line = params["position"]["line"];
+        size_t col  = params["position"]["character"];
+
+        std::string source = documents_.get(uri);
+        if (source.empty()) {
+            sendResponse(msg["id"], json::array());
+            return;
+        }
+
+        std::string filePath = uri;
+        if (filePath.rfind("file://", 0) == 0)
+            filePath = filePath.substr(7);
+
+        auto items = completionProvider_.complete(
+            source, line, col, filePath,
+            projectContext_.isValid() ? &projectContext_ : nullptr);
+
+        json result = json::array();
+        for (auto& item : items) {
+            json ci = {
+                {"label", item.label},
+                {"kind", static_cast<int>(item.kind)}
+            };
+            if (!item.detail.empty())
+                ci["detail"] = item.detail;
+            if (!item.documentation.empty())
+                ci["documentation"] = {
+                    {"kind", "markdown"},
+                    {"value", item.documentation}
+                };
+            if (!item.insertText.empty()) {
+                ci["insertText"] = item.insertText;
+                ci["insertTextFormat"] = static_cast<int>(item.insertTextFormat);
+            }
+            if (!item.sortText.empty())
+                ci["sortText"] = item.sortText;
+            if (!item.filterText.empty())
+                ci["filterText"] = item.filterText;
+            result.push_back(std::move(ci));
+        }
+
+        sendResponse(msg["id"], result);
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] completion error: " << e.what() << "\n";
+        sendResponse(msg["id"], json::array());
+    } catch (...) {
+        std::cerr << "[lux-lsp] completion unknown error\n";
+        sendResponse(msg["id"], json::array());
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════

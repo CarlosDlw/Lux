@@ -151,6 +151,10 @@ set(SOURCES
     src/lsp/LspServer.cpp
     src/lsp/DocumentStore.cpp
     src/lsp/DiagnosticEngine.cpp
+    src/lsp/HoverProvider.cpp
+    src/lsp/DefinitionProvider.cpp
+    src/lsp/CompletionProvider.cpp
+    src/lsp/ProjectContext.cpp
 )
 
 # ─── Target ───────────────────────────────────────────────────────────────────

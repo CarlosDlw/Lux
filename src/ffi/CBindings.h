@@ -13,6 +13,8 @@ struct CFunction {
     const TypeInfo*            returnType;
     std::vector<const TypeInfo*> paramTypes;
     bool                       isVariadic = false;
+    std::string                sourceFile; // Absolute path of defining header
+    unsigned                   line = 0;   // 0-based line in sourceFile
 };
 
 // Describes a C struct extracted from a parsed header.
@@ -20,18 +22,26 @@ struct CStruct {
     std::string              name;
     std::vector<FieldInfo>   fields;
     unsigned                 byteSize = 0; // >0 for opaque types (unions, bitfield structs)
+    std::string              sourceFile;
+    unsigned                 line = 0;
 };
 
 // Describes a C enum extracted from a parsed header.
 struct CEnum {
     std::string                               name;
     std::vector<std::pair<std::string, int64_t>> values;
+    std::string                               sourceFile;
+    unsigned                                  line = 0;
+    // Per-constant locations: { constantName → {absolutePath, 0-based line} }
+    std::unordered_map<std::string, std::pair<std::string, unsigned>> valueLocs;
 };
 
 // Describes a C typedef extracted from a parsed header.
 struct CTypedef {
     std::string     name;
     const TypeInfo* underlying;
+    std::string     sourceFile;
+    unsigned        line = 0;
 };
 
 // Describes a simple #define integer constant extracted from a parsed header.
@@ -39,6 +49,8 @@ struct CMacro {
     std::string name;
     int64_t     value;
     bool        isNull = false;   // true for NULL-like pointer constants
+    std::string sourceFile;
+    unsigned    line = 0;
 };
 
 // Describes a #define macro that expands to a struct compound literal.
@@ -47,12 +59,16 @@ struct CStructMacro {
     std::string              name;
     std::string              structType;     // e.g. "Color"
     std::vector<int64_t>     fieldValues;    // e.g. {245, 245, 245, 255}
+    std::string              sourceFile;
+    unsigned                 line = 0;
 };
 
 // Describes a C global variable (extern) extracted from a parsed header.
 struct CGlobalVar {
     std::string     name;
     const TypeInfo* type;
+    std::string     sourceFile;
+    unsigned        line = 0;
 };
 
 // Registry of all C symbols imported via #include directives.
@@ -66,6 +82,16 @@ public:
     void addMacro(CMacro m);
     void addStructMacro(CStructMacro m);
     void addGlobal(CGlobalVar g);
+
+    // Update the source location of a previously-registered struct
+    // (used when location is only known after mapStruct returns).
+    void setStructLocation(const std::string& name,
+                           const std::string& file, unsigned line);
+
+    // Store / retrieve the absolute path for a parsed header by its include name.
+    void addHeaderPath(const std::string& headerName,
+                       const std::string& absolutePath);
+    std::string resolveHeaderPath(const std::string& headerName) const;
 
     // Track required linker libraries detected from #include headers
     void addRequiredLib(const std::string& flag, const std::string& header);
@@ -109,13 +135,16 @@ public:
     const TypeInfo* internType(std::unique_ptr<TypeInfo> ti);
 
 private:
-    std::unordered_map<std::string, CFunction> functions_;
-    std::unordered_map<std::string, CStruct>   structs_;
-    std::unordered_map<std::string, CEnum>     enums_;
-    std::unordered_map<std::string, CTypedef>  typedefs_;
-    std::unordered_map<std::string, CMacro>    macros_;
+    std::unordered_map<std::string, CFunction>    functions_;
+    std::unordered_map<std::string, CStruct>      structs_;
+    std::unordered_map<std::string, CEnum>        enums_;
+    std::unordered_map<std::string, CTypedef>     typedefs_;
+    std::unordered_map<std::string, CMacro>       macros_;
     std::unordered_map<std::string, CStructMacro> structMacros_;
-    std::unordered_map<std::string, CGlobalVar> globals_;
+    std::unordered_map<std::string, CGlobalVar>   globals_;
+
+    // Maps include name (e.g. "raylib.h") to its absolute resolved path.
+    std::unordered_map<std::string, std::string>  headerPaths_;
 
     std::vector<std::unique_ptr<TypeInfo>> ownedTypes_;
 

@@ -88,6 +88,9 @@ private:
     bool isInteger(const TypeInfo* ti);
     bool isConditionType(const TypeInfo* ti);
     bool isAssignable(const TypeInfo* lhs, const TypeInfo* rhs);
+    void checkNegativeToUnsigned(const TypeInfo* target,
+                                 LuxParser::ExpressionContext* expr,
+                                 antlr4::ParserRuleContext* ctx);
     unsigned resolveExprArrayDims(LuxParser::ExpressionContext* expr);
 
     // ── Top-level checks ─────────────────────────────────────────────

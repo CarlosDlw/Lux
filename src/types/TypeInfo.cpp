@@ -13,6 +13,15 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
         return llvm::ArrayType::get(elemTy, arraySize);
     }
 
+    // Multi-dim array type alias: [N][M]T → [N x [M x elemTy]]
+    if (!arraySizes.empty() && elementType) {
+        auto* elemTy = elementType->toLLVMType(ctx, dl);
+        llvm::Type* arrTy = elemTy;
+        for (auto it = arraySizes.rbegin(); it != arraySizes.rend(); ++it)
+            arrTy = llvm::ArrayType::get(arrTy, *it);
+        return arrTy;
+    }
+
     switch (kind) {
     case TypeKind::Bool:
         return llvm::Type::getInt1Ty(ctx);

@@ -4,9 +4,17 @@
 #include <vector>
 #include "lsp/Diagnostic.h"
 
+class ProjectContext;
+
 // Runs the full parse + semantic check pipeline on a source string
 // and produces structured diagnostics suitable for LSP.
 class DiagnosticEngine {
 public:
+    // Run diagnostics with full project context (cross-file resolution).
+    std::vector<Diagnostic> run(const std::string& source,
+                                const std::string& filePath,
+                                const ProjectContext* project);
+
+    // Run diagnostics in single-file mode (no project context).
     std::vector<Diagnostic> run(const std::string& source);
 };

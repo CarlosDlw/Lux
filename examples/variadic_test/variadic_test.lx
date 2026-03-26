@@ -45,7 +45,7 @@ int32 main() {
 
     printAll(10, 20, 30);
 
-    int32 r4 = add();
+    int32 r4 = add(1);
     println(r4);
 
     int32 f = first(42, 99);

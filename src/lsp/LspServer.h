@@ -3,6 +3,10 @@
 #include "lsp/LspTransport.h"
 #include "lsp/DocumentStore.h"
 #include "lsp/DiagnosticEngine.h"
+#include "lsp/HoverProvider.h"
+#include "lsp/DefinitionProvider.h"
+#include "lsp/CompletionProvider.h"
+#include "lsp/ProjectContext.h"
 
 #include <nlohmann/json.hpp>
 #include <string>
@@ -15,11 +19,15 @@ public:
     int run();
 
 private:
-    LspTransport    transport_;
-    DocumentStore   documents_;
+    LspTransport     transport_;
+    DocumentStore    documents_;
     DiagnosticEngine diagnosticEngine_;
-    bool            initialized_ = false;
-    bool            shutdown_    = false;
+    HoverProvider      hoverProvider_;
+    DefinitionProvider definitionProvider_;
+    CompletionProvider   completionProvider_;
+    ProjectContext   projectContext_;
+    bool             initialized_ = false;
+    bool             shutdown_    = false;
 
     // Dispatch a parsed JSON-RPC message.
     void dispatch(const json& msg);
@@ -35,11 +43,28 @@ private:
     void handleDidSave(const json& msg);
     void handleDidClose(const json& msg);
 
+    // Language features
+    void handleHover(const json& msg);
+    void handleDefinition(const json& msg);
+    void handleCompletion(const json& msg);
+
     // Publish diagnostics for a document.
     void publishDiagnostics(const std::string& uri, const std::string& source);
+
+    // Find the canonical "main" file in a project root —
+    // the file with `namespace Main` and a top-level `main` function.
+    // Returns empty string if not found.
+    static std::string findMainFile(const std::string& projectRoot);
+
+    // Ensures projectContext_ is built, always anchored to the main file.
+    // Falls back to filePath if no main file can be found.
+    void rebuildContext(const std::string& filePath);
 
     // Helpers
     void sendResponse(const json& id, const json& result);
     void sendError(const json& id, int code, const std::string& message);
     void sendNotification(const std::string& method, const json& params);
+
+    // Cached path of the project's main file (namespace Main + main()).
+    std::string mainFilePath_;
 };

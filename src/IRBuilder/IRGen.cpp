@@ -442,7 +442,7 @@ std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
         auto funcName = structName + "__" + methodName;
         auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
         auto* fn = llvm::Function::Create(
-            fnType, llvm::Function::InternalLinkage, funcName, module_);
+            fnType, llvm::Function::ExternalLinkage, funcName, module_);
 
         // Register in the appropriate map
         if (isStatic)
@@ -577,10 +577,24 @@ std::any IRGen::visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) {
 
         typeRegistry_.registerType(std::move(ti));
     } else {
-        // Simple alias: type MyInt = int32;
+        // Check if the target is an array type: [N][M]...T
+        auto* spec = typeSpecCtx;
+        std::vector<unsigned> sizes;
+        while (!spec->typeSpec().empty() && spec->INT_LIT()) {
+            sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
+            spec = spec->typeSpec(0);
+        }
+
         auto* baseTI = resolveTypeInfo(typeSpecCtx);
         TypeInfo ti = *baseTI;
         ti.name = name;
+
+        if (!sizes.empty()) {
+            // Array type alias: store dimensions and base element type
+            ti.arraySizes = std::move(sizes);
+            ti.elementType = baseTI;
+        }
+
         typeRegistry_.registerType(std::move(ti));
     }
 
@@ -882,21 +896,13 @@ std::any IRGen::visitUseGroup(LuxParser::UseGroupContext* ctx) {
 void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
     if (!nsRegistry_) return;
 
-    // ── Phase 1: Register struct / enum / typeAlias types from other files
-    //             in the same namespace ──────────────────────────────────
     auto sameNsSymbols = nsRegistry_->getExternalSymbols(
         currentNamespace_, currentFile_);
 
+    // ── Phase 1a: Register enums / type aliases from same namespace ─────
+    //    (must come before structs so struct fields can reference them)
     for (auto* sym : sameNsSymbols) {
-        if (sym->kind == ExportedSymbol::Struct) {
-            auto* structCtx = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
-            if (structCtx && !typeRegistry_.lookup(sym->name))
-                visitStructDecl(structCtx);
-        } else if (sym->kind == ExportedSymbol::Union) {
-            auto* unionCtx = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
-            if (unionCtx && !typeRegistry_.lookup(sym->name))
-                visitUnionDecl(unionCtx);
-        } else if (sym->kind == ExportedSymbol::Enum) {
+        if (sym->kind == ExportedSymbol::Enum) {
             auto* enumCtx = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
             if (enumCtx && !typeRegistry_.lookup(sym->name))
                 visitEnumDecl(enumCtx);
@@ -907,7 +913,36 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
         }
     }
 
-    // ── Phase 1b: Register types from explicitly imported namespaces ────
+    // ── Phase 1b: Register structs / unions from same namespace ─────────
+    for (auto* sym : sameNsSymbols) {
+        if (sym->kind == ExportedSymbol::Struct) {
+            auto* structCtx = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+            if (structCtx && !typeRegistry_.lookup(sym->name))
+                visitStructDecl(structCtx);
+        } else if (sym->kind == ExportedSymbol::Union) {
+            auto* unionCtx = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
+            if (unionCtx && !typeRegistry_.lookup(sym->name))
+                visitUnionDecl(unionCtx);
+        }
+    }
+
+    // ── Phase 1c: Register enums / type aliases from imported namespaces
+    for (auto& [symbolName, sourceNs] : userImports_) {
+        auto* sym = nsRegistry_->findSymbol(sourceNs, symbolName);
+        if (!sym) continue;
+
+        if (sym->kind == ExportedSymbol::Enum) {
+            auto* enumCtx = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
+            if (enumCtx && !typeRegistry_.lookup(sym->name))
+                visitEnumDecl(enumCtx);
+        } else if (sym->kind == ExportedSymbol::TypeAlias) {
+            auto* aliasCtx = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
+            if (aliasCtx && !typeRegistry_.lookup(sym->name))
+                visitTypeAliasDecl(aliasCtx);
+        }
+    }
+
+    // ── Phase 1d: Register structs / unions from imported namespaces ────
     for (auto& [symbolName, sourceNs] : userImports_) {
         auto* sym = nsRegistry_->findSymbol(sourceNs, symbolName);
         if (!sym) continue;
@@ -920,15 +955,79 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
             auto* unionCtx = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
             if (unionCtx && !typeRegistry_.lookup(sym->name))
                 visitUnionDecl(unionCtx);
-        } else if (sym->kind == ExportedSymbol::Enum) {
-            auto* enumCtx = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
-            if (enumCtx && !typeRegistry_.lookup(sym->name))
-                visitEnumDecl(enumCtx);
-        } else if (sym->kind == ExportedSymbol::TypeAlias) {
-            auto* aliasCtx = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
-            if (aliasCtx && !typeRegistry_.lookup(sym->name))
-                visitTypeAliasDecl(aliasCtx);
         }
+    }
+
+    // ── Phase 1e: Declare extern extend block methods ───────────────────
+    //    For same-namespace and imported structs, find their extend blocks
+    //    and declare methods as extern functions.
+    auto declareExtendMethods = [&](const std::string& ns) {
+        auto allSyms = nsRegistry_->getNamespaceSymbols(ns);
+        for (auto* sym : allSyms) {
+            if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+            if (sym->sourceFile == currentFile_) continue;
+            // Only process extend blocks for types we've registered
+            auto* structTI = typeRegistry_.lookup(sym->name);
+            if (!structTI || structTI->kind != TypeKind::Struct) continue;
+
+            auto* extCtx = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+            if (!extCtx) continue;
+
+            auto structName = sym->name;
+            for (auto* method : extCtx->extendMethod()) {
+                auto methodName = method->IDENTIFIER(0)->getText();
+                auto funcName = structName + "__" + methodName;
+
+                // Skip if already declared
+                if (module_->getFunction(funcName)) continue;
+
+                auto* retTI = resolveTypeInfo(method->typeSpec());
+                auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
+
+                bool isStatic = (method->AMPERSAND() == nullptr);
+
+                std::vector<llvm::Type*> paramLLTypes;
+                if (!isStatic) {
+                    paramLLTypes.push_back(
+                        llvm::PointerType::getUnqual(*context_)); // &self
+                }
+
+                std::vector<LuxParser::ParamContext*> params;
+                if (isStatic) {
+                    if (auto* pl = method->paramList())
+                        params = pl->param();
+                } else {
+                    params = method->param();
+                }
+
+                for (auto* param : params) {
+                    auto* pTI = resolveTypeInfo(param->typeSpec());
+                    paramLLTypes.push_back(
+                        pTI->toLLVMType(*context_, module_->getDataLayout()));
+                }
+
+                auto* fnType = llvm::FunctionType::get(
+                    retLLTy, paramLLTypes, false);
+                auto* fn = llvm::Function::Create(
+                    fnType, llvm::Function::ExternalLinkage,
+                    funcName, module_);
+
+                if (isStatic)
+                    staticStructMethods_[structName][methodName] = fn;
+                else
+                    structMethods_[structName][methodName] = fn;
+            }
+        }
+    };
+
+    // Extend blocks from same namespace
+    declareExtendMethods(currentNamespace_);
+
+    // Extend blocks from imported namespaces
+    std::unordered_set<std::string> processedNs;
+    for (auto& [symbolName, sourceNs] : userImports_) {
+        if (processedNs.insert(sourceNs).second)
+            declareExtendMethods(sourceNs);
     }
 
     // ── Phase 2: Declare extern functions from same namespace ──────────
@@ -1011,6 +1110,14 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
     auto* ti   = resolveTypeInfo(ctx->typeSpec());
     auto  dims = countArrayDims(ctx->typeSpec());
     auto  name = ctx->IDENTIFIER()->getText();
+
+    // Handle type-alias arrays (e.g. type Matrix = [3][3]float32)
+    std::vector<unsigned> aliasArraySizes;
+    if (dims == 0 && !ti->arraySizes.empty() && ti->elementType) {
+        dims = static_cast<unsigned>(ti->arraySizes.size());
+        aliasArraySizes = ti->arraySizes;
+        ti = ti->elementType;  // use base element type for codegen
+    }
 
     // Extended type (Vec<T>, Map<K,V>, Task<T>, Mutex) initialization
     if (ti->kind == TypeKind::Extended) {
@@ -1156,6 +1263,9 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
                 sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
                 spec = spec->typeSpec(0);
             }
+            // Fallback for type-alias arrays
+            if (sizes.empty() && !aliasArraySizes.empty())
+                sizes = aliasArraySizes;
             // Build nested array type from innermost to outermost
             llvm::Type* arrTy = elemType;
             for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)

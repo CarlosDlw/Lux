@@ -29,6 +29,7 @@ struct TypeInfo;
 struct FieldInfo {
     std::string     name;
     const TypeInfo* typeInfo;
+    bool            autoFill = false;  // compiler fills this field automatically
 };
 
 struct TypeInfo {
@@ -48,6 +49,7 @@ struct TypeInfo {
     const TypeInfo* valueType = nullptr;     // non-null for Map<K,V> → V
     std::string extendedKind;                // extended type base name: "Vec", "Map", etc.
     unsigned arraySize = 0;                  // >0 for fixed-size arrays: [N]T
+    std::vector<unsigned> arraySizes;        // multi-dim array sizes for type aliases: [3][3]T → {3,3}
 
     llvm::Type* toLLVMType(llvm::LLVMContext& ctx,
                            const llvm::DataLayout& dl) const;

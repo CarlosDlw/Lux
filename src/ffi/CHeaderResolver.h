@@ -30,6 +30,10 @@ public:
     // Extract header name from an INCLUDE_LOCAL token text like: #include "mylib.h"
     static std::string extractLocalHeader(const std::string& tokenText);
 
+    // List available system header files (for completion).
+    // Returns header names as they would appear in #include <...> (e.g. "stdio.h", "sys/types.h").
+    static std::vector<std::string> listSystemHeaders();
+
 private:
     CTypeMapper mapper_;
     CBindings&  bindings_;

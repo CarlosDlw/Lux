@@ -163,10 +163,35 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
 
     // Pass 1.5: register cross-file structs, enums, and functions
     // from same namespace and user imports, so type resolution works.
+    // Process in dependency order: enums/typeAliases first, then structs/unions, then functions.
     if (nsRegistry_) {
         // Same-namespace external symbols
         auto extSyms = nsRegistry_->getExternalSymbols(
             currentNamespace_, currentFile_);
+
+        // Phase A: enums and type aliases (these have no dependencies)
+        for (auto* sym : extSyms) {
+            if (sym->kind == ExportedSymbol::Enum) {
+                auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
+                checkEnumDecl(decl);
+            } else if (sym->kind == ExportedSymbol::TypeAlias) {
+                auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
+                checkTypeAliasDecl(decl);
+            }
+        }
+        for (auto& [symName, ns] : userImports_) {
+            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            if (!sym) continue;
+            if (sym->kind == ExportedSymbol::Enum) {
+                auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
+                checkEnumDecl(decl);
+            } else if (sym->kind == ExportedSymbol::TypeAlias) {
+                auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
+                checkTypeAliasDecl(decl);
+            }
+        }
+
+        // Phase B: structs and unions (may reference enums/aliases from phase A)
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Struct) {
                 auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
@@ -174,19 +199,8 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             } else if (sym->kind == ExportedSymbol::Union) {
                 auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
                 checkUnionDecl(decl);
-            } else if (sym->kind == ExportedSymbol::Enum) {
-                auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
-                checkEnumDecl(decl);
-            } else if (sym->kind == ExportedSymbol::TypeAlias) {
-                auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
-                checkTypeAliasDecl(decl);
-            } else if (sym->kind == ExportedSymbol::Function) {
-                auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
-                registerFunctionSignature(decl);
             }
         }
-
-        // User-imported symbols from other namespaces
         for (auto& [symName, ns] : userImports_) {
             auto* sym = nsRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
@@ -196,13 +210,46 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             } else if (sym->kind == ExportedSymbol::Union) {
                 auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
                 checkUnionDecl(decl);
-            } else if (sym->kind == ExportedSymbol::Enum) {
-                auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
-                checkEnumDecl(decl);
-            } else if (sym->kind == ExportedSymbol::TypeAlias) {
-                auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
-                checkTypeAliasDecl(decl);
-            } else if (sym->kind == ExportedSymbol::Function) {
+            }
+        }
+
+        // Phase B.5: extend blocks for imported structs (auto-resolved)
+        // When a struct is imported, its extend blocks from the same namespace
+        // must also be registered so methods like Type::new() work.
+        for (auto* sym : extSyms) {
+            if (sym->kind == ExportedSymbol::ExtendBlock) {
+                auto* decl = static_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                checkExtendDecl(decl);
+            }
+        }
+        for (auto& [symName, ns] : userImports_) {
+            // For each imported struct, look for its extend block in the same ns
+            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            if (!sym || (sym->kind != ExportedSymbol::Struct &&
+                         sym->kind != ExportedSymbol::Union))
+                continue;
+            // Find extend block with the same name in the same namespace
+            auto nsSyms = nsRegistry_->getNamespaceSymbols(ns);
+            for (auto* nsSym : nsSyms) {
+                if (nsSym->kind == ExportedSymbol::ExtendBlock &&
+                    nsSym->name == symName) {
+                    auto* extDecl = static_cast<LuxParser::ExtendDeclContext*>(nsSym->decl);
+                    checkExtendDecl(extDecl);
+                }
+            }
+        }
+
+        // Phase C: functions (may reference types from phases A and B)
+        for (auto* sym : extSyms) {
+            if (sym->kind == ExportedSymbol::Function) {
+                auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                registerFunctionSignature(decl);
+            }
+        }
+        for (auto& [symName, ns] : userImports_) {
+            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            if (!sym) continue;
+            if (sym->kind == ExportedSymbol::Function) {
                 auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
                 registerFunctionSignature(decl);
             }
@@ -567,6 +614,55 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
     return false;
 }
 
+void Checker::checkNegativeToUnsigned(const TypeInfo* target,
+                                       LuxParser::ExpressionContext* expr,
+                                       antlr4::ParserRuleContext* ctx) {
+    if (!target || target->kind != TypeKind::Integer || target->isSigned)
+        return;
+
+    // Unwrap try expression
+    if (auto* te = dynamic_cast<LuxParser::TryExprContext*>(expr))
+        expr = te->expression();
+
+    // Case 1: Positive integer literal → always safe for unsigned
+    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr))
+        return;
+
+    // Case 2: Negative literal (-N) → always invalid for unsigned
+    if (dynamic_cast<LuxParser::NegExprContext*>(expr)) {
+        error(ctx, "cannot assign negative value to unsigned type '" +
+                    target->name + "'");
+        return;
+    }
+
+    // Case 3: C macro constant — check its known value
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto id = ident->IDENTIFIER()->getText();
+        auto cit = cEnumConstants_.find(id);
+        if (cit != cEnumConstants_.end()) {
+            if (cit->second.value < 0) {
+                error(ctx, "cannot assign negative value " +
+                            std::to_string(cit->second.value) +
+                            " ('" + id + "') to unsigned type '" +
+                            target->name + "'");
+            }
+            return;  // known non-negative macro → OK
+        }
+    }
+
+    // Case 4: Explicit cast (expr as uint32) → user took responsibility
+    if (dynamic_cast<LuxParser::CastExprContext*>(expr))
+        return;
+
+    // Case 5: General signed → unsigned (function return, variable, etc.)
+    auto* rhsType = resolveExprType(expr);
+    if (rhsType && rhsType->kind == TypeKind::Integer && rhsType->isSigned) {
+        error(ctx, "cannot implicitly assign signed type '" + rhsType->name +
+                    "' to unsigned type '" + target->name +
+                    "'; use an explicit cast: 'expr as " + target->name + "'");
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Expression type resolution
 // ═══════════════════════════════════════════════════════════════════════
@@ -648,6 +744,40 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     // ── Parenthesized ────────────────────────────────────────────────
     if (auto* p = dynamic_cast<LuxParser::ParenExprContext*>(expr))
         return resolveExprType(p->expression());
+
+    // ── Try expression (unwrap — same type as inner) ─────────────────
+    if (auto* te = dynamic_cast<LuxParser::TryExprContext*>(expr))
+        return resolveExprType(te->expression());
+
+    // ── Spawn expression: spawn f() → Task<T> where f() returns T ───
+    if (auto* se = dynamic_cast<LuxParser::SpawnExprContext*>(expr)) {
+        auto* innerType = resolveExprType(se->expression());
+        if (innerType) {
+            auto fullName = "Task<" + innerType->name + ">";
+            auto* cached = typeRegistry_.lookup(fullName);
+            if (cached) return cached;
+            auto ti = std::make_unique<TypeInfo>();
+            ti->name = fullName;
+            ti->kind = TypeKind::Extended;
+            ti->bitWidth = 0;
+            ti->isSigned = false;
+            ti->elementType = innerType;
+            ti->extendedKind = "Task";
+            const TypeInfo* raw = ti.get();
+            dynamicTypes_.push_back(std::move(ti));
+            return raw;
+        }
+        return nullptr;
+    }
+
+    // ── Await expression: await task → T where task is Task<T> ──────
+    if (auto* ae = dynamic_cast<LuxParser::AwaitExprContext*>(expr)) {
+        auto* taskType = resolveExprType(ae->expression());
+        if (taskType && taskType->kind == TypeKind::Extended &&
+            taskType->extendedKind == "Task" && taskType->elementType)
+            return taskType->elementType;
+        return taskType;
+    }
 
     // ── Unary negation ───────────────────────────────────────────────
     if (auto* neg = dynamic_cast<LuxParser::NegExprContext*>(expr)) {
@@ -1242,10 +1372,9 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             size_t paramCount = calleeType->paramTypes.size();
 
             if (calleeType->isVariadic) {
-                size_t minArgs = paramCount > 0 ? paramCount - 1 : 0;
-                if (argTypes.size() < minArgs) {
+                if (argTypes.size() < paramCount) {
                     error(expr, "function call expects at least " +
-                                     std::to_string(minArgs) +
+                                     std::to_string(paramCount) +
                                      " arguments " + formatParamTypes(calleeType->paramTypes) +
                                      ", got " +
                                      std::to_string(argTypes.size()));
@@ -1414,7 +1543,15 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                                  std::to_string(fieldCount));
             }
         } else {
-            if (fieldCount != typeInfo->fields.size()) {
+            size_t requiredFields = 0;
+            for (auto& sf : typeInfo->fields) {
+                if (!sf.autoFill) requiredFields++;
+            }
+            if (fieldCount < requiredFields) {
+                error(expr, "struct '" + typeName + "' requires at least " +
+                                 std::to_string(requiredFields) +
+                                 " fields, got " + std::to_string(fieldCount));
+            } else if (fieldCount > typeInfo->fields.size()) {
                 error(expr, "struct '" + typeName + "' has " +
                                  std::to_string(typeInfo->fields.size()) +
                                  " fields, got " + std::to_string(fieldCount));
@@ -1465,6 +1602,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
         auto smIt = structMethods_.find(structName);
         if (smIt == structMethods_.end()) {
+            // Still resolve args so variables are marked as used
+            if (auto* argList = smc->argList())
+                for (auto* argExpr : argList->expression())
+                    resolveExprType(argExpr);
             error(expr, "struct '" + structName + "' has no methods");
             return nullptr;
         }
@@ -1481,6 +1622,17 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                         "' expects " + std::to_string(sm.paramTypes.size()) +
                         " arguments " + formatParamTypes(sm.paramTypes) +
                         ", got " + std::to_string(argTypes.size()));
+                } else {
+                    for (size_t i = 0; i < argTypes.size(); i++) {
+                        if (!argTypes[i] || !sm.paramTypes[i]) continue;
+                        if (!isAssignable(sm.paramTypes[i], argTypes[i])) {
+                            error(expr, "static method '" + structName + "::" +
+                                methodName + "' argument " +
+                                std::to_string(i + 1) + " type mismatch: expected '" +
+                                sm.paramTypes[i]->name + "', got '" +
+                                argTypes[i]->name + "'");
+                        }
+                    }
                 }
                 return sm.returnType;
             }
@@ -1525,6 +1677,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             error(expr, "undefined variable '" + varName + "'");
             return nullptr;
         }
+        it->second.used = true;
         return getPointerType(it->second.type);
     }
 
@@ -1666,6 +1819,9 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
                 } else {
                     userImports_[symbolName] = path;
                 }
+            } else if (!nsRegistry_) {
+                // No project context (LSP single-file mode) — assume valid
+                userImports_[symbolName] = path;
             } else {
                 error(item, "unknown module or namespace '" + path + "'");
             }
@@ -1690,6 +1846,11 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
                     } else {
                         userImports_[symbolName] = path;
                     }
+                }
+            } else if (!nsRegistry_) {
+                // No project context (LSP single-file mode) — assume valid
+                for (auto* id : grp->IDENTIFIER()) {
+                    userImports_[id->getText()] = path;
                 }
             } else {
                 error(grp, "unknown module or namespace '" + path + "'");
@@ -2361,7 +2522,10 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
 
     // Declaration without initializer: int32 x;
     if (!stmt->expression()) {
-        VarInfo vi{typeInfo, arrayDims, false, false, nullptr};
+        // Extended types (Vec, Map, Set) and Structs are implicitly initialized
+        bool autoInit = (typeInfo->kind == TypeKind::Extended ||
+                         typeInfo->kind == TypeKind::Struct);
+        VarInfo vi{typeInfo, arrayDims, autoInit, false, nullptr};
         if (stmt->IDENTIFIER() && stmt->IDENTIFIER()->getSymbol())
             vi.declToken = stmt->IDENTIFIER()->getSymbol();
         locals_[name] = vi;
@@ -2392,6 +2556,9 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
                          "' to variable '" + name + "' of type '" +
                          typeInfo->name + "'");
     }
+
+    // Check: assigning a negative constant to an unsigned integer type
+    checkNegativeToUnsigned(typeInfo, stmt->expression(), stmt);
 
     VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
     if (stmt->IDENTIFIER() && stmt->IDENTIFIER()->getSymbol())
@@ -2451,6 +2618,8 @@ void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
                              "' to variable '" + name + "' of type '" +
                              expectedType->name + "'");
         }
+        // Check: assigning a negative constant to an unsigned integer type
+        checkNegativeToUnsigned(expectedType, indexExprs.back(), stmt);
     }
 }
 
@@ -2677,11 +2846,10 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
         size_t paramCount = fnType->paramTypes.size();
 
         if (fnType->isVariadic) {
-            // Variadic: need at least (paramCount - 1) args
-            size_t minArgs = paramCount > 0 ? paramCount - 1 : 0;
-            if (argCount < minArgs) {
+            // Variadic: all declared params are required, extra args are variadic
+            if (argCount < paramCount) {
                 error(stmt, "function '" + name + "' expects at least " +
-                                 std::to_string(minArgs) +
+                                 std::to_string(paramCount) +
                                  " arguments " + formatParamTypes(fnType->paramTypes) +
                                  ", got " + std::to_string(argCount));
             }
@@ -2702,6 +2870,17 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
                                  std::to_string(paramCount) +
                                  " arguments " + formatParamTypes(fnType->paramTypes) +
                                  ", got " + std::to_string(argCount));
+            } else {
+                for (size_t i = 0; i < argCount; i++) {
+                    if (argTypes[i] && fnType->paramTypes[i] &&
+                        !isAssignable(fnType->paramTypes[i], argTypes[i])) {
+                        error(stmt,
+                            "argument " + std::to_string(i + 1) +
+                            " type mismatch in '" + name + "': expected '" +
+                            fnType->paramTypes[i]->name + "', got '" +
+                            argTypes[i]->name + "'");
+                    }
+                }
             }
         }
         return;

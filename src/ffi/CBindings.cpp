@@ -85,3 +85,22 @@ const TypeInfo* CBindings::internType(std::unique_ptr<TypeInfo> ti) {
     ownedTypes_.push_back(std::move(ti));
     return raw;
 }
+
+void CBindings::setStructLocation(const std::string& name,
+                                   const std::string& file, unsigned ln) {
+    auto it = structs_.find(name);
+    if (it != structs_.end()) {
+        it->second.sourceFile = file;
+        it->second.line       = ln;
+    }
+}
+
+void CBindings::addHeaderPath(const std::string& headerName,
+                               const std::string& absolutePath) {
+    headerPaths_.emplace(headerName, absolutePath);
+}
+
+std::string CBindings::resolveHeaderPath(const std::string& headerName) const {
+    auto it = headerPaths_.find(headerName);
+    return it != headerPaths_.end() ? it->second : std::string{};
+}

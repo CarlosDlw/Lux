@@ -18,9 +18,12 @@ int32 main() {
 
     println(a);
     println(b);
+    println(newline);
     println(space);
     println(digit);
     println(excl);
+    println(bell);
+    println(null_char);
     println(tab);
     println(backslash);
     println(quote);

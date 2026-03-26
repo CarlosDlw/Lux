@@ -76,8 +76,8 @@ void TypeRegistry::registerBuiltins() {
     const TypeInfo* i32TI  = lookup("int32");
 
     errorTI.fields.push_back({ "message", strTI  });
-    errorTI.fields.push_back({ "file",    strTI  });
-    errorTI.fields.push_back({ "line",    i32TI  });
-    errorTI.fields.push_back({ "column",  i32TI  });
+    errorTI.fields.push_back({ "file",    strTI,  true });
+    errorTI.fields.push_back({ "line",    i32TI,  true });
+    errorTI.fields.push_back({ "column",  i32TI,  true });
     registerType(std::move(errorTI));
 }

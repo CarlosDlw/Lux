@@ -1,0 +1,1576 @@
+#include "lsp/DefinitionProvider.h"
+#include "lsp/ProjectContext.h"
+#include "parser/Parser.h"
+#include "ffi/CHeaderResolver.h"
+#include "namespace/NamespaceRegistry.h"
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Static helpers
+// ═══════════════════════════════════════════════════════════════════════
+
+static bool containsToken(antlr4::ParserRuleContext* ctx, antlr4::Token* token) {
+    if (!ctx || !token) return false;
+    auto* start = ctx->getStart();
+    auto* stop  = ctx->getStop();
+    if (!start || !stop) return false;
+    size_t idx = token->getTokenIndex();
+    return idx >= start->getTokenIndex() && idx <= stop->getTokenIndex();
+}
+
+// Forward declarations for local collectors
+static void collectLocalsFromBlock(
+    LuxParser::BlockContext* block, size_t beforeLine,
+    std::unordered_map<std::string, DefinitionProvider::LocalVar>& out);
+
+static void collectLocalsFromStmts(
+    const std::vector<LuxParser::StatementContext*>& stmts, size_t beforeLine,
+    std::unordered_map<std::string, DefinitionProvider::LocalVar>& out) {
+
+    for (auto* stmt : stmts) {
+        auto* start = stmt->getStart();
+        if (start && start->getLine() > beforeLine + 1) break;
+
+        if (auto* vd = stmt->varDeclStmt()) {
+            std::string typeName;
+            if (vd->typeSpec()) typeName = vd->typeSpec()->getText();
+            std::string varName = vd->IDENTIFIER()->getText();
+            out[varName] = {typeName, 0, vd->IDENTIFIER()->getSymbol()};
+        }
+
+        // Recurse into nested blocks
+        if (auto* ifS = stmt->ifStmt()) {
+            collectLocalsFromBlock(ifS->block(), beforeLine, out);
+            for (auto* elif : ifS->elseIfClause())
+                collectLocalsFromBlock(elif->block(), beforeLine, out);
+            if (ifS->elseClause())
+                collectLocalsFromBlock(ifS->elseClause()->block(), beforeLine, out);
+        }
+        if (auto* forIn = stmt->forStmt()) {
+            if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forIn)) {
+                std::string tname = fin->typeSpec()->getText();
+                out[fin->IDENTIFIER()->getText()] =
+                    {tname, 0, fin->IDENTIFIER()->getSymbol()};
+                collectLocalsFromBlock(fin->block(), beforeLine, out);
+            }
+            if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(forIn)) {
+                std::string tname = fc->typeSpec()->getText();
+                out[fc->IDENTIFIER()->getText()] =
+                    {tname, 0, fc->IDENTIFIER()->getSymbol()};
+                collectLocalsFromBlock(fc->block(), beforeLine, out);
+            }
+        }
+        if (auto* ws = stmt->whileStmt())
+            collectLocalsFromBlock(ws->block(), beforeLine, out);
+        if (auto* dw = stmt->doWhileStmt())
+            collectLocalsFromBlock(dw->block(), beforeLine, out);
+        if (auto* ls = stmt->loopStmt())
+            collectLocalsFromBlock(ls->block(), beforeLine, out);
+        if (auto* sw = stmt->switchStmt()) {
+            for (auto* c : sw->caseClause())
+                collectLocalsFromBlock(c->block(), beforeLine, out);
+            if (sw->defaultClause())
+                collectLocalsFromBlock(sw->defaultClause()->block(), beforeLine, out);
+        }
+        if (auto* tc = stmt->tryCatchStmt()) {
+            collectLocalsFromBlock(tc->block(), beforeLine, out);
+            for (auto* cc : tc->catchClause()) {
+                out[cc->IDENTIFIER()->getText()] =
+                    {cc->typeSpec()->getText(), 0, cc->IDENTIFIER()->getSymbol()};
+                collectLocalsFromBlock(cc->block(), beforeLine, out);
+            }
+            if (tc->finallyClause())
+                collectLocalsFromBlock(tc->finallyClause()->block(), beforeLine, out);
+        }
+    }
+}
+
+static void collectLocalsFromBlock(
+    LuxParser::BlockContext* block, size_t beforeLine,
+    std::unordered_map<std::string, DefinitionProvider::LocalVar>& out) {
+    if (!block) return;
+    collectLocalsFromStmts(block->statement(), beforeLine, out);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Main entry point
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::definition(
+    const std::string& source, size_t line, size_t col,
+    const std::string& filePath, const ProjectContext* project) {
+
+    auto parsed = Parser::parseString(source);
+    if (!parsed.tree) return std::nullopt;
+
+    // Resolve C headers
+    CBindings localBindings;
+    TypeRegistry cTypeReg;
+    const CBindings* cBindingsPtr = nullptr;
+
+    if (project && project->isValid()) {
+        cBindingsPtr = &project->cBindings();
+    } else {
+        auto includes = parsed.tree->includeDecl();
+        if (!includes.empty()) {
+            CHeaderResolver resolver(cTypeReg, localBindings);
+            for (auto* incl : includes) {
+                auto text = incl->getText();
+                if (incl->INCLUDE_SYS()) {
+                    auto header = CHeaderResolver::extractSystemHeader(text);
+                    if (!header.empty())
+                        resolver.resolveSystemHeader(header);
+                } else if (incl->INCLUDE_LOCAL()) {
+                    auto header = CHeaderResolver::extractLocalHeader(text);
+                    if (!header.empty())
+                        resolver.resolveLocalHeader(header, ".");
+                }
+            }
+        }
+        cBindingsPtr = &localBindings;
+    }
+
+    // Find token at cursor (0-based → 1-based)
+    size_t tokenLine = line + 1;
+    antlr4::Token* hoveredToken = nullptr;
+
+    for (auto& token : parsed.tokens->getTokens()) {
+        if (token->getType() == antlr4::Token::EOF) continue;
+        if (token->getLine() == tokenLine) {
+            size_t start = token->getCharPositionInLine();
+            size_t end   = start + token->getText().length();
+            if (col >= start && col < end) {
+                hoveredToken = token;
+                break;
+            }
+        }
+    }
+    if (!hoveredToken) return std::nullopt;
+
+    std::string tokenText = hoveredToken->getText();
+
+    return resolveAtPosition(parsed.tree, hoveredToken, tokenText,
+                             *cBindingsPtr, line, filePath, project);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Top-level resolution
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
+    LuxParser::ProgramContext* tree, antlr4::Token* hoveredToken,
+    const std::string& tokenText, const CBindings& bindings,
+    size_t cursorLine, const std::string& filePath,
+    const ProjectContext* project) {
+
+    size_t tokenLine = cursorLine + 1; // 0-based → 1-based
+
+    // ── #include directives: jump to the actual header file ─────────────
+    {
+        auto tokType = static_cast<size_t>(hoveredToken->getType());
+        if (tokType == LuxParser::INCLUDE_SYS || tokType == LuxParser::INCLUDE_LOCAL) {
+            std::string headerName = (tokType == LuxParser::INCLUDE_SYS)
+                ? CHeaderResolver::extractSystemHeader(tokenText)
+                : CHeaderResolver::extractLocalHeader(tokenText);
+            if (!headerName.empty()) {
+                std::string path = bindings.resolveHeaderPath(headerName);
+                if (!path.empty()) {
+                    DefinitionResult r;
+                    r.uri     = "file://" + path;
+                    r.line    = 0;
+                    r.col     = 0;
+                    r.endLine = 0;
+                    r.endCol  = 0;
+                    return r;
+                }
+            }
+            return std::nullopt;
+        }
+    }
+
+    // ── Use declarations: go to definition of the imported symbol ────
+    for (auto* useDecl : tree->useDecl()) {
+        if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+            if (item->IDENTIFIER()->getSymbol() == hoveredToken) {
+                std::string modulePath;
+                for (auto* id : item->modulePath()->IDENTIFIER()) {
+                    if (!modulePath.empty()) modulePath += "::";
+                    modulePath += id->getText();
+                }
+                return resolveImportedSymbol(item->IDENTIFIER()->getText(),
+                                             modulePath, project);
+            }
+        }
+        if (auto* group = dynamic_cast<LuxParser::UseGroupContext*>(useDecl)) {
+            std::string modulePath;
+            for (auto* id : group->modulePath()->IDENTIFIER()) {
+                if (!modulePath.empty()) modulePath += "::";
+                modulePath += id->getText();
+            }
+            for (auto* id : group->IDENTIFIER()) {
+                if (id->getSymbol() == hoveredToken) {
+                    return resolveImportedSymbol(id->getText(), modulePath, project);
+                }
+            }
+        }
+    }
+
+    // ── Top-level declarations: jump to self (declaration definition) ──
+    for (auto* tld : tree->topLevelDecl()) {
+        // Function name → jump to self
+        if (auto* func = tld->functionDecl()) {
+            if (func->IDENTIFIER()->getSymbol() == hoveredToken)
+                return makeResult(hoveredToken, filePath);
+            // Parameter type spec → resolve type name
+            if (auto* params = func->paramList()) {
+                for (auto* p : params->param()) {
+                    if (auto r = resolveTypeSpecToken(p->typeSpec(), hoveredToken,
+                            tree, bindings, filePath, project))
+                        return r;
+                }
+            }
+            // Return type spec
+            if (auto r = resolveTypeSpecToken(func->typeSpec(), hoveredToken,
+                    tree, bindings, filePath, project))
+                return r;
+        }
+
+        // Struct name
+        if (auto* sd = tld->structDecl()) {
+            if (sd->IDENTIFIER()->getSymbol() == hoveredToken)
+                return makeResult(hoveredToken, filePath);
+            // Field type specs
+            for (auto* f : sd->structField()) {
+                if (auto r = resolveTypeSpecToken(f->typeSpec(), hoveredToken,
+                        tree, bindings, filePath, project))
+                    return r;
+            }
+        }
+
+        // Enum name
+        if (auto* ed = tld->enumDecl()) {
+            if (ed->IDENTIFIER()[0]->getSymbol() == hoveredToken)
+                return makeResult(hoveredToken, filePath);
+        }
+
+        // Union name
+        if (auto* ud = tld->unionDecl()) {
+            if (ud->IDENTIFIER()->getSymbol() == hoveredToken)
+                return makeResult(hoveredToken, filePath);
+            for (auto* f : ud->unionField()) {
+                if (auto r = resolveTypeSpecToken(f->typeSpec(), hoveredToken,
+                        tree, bindings, filePath, project))
+                    return r;
+            }
+        }
+
+        // Extend declaration
+        if (auto* ext = tld->extendDecl()) {
+            if (ext->IDENTIFIER()->getSymbol() == hoveredToken) {
+                // Jump to the struct definition
+                return resolveTypeName(tokenText, tree, bindings, filePath, project);
+            }
+        }
+
+        // Type alias
+        if (auto* ta = tld->typeAliasDecl()) {
+            if (ta->IDENTIFIER()->getSymbol() == hoveredToken)
+                return makeResult(hoveredToken, filePath);
+            if (auto r = resolveTypeSpecToken(ta->typeSpec(), hoveredToken,
+                    tree, bindings, filePath, project))
+                return r;
+        }
+
+        // Extern declaration
+        if (auto* ext = tld->externDecl()) {
+            if (ext->IDENTIFIER()->getSymbol() == hoveredToken)
+                return makeResult(hoveredToken, filePath);
+        }
+    }
+
+    // ── Walk function bodies ────────────────────────────────────────
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* func = tld->functionDecl()) {
+            auto* startTok = func->getStart();
+            auto* stopTok  = func->getStop();
+            if (startTok && stopTok &&
+                tokenLine >= startTok->getLine() && tokenLine <= stopTok->getLine()) {
+                auto result = walkBlockForDef(func->block(), hoveredToken,
+                    tokenText, tree, bindings, cursorLine, filePath, project);
+                if (result) return result;
+            }
+            continue;
+        }
+
+        // Walk extend block method bodies
+        if (auto* ext = tld->extendDecl()) {
+            auto* startTok = ext->getStart();
+            auto* stopTok  = ext->getStop();
+            if (!startTok || !stopTok) continue;
+            if (tokenLine < startTok->getLine() || tokenLine > stopTok->getLine())
+                continue;
+
+            for (auto* method : ext->extendMethod()) {
+                auto* mStart = method->getStart();
+                auto* mStop  = method->getStop();
+                if (!mStart || !mStop) continue;
+                if (tokenLine < mStart->getLine() || tokenLine > mStop->getLine())
+                    continue;
+
+                // Return type spec
+                if (auto r = resolveTypeSpecToken(method->typeSpec(), hoveredToken,
+                        tree, bindings, filePath, project))
+                    return r;
+
+                // Parameters type specs
+                bool isStatic = (method->AMPERSAND() == nullptr);
+                std::vector<LuxParser::ParamContext*> params;
+                if (isStatic) {
+                    if (auto* pl = method->paramList())
+                        params = pl->param();
+                } else {
+                    params = method->param();
+                }
+                for (auto* p : params) {
+                    if (auto r = resolveTypeSpecToken(p->typeSpec(), hoveredToken,
+                            tree, bindings, filePath, project))
+                        return r;
+                }
+
+                // Walk method body
+                auto result = walkBlockForDef(method->block(), hoveredToken,
+                    tokenText, tree, bindings, cursorLine, filePath, project);
+                if (result) return result;
+            }
+        }
+    }
+
+    // ── Fallback: resolve any identifier ────────────────────────────
+    if (hoveredToken->getType() == LuxLexer::IDENTIFIER) {
+        return resolveIdent(tokenText, tree, bindings, cursorLine, filePath, project);
+    }
+
+    return std::nullopt;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Resolve identifier to its definition
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
+    const std::string& name, LuxParser::ProgramContext* tree,
+    const CBindings& bindings, size_t cursorLine,
+    const std::string& filePath, const ProjectContext* project) {
+
+    // 1) Local variable / parameter
+    auto* func = findEnclosingFunction(tree, cursorLine);
+    if (func) {
+        auto locals = collectLocals(func, cursorLine);
+        auto it = locals.find(name);
+        if (it != locals.end() && it->second.declToken)
+            return makeResult(it->second.declToken, filePath);
+    }
+
+    // 1.5) Parameter or local inside extend method body
+    if (!func) {
+        size_t tokenLine = cursorLine + 1;
+        for (auto* tld : tree->topLevelDecl()) {
+            auto* ext = tld->extendDecl();
+            if (!ext) continue;
+            for (auto* method : ext->extendMethod()) {
+                auto* ms = method->getStart();
+                auto* me = method->getStop();
+                if (!ms || !me) continue;
+                if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
+
+                // Check parameters
+                bool isStatic = (method->AMPERSAND() == nullptr);
+                std::vector<LuxParser::ParamContext*> params;
+                if (isStatic) {
+                    if (auto* pl = method->paramList())
+                        params = pl->param();
+                } else {
+                    params = method->param();
+                }
+                for (auto* p : params) {
+                    if (p->IDENTIFIER()->getText() == name)
+                        return makeResult(p->IDENTIFIER()->getSymbol(), filePath);
+                }
+
+                // Locals from method body
+                std::unordered_map<std::string, LocalVar> locals;
+                collectLocalsFromBlock(method->block(), cursorLine, locals);
+                auto it = locals.find(name);
+                if (it != locals.end() && it->second.declToken)
+                    return makeResult(it->second.declToken, filePath);
+            }
+        }
+    }
+
+    // 2) User-defined function
+    auto* funcDecl = findFunctionDecl(tree, name);
+    if (funcDecl)
+        return makeResult(funcDecl->IDENTIFIER()->getSymbol(), filePath);
+
+    // 3) Extern declaration
+    auto* externDecl = findExternDecl(tree, name);
+    if (externDecl)
+        return makeResult(externDecl->IDENTIFIER()->getSymbol(), filePath);
+
+    // 4) Struct
+    auto* structDecl = findStructDecl(tree, name);
+    if (structDecl)
+        return makeResult(structDecl->IDENTIFIER()->getSymbol(), filePath);
+
+    // 5) Enum
+    auto* enumDecl = findEnumDecl(tree, name);
+    if (enumDecl)
+        return makeResult(enumDecl->IDENTIFIER()[0]->getSymbol(), filePath);
+
+    // 6) Union
+    auto* unionDecl = findUnionDecl(tree, name);
+    if (unionDecl)
+        return makeResult(unionDecl->IDENTIFIER()->getSymbol(), filePath);
+
+    // 7) Type alias
+    auto* aliasDecl = findTypeAliasDecl(tree, name);
+    if (aliasDecl)
+        return makeResult(aliasDecl->IDENTIFIER()->getSymbol(), filePath);
+
+    // 8) Extend block
+    auto* extDecl = findExtendDecl(tree, name);
+    if (extDecl)
+        return makeResult(extDecl->IDENTIFIER()->getSymbol(), filePath);
+
+    // 9) Enum variant (Name inside EnumName::Name or standalone imported)
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* ed = tld->enumDecl()) {
+            auto ids = ed->IDENTIFIER();
+            for (size_t i = 1; i < ids.size(); i++) {
+                if (ids[i]->getText() == name)
+                    return makeResult(ids[i]->getSymbol(), filePath);
+            }
+        }
+    }
+
+    // 10) Cross-file symbol from project registry
+    if (project && project->isValid()) {
+        for (auto& ns : project->registry().allNamespaces()) {
+            auto* sym = project->registry().findSymbol(ns, name);
+            if (!sym || !sym->decl) continue;
+            auto* declStart = sym->decl->getStart();
+            if (!declStart) continue;
+            return makeResult(declStart, filePath, sym->sourceFile);
+        }
+    }
+
+    // 11) C function
+    if (auto* cf = bindings.findFunction(name)) {
+        if (!cf->sourceFile.empty()) {
+            DefinitionResult r;
+            r.uri = "file://" + cf->sourceFile;
+            r.line = r.endLine = cf->line;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
+    // 12) C macro constant
+    if (auto* cm = bindings.findMacro(name)) {
+        if (!cm->sourceFile.empty()) {
+            DefinitionResult r;
+            r.uri = "file://" + cm->sourceFile;
+            r.line = r.endLine = cm->line;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
+    // 12b) C struct-literal macro
+    if (auto* sm = bindings.findStructMacro(name)) {
+        if (!sm->sourceFile.empty()) {
+            DefinitionResult r;
+            r.uri = "file://" + sm->sourceFile;
+            r.line = r.endLine = sm->line;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
+    // 13) C struct / union
+    if (auto* cs = bindings.findStruct(name)) {
+        if (!cs->sourceFile.empty()) {
+            DefinitionResult r;
+            r.uri = "file://" + cs->sourceFile;
+            r.line = r.endLine = cs->line;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
+    // 14) C enum type
+    if (auto* ce = bindings.findEnum(name)) {
+        if (!ce->sourceFile.empty()) {
+            DefinitionResult r;
+            r.uri = "file://" + ce->sourceFile;
+            r.line = r.endLine = ce->line;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
+    // 14b) C enum constant (e.g. FLAG_VSYNC_HINT inside ConfigFlags)
+    for (auto& [ename, cenum] : bindings.enums()) {
+        auto vit = cenum.valueLocs.find(name);
+        if (vit != cenum.valueLocs.end()) {
+            DefinitionResult r;
+            r.uri = "file://" + vit->second.first;
+            r.line = r.endLine = vit->second.second;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
+    // 15) C typedef
+    if (auto* ct = bindings.findTypedef(name)) {
+        if (!ct->sourceFile.empty()) {
+            DefinitionResult r;
+            r.uri = "file://" + ct->sourceFile;
+            r.line = r.endLine = ct->line;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
+    // 16) C global variable
+    if (auto* gv = bindings.findGlobal(name)) {
+        if (!gv->sourceFile.empty()) {
+            DefinitionResult r;
+            r.uri = "file://" + gv->sourceFile;
+            r.line = r.endLine = gv->line;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
+    return std::nullopt;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Resolve type name to its definition
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::resolveTypeName(
+    const std::string& name, LuxParser::ProgramContext* tree,
+    const CBindings& bindings, const std::string& filePath,
+    const ProjectContext* project) {
+
+    // Same-file struct/enum/union/typealias
+    if (auto* sd = findStructDecl(tree, name))
+        return makeResult(sd->IDENTIFIER()->getSymbol(), filePath);
+    if (auto* ed = findEnumDecl(tree, name))
+        return makeResult(ed->IDENTIFIER()[0]->getSymbol(), filePath);
+    if (auto* ud = findUnionDecl(tree, name))
+        return makeResult(ud->IDENTIFIER()->getSymbol(), filePath);
+    if (auto* ta = findTypeAliasDecl(tree, name))
+        return makeResult(ta->IDENTIFIER()->getSymbol(), filePath);
+
+    // Cross-file
+    if (project && project->isValid()) {
+        for (auto& ns : project->registry().allNamespaces()) {
+            auto* sym = project->registry().findSymbol(ns, name);
+            if (!sym || !sym->decl) continue;
+            if (sym->kind != ExportedSymbol::Struct &&
+                sym->kind != ExportedSymbol::Enum &&
+                sym->kind != ExportedSymbol::Union &&
+                sym->kind != ExportedSymbol::TypeAlias) continue;
+            auto* declStart = sym->decl->getStart();
+            if (!declStart) continue;
+            return makeResult(declStart, filePath, sym->sourceFile);
+        }
+    }
+
+    return std::nullopt;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Resolve imported symbol from `use` declaration
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::resolveImportedSymbol(
+    const std::string& symbolName, const std::string& modulePath,
+    const ProjectContext* project) {
+
+    if (!project || !project->isValid()) return std::nullopt;
+
+    auto* sym = project->registry().findSymbol(modulePath, symbolName);
+    if (!sym || !sym->decl) return std::nullopt;
+
+    auto* declStart = sym->decl->getStart();
+    if (!declStart) return std::nullopt;
+
+    // For cross-file results we need a dummy filePath (unused in the overload)
+    return makeResult(declStart, "", sym->sourceFile);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Resolve type specs (hovering on a type name in a type annotation)
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::resolveTypeSpecToken(
+    LuxParser::TypeSpecContext* typeSpec, antlr4::Token* hoveredToken,
+    LuxParser::ProgramContext* tree, const CBindings& bindings,
+    const std::string& filePath, const ProjectContext* project) {
+
+    if (!typeSpec) return std::nullopt;
+
+    // TypeSpec has a single IDENTIFIER for the type name
+    if (auto* id = typeSpec->IDENTIFIER()) {
+        if (id->getSymbol() == hoveredToken) {
+            return resolveTypeName(id->getText(), tree, bindings, filePath, project);
+        }
+    }
+
+    // Recurse into nested type specs (generics, arrays, pointers, etc.)
+    for (auto* nested : typeSpec->typeSpec()) {
+        if (auto r = resolveTypeSpecToken(nested, hoveredToken, tree, bindings,
+                                          filePath, project))
+            return r;
+    }
+
+    return std::nullopt;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AST walker: expressions
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
+    LuxParser::ExpressionContext* expr, antlr4::Token* hoveredToken,
+    const std::string& tokenText, LuxParser::ProgramContext* tree,
+    const CBindings& bindings, size_t cursorLine,
+    const std::string& filePath, const ProjectContext* project) {
+
+    if (!expr || !containsToken(expr, hoveredToken)) return std::nullopt;
+    if (auto* fc = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
+        if (auto r = walkExprForDef(fc->expression(), hoveredToken, tokenText,
+                                    tree, bindings, cursorLine, filePath, project))
+            return r;
+        if (auto* args = fc->argList()) {
+            for (auto* arg : args->expression()) {
+                if (auto r = walkExprForDef(arg, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Method call: expr.method(args) ────────────────────────────
+    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
+        if (auto* id = mc->IDENTIFIER()) {
+            if (id->getSymbol() == hoveredToken) {
+                // Resolve method name to its extend method declaration
+                std::string methodName = id->getText();
+                auto* receiver = mc->expression();
+                std::string receiverTypeName;
+
+                // Try to get receiver variable type from locals
+                if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(receiver)) {
+                    auto* encFunc = findEnclosingFunction(tree, cursorLine);
+                    if (encFunc) {
+                        auto locals = collectLocals(encFunc, cursorLine);
+                        auto it = locals.find(ident->IDENTIFIER()->getText());
+                        if (it != locals.end())
+                            receiverTypeName = it->second.typeName;
+                    }
+                }
+
+                // Search local extend blocks
+                for (auto* tld : tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    if (!receiverTypeName.empty() &&
+                        ext->IDENTIFIER()->getText() != receiverTypeName)
+                        continue;
+                    for (auto* m : ext->extendMethod()) {
+                        if (m->IDENTIFIER(0)->getText() == methodName)
+                            return makeResult(m->IDENTIFIER(0)->getSymbol(), filePath);
+                    }
+                }
+
+                // Search cross-file extend blocks
+                if (project && project->isValid()) {
+                    for (auto& ns : project->registry().allNamespaces()) {
+                        auto syms = project->registry().getNamespaceSymbols(ns);
+                        for (auto* sym : syms) {
+                            if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+                            auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                            if (!ext) continue;
+                            if (!receiverTypeName.empty() &&
+                                ext->IDENTIFIER()->getText() != receiverTypeName)
+                                continue;
+                            for (auto* m : ext->extendMethod()) {
+                                if (m->IDENTIFIER(0)->getText() == methodName)
+                                    return makeResult(m->IDENTIFIER(0)->getSymbol(),
+                                                      filePath, sym->sourceFile);
+                            }
+                        }
+                    }
+                }
+
+                return std::nullopt;
+            }
+        }
+        if (auto r = walkExprForDef(mc->expression(), hoveredToken, tokenText,
+                                    tree, bindings, cursorLine, filePath, project))
+            return r;
+        if (auto* args = mc->argList()) {
+            for (auto* arg : args->expression()) {
+                if (auto r = walkExprForDef(arg, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Field access: expr.field ──────────────────────────────────
+    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+        // If hovering over the field name, resolve it to the struct field decl
+        if (fa->IDENTIFIER()->getSymbol() == hoveredToken ||
+            fa->IDENTIFIER()->getSymbol()->getTokenIndex() == hoveredToken->getTokenIndex()) {
+            std::string structName = inferExprStructType(fa->expression(), tree,
+                                                         cursorLine);
+
+            if (!structName.empty())
+                return resolveStructField(structName, tokenText, tree, bindings,
+                                          filePath, project);
+            return std::nullopt;
+        }
+        return walkExprForDef(fa->expression(), hoveredToken, tokenText,
+                              tree, bindings, cursorLine, filePath, project);
+    }
+
+    // ── Arrow access: expr->field ─────────────────────────────────
+    if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
+        if (aa->IDENTIFIER()->getSymbol() == hoveredToken ||
+            aa->IDENTIFIER()->getSymbol()->getTokenIndex() == hoveredToken->getTokenIndex()) {
+            std::string structName = inferExprStructType(aa->expression(), tree,
+                                                         cursorLine);
+
+            if (!structName.empty())
+                return resolveStructField(structName, tokenText, tree, bindings,
+                                          filePath, project);
+            return std::nullopt;
+        }
+        return walkExprForDef(aa->expression(), hoveredToken, tokenText,
+                              tree, bindings, cursorLine, filePath, project);
+    }
+
+    // ── Enum access: EnumName::Variant ───────────────────────────
+    if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
+        auto ids = ea->IDENTIFIER();
+        if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
+            return resolveTypeName(ids[0]->getText(), tree, bindings,
+                                   filePath, project);
+        }
+        if (ids.size() >= 2 && ids[1]->getSymbol() == hoveredToken) {
+            // Jump to the enum variant
+            std::string enumName = ids[0]->getText();
+            auto* enumDecl = findEnumDecl(tree, enumName);
+            if (enumDecl) {
+                auto allIds = enumDecl->IDENTIFIER();
+                for (size_t i = 1; i < allIds.size(); i++) {
+                    if (allIds[i]->getText() == ids[1]->getText())
+                        return makeResult(allIds[i]->getSymbol(), filePath);
+                }
+            }
+            // Cross-file enum
+            if (project && project->isValid()) {
+                for (auto& ns : project->registry().allNamespaces()) {
+                    auto* sym = project->registry().findSymbol(ns, enumName);
+                    if (!sym || sym->kind != ExportedSymbol::Enum) continue;
+                    auto* ed = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
+                    if (!ed) continue;
+                    auto allIds = ed->IDENTIFIER();
+                    for (size_t i = 1; i < allIds.size(); i++) {
+                        if (allIds[i]->getText() == ids[1]->getText())
+                            return makeResult(allIds[i]->getSymbol(), filePath,
+                                              sym->sourceFile);
+                    }
+                }
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Static method call: Type::method(args) ───────────────────
+    if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
+        auto ids = smc->IDENTIFIER();
+        if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
+            return resolveTypeName(ids[0]->getText(), tree, bindings,
+                                   filePath, project);
+        }
+        // Static method name → resolve to extend method declaration
+        if (ids.size() >= 2 && ids[1]->getSymbol() == hoveredToken) {
+            std::string typeName   = ids[0]->getText();
+            std::string methodName = ids[1]->getText();
+
+            // Search local extend blocks
+            for (auto* tld : tree->topLevelDecl()) {
+                auto* ext = tld->extendDecl();
+                if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                for (auto* m : ext->extendMethod()) {
+                    if (m->IDENTIFIER(0)->getText() == methodName)
+                        return makeResult(m->IDENTIFIER(0)->getSymbol(), filePath);
+                }
+            }
+
+            // Search cross-file extend blocks
+            if (project && project->isValid()) {
+                for (auto& ns : project->registry().allNamespaces()) {
+                    auto syms = project->registry().getNamespaceSymbols(ns);
+                    for (auto* sym : syms) {
+                        if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+                        auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                        if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                        for (auto* m : ext->extendMethod()) {
+                            if (m->IDENTIFIER(0)->getText() == methodName)
+                                return makeResult(m->IDENTIFIER(0)->getSymbol(),
+                                                  filePath, sym->sourceFile);
+                        }
+                    }
+                }
+            }
+        }
+        if (auto* args = smc->argList()) {
+            for (auto* arg : args->expression()) {
+                if (auto r = walkExprForDef(arg, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Struct literal: StructName { field: val, ... } ───────────
+    if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(expr)) {
+        auto ids = sl->IDENTIFIER();
+        if (!ids.empty() && ids[0]->getSymbol() == hoveredToken) {
+            return resolveTypeName(ids[0]->getText(), tree, bindings,
+                                   filePath, project);
+        }
+        for (auto* subExpr : sl->expression()) {
+            if (auto r = walkExprForDef(subExpr, hoveredToken, tokenText,
+                                        tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Cast expression: expr as Type ────────────────────────────
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr)) {
+        if (auto r = walkExprForDef(cast->expression(), hoveredToken, tokenText,
+                                    tree, bindings, cursorLine, filePath, project))
+            return r;
+        if (auto r = resolveTypeSpecToken(cast->typeSpec(), hoveredToken, tree,
+                                          bindings, filePath, project))
+            return r;
+        return std::nullopt;
+    }
+
+    // ── Spawn expression: spawn funcCall ─────────────────────────
+    if (auto* sp = dynamic_cast<LuxParser::SpawnExprContext*>(expr)) {
+        return walkExprForDef(sp->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
+    }
+
+    // ── Await expression: await expr ─────────────────────────────
+    if (auto* aw = dynamic_cast<LuxParser::AwaitExprContext*>(expr)) {
+        return walkExprForDef(aw->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
+    }
+
+    // ── Try expression: try expr ─────────────────────────────────
+    if (auto* te = dynamic_cast<LuxParser::TryExprContext*>(expr)) {
+        return walkExprForDef(te->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
+    }
+
+    // ── Array literal ────────────────────────────────────────────
+    if (auto* al = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
+        for (auto* elem : al->expression()) {
+            if (auto r = walkExprForDef(elem, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Unary expressions (neg, logical not, bit not, deref, addr-of) ──
+    if (auto* ne = dynamic_cast<LuxParser::NegExprContext*>(expr)) {
+        return walkExprForDef(ne->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
+    }
+    if (auto* ln = dynamic_cast<LuxParser::LogicalNotExprContext*>(expr)) {
+        return walkExprForDef(ln->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
+    }
+    if (auto* bn = dynamic_cast<LuxParser::BitNotExprContext*>(expr)) {
+        return walkExprForDef(bn->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
+    }
+    if (auto* dr = dynamic_cast<LuxParser::DerefExprContext*>(expr)) {
+        return walkExprForDef(dr->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
+    }
+    if (auto* ao = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
+        // &identifier — resolve the identifier
+        if (auto* id = ao->IDENTIFIER()) {
+            if (id->getSymbol() == hoveredToken) {
+                return resolveIdent(id->getText(), tree, bindings, cursorLine,
+                                    filePath, project);
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Binary expressions (arithmetic, comparison, logical, etc.) ──
+    // AddSub, Mul, Shift, BitAnd, BitOr, BitXor
+    if (auto* ae = dynamic_cast<LuxParser::AddSubExprContext*>(expr)) {
+        for (auto* sub : ae->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+    if (auto* me = dynamic_cast<LuxParser::MulExprContext*>(expr)) {
+        for (auto* sub : me->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+    // Relational and equality
+    if (auto* re = dynamic_cast<LuxParser::RelExprContext*>(expr)) {
+        for (auto* sub : re->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+    if (auto* eq = dynamic_cast<LuxParser::EqExprContext*>(expr)) {
+        for (auto* sub : eq->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+    // Logical and/or
+    if (auto* la = dynamic_cast<LuxParser::LogicalAndExprContext*>(expr)) {
+        for (auto* sub : la->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+    if (auto* lo = dynamic_cast<LuxParser::LogicalOrExprContext*>(expr)) {
+        for (auto* sub : lo->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Index expression: expr[idx] ──────────────────────────────
+    if (auto* ie = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
+        for (auto* sub : ie->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // (No AssignExpr — assignment is a statement in Lux)
+
+    // ── Paren expression: (expr) ─────────────────────────────────
+    if (auto* pe = dynamic_cast<LuxParser::ParenExprContext*>(expr)) {
+        return walkExprForDef(pe->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
+    }
+
+    // ── Ternary expression: cond ? then : else ───────────────────
+    if (auto* te = dynamic_cast<LuxParser::TernaryExprContext*>(expr)) {
+        for (auto* sub : te->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Null coalescing: expr ?? fallback ────────────────────────
+    if (auto* nc = dynamic_cast<LuxParser::NullCoalExprContext*>(expr)) {
+        for (auto* sub : nc->expression()) {
+            if (auto r = walkExprForDef(sub, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // (Lambda expressions are not a separate ExprContext in Lux grammar)
+
+    // ── Identifier expression (variable name, function name, etc.) ──
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        if (id->IDENTIFIER()->getSymbol() == hoveredToken) {
+            return resolveIdent(tokenText, tree, bindings, cursorLine,
+                                filePath, project);
+        }
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AST walker: statements
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
+    LuxParser::StatementContext* stmt, antlr4::Token* hoveredToken,
+    const std::string& tokenText, LuxParser::ProgramContext* tree,
+    const CBindings& bindings, size_t cursorLine,
+    const std::string& filePath, const ProjectContext* project) {
+
+    if (!stmt || !containsToken(stmt, hoveredToken)) return std::nullopt;
+
+    // ── Variable declaration ─────────────────────────────────────
+    if (auto* vd = stmt->varDeclStmt()) {
+        // Type spec
+        if (auto r = resolveTypeSpecToken(vd->typeSpec(), hoveredToken, tree,
+                                          bindings, filePath, project))
+            return r;
+        // Initializer expression
+        if (auto* initExpr = vd->expression()) {
+            if (auto r = walkExprForDef(initExpr, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Expression statement ─────────────────────────────────────
+    if (auto* es = stmt->exprStmt()) {
+        if (auto* expr = es->expression()) {
+            return walkExprForDef(expr, hoveredToken, tokenText, tree,
+                                  bindings, cursorLine, filePath, project);
+        }
+        return std::nullopt;
+    }
+
+    // ── Call statement: IDENTIFIER(args) ─────────────────────────
+    if (auto* cs = stmt->callStmt()) {
+        // Function name
+        if (auto* id = cs->IDENTIFIER()) {
+            if (id->getSymbol() == hoveredToken) {
+                return resolveIdent(id->getText(), tree, bindings, cursorLine,
+                                    filePath, project);
+            }
+        }
+        // Arguments
+        if (auto* args = cs->argList()) {
+            for (auto* arg : args->expression()) {
+                if (auto r = walkExprForDef(arg, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Return statement ─────────────────────────────────────────
+    if (auto* rs = stmt->returnStmt()) {
+        if (auto* expr = rs->expression()) {
+            return walkExprForDef(expr, hoveredToken, tokenText, tree,
+                                  bindings, cursorLine, filePath, project);
+        }
+        return std::nullopt;
+    }
+
+    // ── Assign statement ─────────────────────────────────────────
+    if (auto* as = stmt->assignStmt()) {
+        if (auto* lhs = as->expression(0)) {
+            if (auto r = walkExprForDef(lhs, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        if (auto* rhs = as->expression(1)) {
+            if (auto r = walkExprForDef(rhs, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── If statement ─────────────────────────────────────────────
+    if (auto* ifS = stmt->ifStmt()) {
+        if (auto* cond = ifS->expression()) {
+            if (auto r = walkExprForDef(cond, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        if (auto r = walkBlockForDef(ifS->block(), hoveredToken, tokenText,
+                                     tree, bindings, cursorLine, filePath, project))
+            return r;
+        for (auto* elif : ifS->elseIfClause()) {
+            if (auto* cond = elif->expression()) {
+                if (auto r = walkExprForDef(cond, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+            if (auto r = walkBlockForDef(elif->block(), hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        if (auto* els = ifS->elseClause()) {
+            if (auto r = walkBlockForDef(els->block(), hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── For statement ────────────────────────────────────────────
+    if (auto* forS = stmt->forStmt()) {
+        if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forS)) {
+            if (auto r = resolveTypeSpecToken(fin->typeSpec(), hoveredToken, tree,
+                                              bindings, filePath, project))
+                return r;
+            if (auto* iterExpr = fin->expression()) {
+                if (auto r = walkExprForDef(iterExpr, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+            if (auto r = walkBlockForDef(fin->block(), hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(forS)) {
+            if (auto r = resolveTypeSpecToken(fc->typeSpec(), hoveredToken, tree,
+                                              bindings, filePath, project))
+                return r;
+            for (auto* expr : fc->expression()) {
+                if (auto r = walkExprForDef(expr, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+            if (auto r = walkBlockForDef(fc->block(), hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── While statement ──────────────────────────────────────────
+    if (auto* ws = stmt->whileStmt()) {
+        if (auto* cond = ws->expression()) {
+            if (auto r = walkExprForDef(cond, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        if (auto r = walkBlockForDef(ws->block(), hoveredToken, tokenText,
+                                     tree, bindings, cursorLine, filePath, project))
+            return r;
+        return std::nullopt;
+    }
+
+    // ── Do-while statement ───────────────────────────────────────
+    if (auto* dw = stmt->doWhileStmt()) {
+        if (auto r = walkBlockForDef(dw->block(), hoveredToken, tokenText,
+                                     tree, bindings, cursorLine, filePath, project))
+            return r;
+        if (auto* cond = dw->expression()) {
+            if (auto r = walkExprForDef(cond, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Loop statement ───────────────────────────────────────────
+    if (auto* ls = stmt->loopStmt()) {
+        if (auto r = walkBlockForDef(ls->block(), hoveredToken, tokenText,
+                                     tree, bindings, cursorLine, filePath, project))
+            return r;
+        return std::nullopt;
+    }
+
+    // ── Switch statement ─────────────────────────────────────────
+    if (auto* sw = stmt->switchStmt()) {
+        if (auto* expr = sw->expression()) {
+            if (auto r = walkExprForDef(expr, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        for (auto* c : sw->caseClause()) {
+            for (auto* cexpr : c->expression()) {
+                if (auto r = walkExprForDef(cexpr, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+            if (auto r = walkBlockForDef(c->block(), hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        if (auto* def = sw->defaultClause()) {
+            if (auto r = walkBlockForDef(def->block(), hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Try-catch-finally ────────────────────────────────────────
+    if (auto* tc = stmt->tryCatchStmt()) {
+        if (auto r = walkBlockForDef(tc->block(), hoveredToken, tokenText,
+                                     tree, bindings, cursorLine, filePath, project))
+            return r;
+        for (auto* cc : tc->catchClause()) {
+            // Catch type name
+            if (auto r = resolveTypeSpecToken(cc->typeSpec(), hoveredToken, tree,
+                                              bindings, filePath, project))
+                return r;
+            if (auto r = walkBlockForDef(cc->block(), hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        if (auto* fin = tc->finallyClause()) {
+            if (auto r = walkBlockForDef(fin->block(), hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Defer statement ──────────────────────────────────────────
+    if (auto* ds = stmt->deferStmt()) {
+        if (auto* es = ds->exprStmt()) {
+            if (auto* expr = es->expression()) {
+                if (auto r = walkExprForDef(expr, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Throw statement ──────────────────────────────────────────
+    if (auto* ts = stmt->throwStmt()) {
+        if (auto* expr = ts->expression()) {
+            return walkExprForDef(expr, hoveredToken, tokenText, tree,
+                                  bindings, cursorLine, filePath, project);
+        }
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AST walker: block
+// ═══════════════════════════════════════════════════════════════════════
+
+std::optional<DefinitionResult> DefinitionProvider::walkBlockForDef(
+    LuxParser::BlockContext* block, antlr4::Token* hoveredToken,
+    const std::string& tokenText, LuxParser::ProgramContext* tree,
+    const CBindings& bindings, size_t cursorLine,
+    const std::string& filePath, const ProjectContext* project) {
+
+    if (!block || !containsToken(block, hoveredToken)) return std::nullopt;
+
+    for (auto* stmt : block->statement()) {
+        if (auto r = walkStmtForDef(stmt, hoveredToken, tokenText, tree,
+                                    bindings, cursorLine, filePath, project))
+            return r;
+    }
+    return std::nullopt;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  collectLocals (with declToken)
+// ═══════════════════════════════════════════════════════════════════════
+
+std::unordered_map<std::string, DefinitionProvider::LocalVar>
+DefinitionProvider::collectLocals(LuxParser::FunctionDeclContext* func,
+                                  size_t beforeLine) {
+    std::unordered_map<std::string, LocalVar> result;
+
+    // Parameters
+    if (auto* params = func->paramList()) {
+        for (auto* p : params->param()) {
+            std::string typeName = p->typeSpec()->getText();
+            std::string paramName = p->IDENTIFIER()->getText();
+            result[paramName] = {typeName, 0, p->IDENTIFIER()->getSymbol()};
+        }
+    }
+
+    // Body locals
+    collectLocalsFromBlock(func->block(), beforeLine, result);
+    return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  AST lookup helpers
+// ═══════════════════════════════════════════════════════════════════════
+
+LuxParser::FunctionDeclContext*
+DefinitionProvider::findEnclosingFunction(LuxParser::ProgramContext* tree,
+                                          size_t line) {
+    size_t tokenLine = line + 1;
+    for (auto* tld : tree->topLevelDecl()) {
+        auto* func = tld->functionDecl();
+        if (!func) continue;
+        auto* startTok = func->getStart();
+        auto* stopTok  = func->getStop();
+        if (!startTok || !stopTok) continue;
+        if (tokenLine >= startTok->getLine() && tokenLine <= stopTok->getLine())
+            return func;
+    }
+    return nullptr;
+}
+
+LuxParser::FunctionDeclContext*
+DefinitionProvider::findFunctionDecl(LuxParser::ProgramContext* tree,
+                                     const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* func = tld->functionDecl())
+            if (func->IDENTIFIER()->getText() == name)
+                return func;
+    }
+    return nullptr;
+}
+
+LuxParser::StructDeclContext*
+DefinitionProvider::findStructDecl(LuxParser::ProgramContext* tree,
+                                   const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* sd = tld->structDecl())
+            if (sd->IDENTIFIER()->getText() == name)
+                return sd;
+    }
+    return nullptr;
+}
+
+LuxParser::EnumDeclContext*
+DefinitionProvider::findEnumDecl(LuxParser::ProgramContext* tree,
+                                 const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* ed = tld->enumDecl())
+            if (ed->IDENTIFIER()[0]->getText() == name)
+                return ed;
+    }
+    return nullptr;
+}
+
+LuxParser::UnionDeclContext*
+DefinitionProvider::findUnionDecl(LuxParser::ProgramContext* tree,
+                                  const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* ud = tld->unionDecl())
+            if (ud->IDENTIFIER()->getText() == name)
+                return ud;
+    }
+    return nullptr;
+}
+
+LuxParser::TypeAliasDeclContext*
+DefinitionProvider::findTypeAliasDecl(LuxParser::ProgramContext* tree,
+                                      const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* ta = tld->typeAliasDecl())
+            if (ta->IDENTIFIER()->getText() == name)
+                return ta;
+    }
+    return nullptr;
+}
+
+LuxParser::ExtendDeclContext*
+DefinitionProvider::findExtendDecl(LuxParser::ProgramContext* tree,
+                                   const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* ext = tld->extendDecl())
+            if (ext->IDENTIFIER()->getText() == name)
+                return ext;
+    }
+    return nullptr;
+}
+
+LuxParser::ExternDeclContext*
+DefinitionProvider::findExternDecl(LuxParser::ProgramContext* tree,
+                                   const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* ext = tld->externDecl())
+            if (ext->IDENTIFIER()->getText() == name)
+                return ext;
+    }
+    return nullptr;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Helpers
+// ═══════════════════════════════════════════════════════════════════════
+
+DefinitionResult DefinitionProvider::makeResult(antlr4::Token* token,
+                                                const std::string& filePath) {
+    DefinitionResult r;
+    r.uri     = "file://" + filePath;
+    r.line    = token->getLine() - 1;  // 1-based → 0-based
+    r.col     = token->getCharPositionInLine();
+    r.endLine = r.line;
+    r.endCol  = r.col + token->getText().size();
+    return r;
+}
+
+DefinitionResult DefinitionProvider::makeResult(antlr4::Token* token,
+                                                const std::string& /*filePath*/,
+                                                const std::string& sourceFile) {
+    DefinitionResult r;
+    r.uri     = "file://" + sourceFile;
+    r.line    = token->getLine() - 1;
+    r.col     = token->getCharPositionInLine();
+    r.endLine = r.line;
+    r.endCol  = r.col + token->getText().size();
+    return r;
+}
+
+bool DefinitionProvider::containsToken(antlr4::ParserRuleContext* ctx,
+                                       antlr4::Token* token) {
+    return ::containsToken(ctx, token);
+}
+
+// ── inferExprStructType ───────────────────────────────────────────────────
+
+std::string DefinitionProvider::inferExprStructType(
+    LuxParser::ExpressionContext* expr,
+    LuxParser::ProgramContext* tree,
+    size_t cursorLine) {
+
+    if (!expr) return {};
+
+    auto stripPointers = [](std::string t) -> std::string {
+        while (!t.empty() && t.front() == '*') t.erase(t.begin());
+        return t;
+    };
+
+    // Simple identifier: look up in locals/params
+    if (auto* ie = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        std::string varName = ie->IDENTIFIER()->getText();
+
+        // Check function params + locals
+        auto* func = findEnclosingFunction(tree, cursorLine);
+        if (func) {
+            auto locals = collectLocals(func, cursorLine);
+            auto it = locals.find(varName);
+            if (it != locals.end())
+                return stripPointers(it->second.typeName);
+        }
+
+        // Check extend method params + locals
+        size_t tokenLine = cursorLine + 1;
+        for (auto* tld : tree->topLevelDecl()) {
+            auto* ext = tld->extendDecl();
+            if (!ext) continue;
+            for (auto* method : ext->extendMethod()) {
+                auto* ms = method->getStart();
+                auto* me = method->getStop();
+                if (!ms || !me) continue;
+                if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
+                // Check params
+                for (auto* p : method->param()) {
+                    if (p->IDENTIFIER()->getText() == varName && p->typeSpec())
+                        return stripPointers(p->typeSpec()->getText());
+                }
+                // Check locals
+                std::unordered_map<std::string, LocalVar> locals;
+                collectLocalsFromBlock(method->block(), cursorLine, locals);
+                auto it = locals.find(varName);
+                if (it != locals.end())
+                    return stripPointers(it->second.typeName);
+            }
+        }
+    }
+
+    // Chained field access: (expr.field) — resolve base then look up field type
+    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+        std::string baseType = inferExprStructType(fa->expression(), tree, cursorLine);
+        if (baseType.empty()) return {};
+        // Find struct, look up field type
+        auto* sd = findStructDecl(tree, baseType);
+        if (sd) {
+            std::string fieldName = fa->IDENTIFIER()->getText();
+            for (auto* f : sd->structField()) {
+                if (f->IDENTIFIER()->getText() == fieldName)
+                    return stripPointers(f->typeSpec()->getText());
+            }
+        }
+    }
+
+    // Chained arrow access: (expr->field)
+    if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
+        std::string baseType = inferExprStructType(aa->expression(), tree, cursorLine);
+        if (baseType.empty()) return {};
+        auto* sd = findStructDecl(tree, baseType);
+        if (sd) {
+            std::string fieldName = aa->IDENTIFIER()->getText();
+            for (auto* f : sd->structField()) {
+                if (f->IDENTIFIER()->getText() == fieldName)
+                    return stripPointers(f->typeSpec()->getText());
+            }
+        }
+    }
+
+    return {};
+}
+
+// ── resolveStructField ────────────────────────────────────────────────────
+
+std::optional<DefinitionResult> DefinitionProvider::resolveStructField(
+    const std::string& structName, const std::string& fieldName,
+    LuxParser::ProgramContext* tree, const CBindings& bindings,
+    const std::string& filePath, const ProjectContext* project) {
+
+    // Same-file struct
+    auto* sd = findStructDecl(tree, structName);
+    if (sd) {
+        for (auto* f : sd->structField()) {
+            if (f->IDENTIFIER()->getText() == fieldName)
+                return makeResult(f->IDENTIFIER()->getSymbol(), filePath);
+        }
+    }
+
+    // Cross-file struct
+    if (project && project->isValid()) {
+        for (auto& ns : project->registry().allNamespaces()) {
+            auto* sym = project->registry().findSymbol(ns, structName);
+            if (!sym || sym->kind != ExportedSymbol::Struct) continue;
+            auto* sd2 = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+            if (!sd2) continue;
+            for (auto* f : sd2->structField()) {
+                if (f->IDENTIFIER()->getText() == fieldName)
+                    return makeResult(f->IDENTIFIER()->getSymbol(), filePath,
+                                      sym->sourceFile);
+            }
+        }
+    }
+
+    (void)bindings; // reserved for C struct field resolution
+    return std::nullopt;
+}

@@ -1,4 +1,5 @@
 #include "lsp/DiagnosticEngine.h"
+#include "lsp/ProjectContext.h"
 #include "parser/Parser.h"
 #include "checkers/Checker.h"
 #include "ffi/CBindings.h"
@@ -74,6 +75,70 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source) {
                 }
             }
             checker.setCBindings(&cBindings);
+        }
+
+        checker.check(parsed.tree);
+        for (auto& d : checker.diagnostics()) {
+            result.push_back(d);
+        }
+    }
+
+    return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Project-aware diagnostics
+// ═══════════════════════════════════════════════════════════════════════
+
+std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
+                                               const std::string& filePath,
+                                               const ProjectContext* project) {
+    if (!project || !project->isValid())
+        return run(source);
+
+    std::vector<Diagnostic> result;
+
+    // Step 1: Parse
+    auto parsed = Parser::parseString(source);
+
+    for (auto& d : parsed.diagnostics) {
+        result.push_back(std::move(d));
+    }
+
+    // Step 2: Semantic checking with full project context
+    if (parsed.tree && !parsed.hasErrors) {
+        Checker checker;
+
+        // Set namespace context from the project registry.
+        std::string ns = project->namespaceFor(filePath);
+        checker.setNamespaceContext(&project->registry(), ns, filePath);
+
+        // Use project-wide C bindings.
+        checker.setCBindings(&project->cBindings());
+
+        // Also resolve C headers from the current file's source
+        // (in case the in-memory source has new includes not yet in the project).
+        CBindings localBindings;
+        TypeRegistry localTypeReg;
+        auto includes = parsed.tree->includeDecl();
+        if (!includes.empty()) {
+            CHeaderResolver resolver(localTypeReg, localBindings);
+            for (auto* incl : includes) {
+                auto text = incl->getText();
+                if (incl->INCLUDE_SYS()) {
+                    auto header = CHeaderResolver::extractSystemHeader(text);
+                    if (!header.empty())
+                        resolver.resolveSystemHeader(header);
+                } else if (incl->INCLUDE_LOCAL()) {
+                    auto header = CHeaderResolver::extractLocalHeader(text);
+                    if (!header.empty())
+                        resolver.resolveLocalHeader(header, ".");
+                }
+            }
+            // If we didn't get project-level bindings, use local ones.
+            if (project->cBindings().functions().empty()) {
+                checker.setCBindings(&localBindings);
+            }
         }
 
         checker.check(parsed.tree);

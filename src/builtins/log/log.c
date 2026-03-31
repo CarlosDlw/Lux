@@ -12,8 +12,8 @@ void lux_println_i8(signed char val)  { printf("%d\n", (int)val); }
 void lux_println_i16(short val)       { printf("%d\n", (int)val); }
 void lux_println_i32(int val)         { printf("%d\n", val); }
 void lux_println_i64(long long val)   { printf("%lld\n", val); }
-void lux_println_f32(float val)       { printf("%g\n", (double)val); }
-void lux_println_f64(double val)       { printf("%g\n", val); }
+void lux_println_f32(float val)       { printf("%.9g\n", (double)val); }
+void lux_println_f64(double val)       { printf("%.17g\n", val); }
 void lux_println_bool(int val)        { printf("%s\n", (val & 1) ? "true" : "false"); }
 void lux_println_char(char val)        { printf("%c\n", val); }
 void lux_println_str(const char* data, unsigned long len) { printf("%.*s\n", (int)len, data); }
@@ -39,8 +39,8 @@ void lux_print_i8(signed char val)  { printf("%d", (int)val); }
 void lux_print_i16(short val)       { printf("%d", (int)val); }
 void lux_print_i32(int val)         { printf("%d", val); }
 void lux_print_i64(long long val)   { printf("%lld", val); }
-void lux_print_f32(float val)       { printf("%g", (double)val); }
-void lux_print_f64(double val)       { printf("%g", val); }
+void lux_print_f32(float val)       { printf("%.9g", (double)val); }
+void lux_print_f64(double val)       { printf("%.17g", val); }
 void lux_print_bool(int val)        { printf("%s", (val & 1) ? "true" : "false"); }
 void lux_print_char(char val)        { printf("%c", val); }
 void lux_print_str(const char* data, unsigned long len)   { printf("%.*s", (int)len, data); }
@@ -90,8 +90,8 @@ void lux_eprintln_i8(signed char val)  { fprintf(stderr, "%d\n", (int)val); }
 void lux_eprintln_i16(short val)       { fprintf(stderr, "%d\n", (int)val); }
 void lux_eprintln_i32(int val)         { fprintf(stderr, "%d\n", val); }
 void lux_eprintln_i64(long long val)   { fprintf(stderr, "%lld\n", val); }
-void lux_eprintln_f32(float val)       { fprintf(stderr, "%g\n", (double)val); }
-void lux_eprintln_f64(double val)      { fprintf(stderr, "%g\n", val); }
+void lux_eprintln_f32(float val)       { fprintf(stderr, "%.9g\n", (double)val); }
+void lux_eprintln_f64(double val)      { fprintf(stderr, "%.17g\n", val); }
 void lux_eprintln_bool(int val)        { fprintf(stderr, "%s\n", (val & 1) ? "true" : "false"); }
 void lux_eprintln_char(char val)       { fprintf(stderr, "%c\n", val); }
 void lux_eprintln_str(const char* data, unsigned long len) { fprintf(stderr, "%.*s\n", (int)len, data); }
@@ -120,8 +120,8 @@ void lux_eprint_i8(signed char val)  { fprintf(stderr, "%d", (int)val); }
 void lux_eprint_i16(short val)       { fprintf(stderr, "%d", (int)val); }
 void lux_eprint_i32(int val)         { fprintf(stderr, "%d", val); }
 void lux_eprint_i64(long long val)   { fprintf(stderr, "%lld", val); }
-void lux_eprint_f32(float val)       { fprintf(stderr, "%g", (double)val); }
-void lux_eprint_f64(double val)      { fprintf(stderr, "%g", val); }
+void lux_eprint_f32(float val)       { fprintf(stderr, "%.9g", (double)val); }
+void lux_eprint_f64(double val)      { fprintf(stderr, "%.17g", val); }
 void lux_eprint_bool(int val)        { fprintf(stderr, "%s", (val & 1) ? "true" : "false"); }
 void lux_eprint_char(char val)       { fprintf(stderr, "%c", val); }
 void lux_eprint_str(const char* data, unsigned long len) { fprintf(stderr, "%.*s", (int)len, data); }

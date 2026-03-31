@@ -70,10 +70,14 @@ public:
     std::any visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx)     override;
     std::any visitSwitchStmt(LuxParser::SwitchStmtContext* ctx)       override;
     std::any visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) override;
+    std::any visitArrowMethodCallExpr(LuxParser::ArrowMethodCallExprContext* ctx) override;
     std::any visitTypeSpec(LuxParser::TypeSpecContext* ctx)           override;
 
     // Expression visitors (labeled alternatives)
     std::any visitIntLitExpr(LuxParser::IntLitExprContext* ctx)       override;
+    std::any visitHexLitExpr(LuxParser::HexLitExprContext* ctx)       override;
+    std::any visitOctLitExpr(LuxParser::OctLitExprContext* ctx)       override;
+    std::any visitBinLitExpr(LuxParser::BinLitExprContext* ctx)       override;
     std::any visitFloatLitExpr(LuxParser::FloatLitExprContext* ctx)   override;
     std::any visitBoolLitExpr(LuxParser::BoolLitExprContext* ctx)     override;
     std::any visitCharLitExpr(LuxParser::CharLitExprContext* ctx)     override;
@@ -103,10 +107,13 @@ public:
     std::any visitLogicalAndExpr(LuxParser::LogicalAndExprContext* ctx) override;
     std::any visitLogicalOrExpr(LuxParser::LogicalOrExprContext* ctx) override;
     std::any visitBitNotExpr(LuxParser::BitNotExprContext* ctx)       override;
-    std::any visitShiftExpr(LuxParser::ShiftExprContext* ctx)         override;
+    std::any visitLshiftExpr(LuxParser::LshiftExprContext* ctx)       override;
+    std::any visitRshiftExpr(LuxParser::RshiftExprContext* ctx)       override;
     std::any visitBitAndExpr(LuxParser::BitAndExprContext* ctx)       override;
     std::any visitBitXorExpr(LuxParser::BitXorExprContext* ctx)       override;
     std::any visitBitOrExpr(LuxParser::BitOrExprContext* ctx)         override;
+    std::pair<llvm::Value*, llvm::Type*>
+        resolveIncrDecrTarget(LuxParser::ExpressionContext* expr);
     std::any visitPreIncrExpr(LuxParser::PreIncrExprContext* ctx)     override;
     std::any visitPreDecrExpr(LuxParser::PreDecrExprContext* ctx)     override;
     std::any visitPostIncrExpr(LuxParser::PostIncrExprContext* ctx)   override;
@@ -121,6 +128,11 @@ public:
     std::any visitRangeInclExpr(LuxParser::RangeInclExprContext* ctx) override;
     std::any visitSpreadExpr(LuxParser::SpreadExprContext* ctx)       override;
     std::any visitParenExpr(LuxParser::ParenExprContext* ctx)         override;
+    std::any visitTupleLitExpr(LuxParser::TupleLitExprContext* ctx)   override;
+    std::any visitTupleIndexExpr(LuxParser::TupleIndexExprContext* ctx) override;
+    std::any visitChainedTupleIndexExpr(LuxParser::ChainedTupleIndexExprContext* ctx) override;
+    std::any visitTupleArrowIndexExpr(LuxParser::TupleArrowIndexExprContext* ctx) override;
+    std::any visitChainedTupleArrowIndexExpr(LuxParser::ChainedTupleArrowIndexExprContext* ctx) override;
     std::any visitSpawnExpr(LuxParser::SpawnExprContext* ctx)         override;
     std::any visitAwaitExpr(LuxParser::AwaitExprContext* ctx)         override;
     std::any visitLockStmt(LuxParser::LockStmtContext* ctx)           override;
@@ -223,6 +235,12 @@ private:
     // C enum constants: qualified name → integer value
     std::unordered_map<std::string, int64_t> cEnumConstants_;
 
+    // C float constants: name → double value
+    std::unordered_map<std::string, double> cFloatConstants_;
+
+    // C string constants: name → string value
+    std::unordered_map<std::string, std::string> cStringConstants_;
+
     // C struct literal macros: name → CStructMacro pointer (owned by CBindings)
     std::unordered_map<std::string, const CStructMacro*> cStructMacros_;
 
@@ -235,6 +253,9 @@ private:
 
     // ABI coercion info for C functions that pass/return structs by value
     std::unordered_map<std::string, CABIInfo> cabiInfos_;
+
+    // Function return TypeInfo cache (for tuple and complex return types)
+    std::unordered_map<std::string, const TypeInfo*> fnReturnTypes_;
 
     // Lazily declare a C function from CBindings when first called.
     llvm::Function* declareCFunction(const std::string& name);
@@ -267,6 +288,12 @@ private:
     void                emitDeferredCleanups();
     void                emitAutoCleanups(const std::string& skipVar = "");
     void                emitAllCleanups(const std::string& skipVar = "");
+    void                emitDivByZeroGuard(llvm::Value* divisor,
+                                           antlr4::Token* opToken);
+    bool                requireArgs(const std::string& funcName,
+                                    const std::vector<llvm::Value*>& args,
+                                    size_t expected);
+    llvm::Value*        castValue(std::any result);
     std::pair<llvm::Value*, llvm::Value*>
                        promoteArithmetic(llvm::Value* lhs, llvm::Value* rhs);
 };

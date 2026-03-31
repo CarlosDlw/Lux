@@ -9,10 +9,11 @@ Lux's standard library provides 23 modules covering I/O, math, strings, file sys
 ```tm
 use std::log::println;
 use std::math::{ sqrt, PI };
-use std::collections::{ Vec, Map, Set };
 ```
 
 Individual symbols must be imported explicitly — there is no wildcard import.
+
+> **Note:** `vec`, `map`, and `set` are native keywords — no import required.
 
 ---
 
@@ -30,9 +31,13 @@ Individual symbols must be imported explicitly — there is no wildcard import.
 
 ### Collections
 
-| Module | Description |
-|--------|-------------|
-| [std::collections](collections/vec.md) | `Vec<T>`, `Map<K,V>`, `Set<T>` |
+`vec<T>`, `map<K,V>`, and `set<T>` are **native keywords** — no import needed. See:
+
+| Reference | Description |
+|-----------|-------------|
+| [vec<T>](collections/vec.md) | Dynamic array |
+| [map<K,V>](collections/map.md) | Hash map |
+| [set<T>](collections/set.md) | Hash set |
 
 ### System
 
@@ -97,4 +102,4 @@ Individual symbols must be imported explicitly — there is no wildcard import.
 ## See Also
 
 - [Modules](../language/modules.md) — How the `use` import system works
-- [Generics](../language/generics.md) — `Vec<T>`, `Map<K,V>`, `Set<T>`
+- [Generics](../language/generics.md) — `vec<T>`, `map<K,V>`, `set<T>`

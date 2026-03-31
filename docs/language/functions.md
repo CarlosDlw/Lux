@@ -264,7 +264,7 @@ int32 double_value(int32 x) {
 Every Lux program must have a `main` function that:
 
 - Returns `int32` (the exit code)
-- Takes no parameters, or a single `Vec<string>` parameter for command-line arguments
+- Takes no parameters, or a single `vec<string>` parameter for command-line arguments
 - Ends with `ret 0;` (or another integer exit code)
 
 ```t
@@ -276,13 +276,12 @@ int32 main() {
 
 ### Command-Line Arguments
 
-To receive command-line arguments, declare `main` with a `Vec<string>` parameter:
+To receive command-line arguments, declare `main` with a `vec<string>` parameter:
 
 ```t
 use std::log::println;
-use std::collections::Vec;
 
-int32 main(Vec<string> args) {
+int32 main(vec<string> args) {
     for string arg in args {
         println(arg);
     }

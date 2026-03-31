@@ -12,11 +12,11 @@ use std::compress::{ gzipCompress, gzipDecompress, deflate, inflate };
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `gzipCompress` | `(*uint8, int64) -> Vec<uint8>` | Compress data with gzip |
-| `gzipDecompress` | `(*uint8, int64) -> Vec<uint8>` | Decompress gzip data |
-| `deflate` | `(*uint8, int64) -> Vec<uint8>` | Compress with raw deflate |
-| `inflate` | `(*uint8, int64) -> Vec<uint8>` | Decompress raw deflate |
-| `compressLevel` | `(*uint8, int64, int32) -> Vec<uint8>` | Compress with specific level (1-9) |
+| `gzipCompress` | `(*uint8, int64) -> vec<uint8>` | Compress data with gzip |
+| `gzipDecompress` | `(*uint8, int64) -> vec<uint8>` | Decompress gzip data |
+| `deflate` | `(*uint8, int64) -> vec<uint8>` | Compress with raw deflate |
+| `inflate` | `(*uint8, int64) -> vec<uint8>` | Decompress raw deflate |
+| `compressLevel` | `(*uint8, int64, int32) -> vec<uint8>` | Compress with specific level (1-9) |
 
 ## Example
 
@@ -28,10 +28,10 @@ string data = "Hello, World! Hello, World! Hello, World!";
 *uint8 ptr = data as *uint8;
 int64 len = data.length() as int64;
 
-Vec<uint8> compressed = gzipCompress(ptr, len);
+vec<uint8> compressed = gzipCompress(ptr, len);
 println(compressed.length());      // smaller than original
 
-Vec<uint8> decompressed = gzipDecompress(compressed.data(), compressed.length() as int64);
+vec<uint8> decompressed = gzipDecompress(compressed.data(), compressed.length() as int64);
 // decompressed contains original bytes
 ```
 

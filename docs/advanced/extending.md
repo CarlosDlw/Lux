@@ -259,7 +259,7 @@ int32 main() {
 
 ## Adding an Extended Type
 
-Extended types are generic collection types like `Vec<T>`, `Map<K,V>`, and `Set<T>`. They have a special LLVM struct layout, type-specific methods, and automatic cleanup support.
+Extended types are generic collection types like `vec<T>`, `map<K,V>`, and `set<T>`. They have a special LLVM struct layout, type-specific methods, and automatic cleanup support.
 
 ### Example: Adding `Deque<T>` (Double-Ended Queue)
 
@@ -341,8 +341,6 @@ The `ExtendedTypeRegistry` framework already handles method dispatch for any reg
 #### Step 4: Usage
 
 ```tm
-use std::collections::Deque;
-
 int32 main() {
     Deque<int32> d = [];
     d.pushBack(10);
@@ -477,9 +475,9 @@ loop never executed!
 
 ## Adding Methods to Existing Types
 
-You can add new methods to existing extended types like `Vec<T>`.
+You can add new methods to existing extended types like `vec<T>`.
 
-### Example: `Vec<T>.sum()` for Numeric Vecs
+### Example: `vec<T>.sum()` for Numeric Vecs
 
 #### Step 1: Register the Method
 
@@ -491,7 +489,7 @@ vec.methods.push_back({ "sum", {TypeKind::Extended}, {}, "_elem",
                         .requireNumeric = true });
 ```
 
-The `.requireNumeric = true` constraint makes the checker reject `Vec<string>.sum()` at compile time.
+The `.requireNumeric = true` constraint makes the checker reject `vec<string>.sum()` at compile time.
 
 #### Step 2: Implement in C
 
@@ -531,10 +529,8 @@ if (methodName == "sum") {
 #### Step 4: Usage
 
 ```tm
-use std::collections::Vec;
-
 int32 main() {
-    Vec<int32> v = [1, 2, 3, 4, 5];
+    vec<int32> v = [1, 2, 3, 4, 5];
     int32 total = v.sum();
     println(total);                // 15
     v.free();
@@ -552,7 +548,7 @@ The compiler follows several principles that keep extensions consistent:
 All core logic is implemented in C for portability and performance. Lux provides nicer syntax on top. C functions are always prefixed with `lux_`.
 
 **Monomorphization:**
-Generic types generate type-specific C functions. `Vec<int32>` uses `lux_vec_push_i32`, `Vec<string>` uses `lux_vec_push_str`. This trades binary size for type safety and performance (no runtime dispatch).
+Generic types generate type-specific C functions. `vec<int32>` uses `lux_vec_push_i32`, `vec<string>` uses `lux_vec_push_str`. This trades binary size for type safety and performance (no runtime dispatch).
 
 **Registry Pattern:**
 All extensions register in central registries (`BuiltinRegistry`, `ExtendedTypeRegistry`, `TypeRegistry`). The checker and IR generator query these registries rather than hardcoding knowledge of specific types or functions. This makes adding new features non-invasive.

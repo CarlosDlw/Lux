@@ -113,7 +113,6 @@ ImportResolver::knownModules_ = {
                    "udpBind", "udpSendTo", "udpRecvFrom",
                    "close", "setTimeout", "resolve" } },
     { "std::thread", { "cpuCount", "threadId", "yield", "Task", "Mutex" } },
-    { "std::collections", { "Vec", "Map", "Set" } },
 };
 
 void ImportResolver::addImport(const std::string& modulePath,

@@ -46,10 +46,10 @@
 ## Type Alias
 - type Alias = ExistingType; | creates a named alias for any type
 
-## Generic Collections (stdlib)
-- Vec<T>    | dynamic growable array, supports push, pop, indexing, and iteration
-- Map<K, V> | open-addressing hash map, supports insert, get, remove, and iteration
-- Set<T>    | open-addressing hash set, supports insert, contains, remove, and iteration
+## Generic Collections (native keywords)
+- vec<T>    | dynamic growable array, supports push, pop, indexing, and iteration
+- map<K, V> | open-addressing hash map, supports insert, get, remove, and iteration
+- set<T>    | open-addressing hash set, supports insert, contains, remove, and iteration
 
 ## Concurrency
 - Task<T>   | async task handle (opaque), represents a pending computation

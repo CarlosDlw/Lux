@@ -44,11 +44,15 @@ struct CTypedef {
     unsigned        line = 0;
 };
 
-// Describes a simple #define integer constant extracted from a parsed header.
+// Describes a simple #define constant extracted from a parsed header.
 struct CMacro {
     std::string name;
-    int64_t     value;
-    bool        isNull = false;   // true for NULL-like pointer constants
+    int64_t     value = 0;         // integer value (when isFloat/isString are false)
+    double      floatValue = 0.0;  // float value (when isFloat is true)
+    std::string stringValue;       // string value (when isString is true)
+    bool        isNull   = false;  // true for NULL-like pointer constants
+    bool        isFloat  = false;  // true for floating-point constants
+    bool        isString = false;  // true for string literal constants
     std::string sourceFile;
     unsigned    line = 0;
 };

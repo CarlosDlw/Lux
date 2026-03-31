@@ -13,7 +13,7 @@ use std::encoding::{ base64EncodeStr, base64DecodeStr, urlEncode, urlDecode };
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `base64Encode` | `(*uint8, int64) -> string` | Encode raw bytes to Base64 |
-| `base64Decode` | `(string) -> Vec<uint8>` | Decode Base64 to byte vector |
+| `base64Decode` | `(string) -> vec<uint8>` | Decode Base64 to byte vector |
 | `base64EncodeStr` | `(string) -> string` | Encode string to Base64 |
 | `base64DecodeStr` | `(string) -> string` | Decode Base64 to string |
 | `urlEncode` | `(string) -> string` | Percent-encode string |

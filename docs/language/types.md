@@ -75,6 +75,34 @@ int32 main() {
 }
 ```
 
+### Integer Literal Formats
+
+Lux supports decimal, hexadecimal, octal, and binary integer literals:
+
+```t
+int32 dec = 255;          // decimal
+int32 hex = 0xFF;         // hexadecimal (0x or 0X prefix)
+int32 oct = 0o377;        // octal (0o or 0O prefix)
+int32 bin = 0b11111111;   // binary (0b or 0B prefix)
+
+// all four represent the same value: 255
+```
+
+| Format | Prefix | Digits |
+|---|---|---|
+| Decimal | *(none)* | `0`–`9` |
+| Hexadecimal | `0x` / `0X` | `0`–`9`, `a`–`f`, `A`–`F` |
+| Octal | `0o` / `0O` | `0`–`7` |
+| Binary | `0b` / `0B` | `0`, `1` |
+
+Integer literals are untyped until assigned — the compiler coerces them to the target type automatically:
+
+```t
+uint8 mask = 0xFF;        // coerced to uint8
+int64 flags = 0b1010;     // coerced to int64
+int32 perms = 0o755;      // coerced to int32
+```
+
 ### Integer Methods
 
 All integer types (`int*` and `uint*`) support these methods via dot notation:
@@ -382,27 +410,43 @@ int32 main() {
 | `lastIndexOf(sub)` | `-> int64` | Last occurrence |
 | `count(sub)` | `-> usize` | Count occurrences |
 | `substring(start, len)` | `-> string` | Extract substring |
-| `charAt(index)` | `-> char` | Same as `at()` |
 | `slice(start, end)` | `-> string` | Extract range (supports negative indices) |
-| `toUpper()` | `-> string` | Convert to uppercase |
-| `toLower()` | `-> string` | Convert to lowercase |
 | `trim()` | `-> string` | Remove leading/trailing whitespace |
 | `trimLeft()` | `-> string` | Remove leading whitespace |
 | `trimRight()` | `-> string` | Remove trailing whitespace |
-| `replace(old, new)` | `-> string` | Replace all occurrences |
-| `replaceFirst(old, new)` | `-> string` | Replace first occurrence |
-| `repeat(n)` | `-> string` | Repeat n times |
+| `trimChar(c)` | `-> string` | Trim specific character |
+| `toUpper()` | `-> string` | Convert to uppercase |
+| `toLower()` | `-> string` | Convert to lowercase |
+| `capitalize()` | `-> string` | Capitalize first character |
 | `reverse()` | `-> string` | Reverse the string |
+| `repeat(n)` | `-> string` | Repeat n times |
+| `concat(other)` | `-> string` | Concatenate two strings |
 | `padLeft(width, ch)` | `-> string` | Left-pad to width |
 | `padRight(width, ch)` | `-> string` | Right-pad to width |
-| `split(delim)` | `-> Vec<string>` | Split by delimiter |
-| `splitN(delim, n)` | `-> Vec<string>` | Split with max count |
-| `lines()` | `-> Vec<string>` | Split by newlines |
-| `chars()` | `-> Vec<char>` | Convert to character array |
-| `fromChars(vec)` | `-> string` | Build from character array |
-| `toBytes()` | `-> Vec<uint8>` | Convert to byte array |
-| `fromBytes(vec)` | `-> string` | Build from byte array |
-| `toString()` | `-> string` | Identity (returns self) |
+| `replace(old, new)` | `-> string` | Replace all occurrences |
+| `replaceFirst(old, new)` | `-> string` | Replace first occurrence |
+| `removePrefix(prefix)` | `-> string` | Remove prefix if present |
+| `removeSuffix(suffix)` | `-> string` | Remove suffix if present |
+| `remove(start, len)` | `-> string` | Remove substring |
+| `insert(pos, sub)` | `-> string` | Insert at position |
+| `split(delim)` | `-> vec<string>` | Split by delimiter |
+| `join(sep)` | `-> string` | Join (only on Vec\<string\>) |
+| `chars()` | `-> vec<char>` | Convert to character array |
+| `bytes()` | `-> vec<uint8>` | Convert to byte array |
+| `lines()` | `-> vec<string>` | Split by newlines |
+| `words()` | `-> vec<string>` | Split by whitespace |
+| `compareTo(other)` | `-> int32` | Lexicographic comparison |
+| `equalsIgnoreCase(other)` | `-> bool` | Case-insensitive equality |
+| `isNumeric()` | `-> bool` | All characters are digits |
+| `isAlpha()` | `-> bool` | All characters are letters |
+| `isAlphaNum()` | `-> bool` | All characters are alphanumeric |
+| `isUpper()` | `-> bool` | All letters are uppercase |
+| `isLower()` | `-> bool` | All letters are lowercase |
+| `isBlank()` | `-> bool` | Empty or only whitespace |
+| `toInt()` | `-> int64` | Parse as integer |
+| `toFloat()` | `-> float64` | Parse as float |
+| `toBool()` | `-> bool` | `"true"` -> true, else false |
+| `hash()` | `-> uint64` | Hash value |
 
 ```t
 namespace StringMethodsDemo;

@@ -93,6 +93,7 @@ private:
         TypePosition,   // type annotation — show types only
         IncludeHeader,  // #include <| — show available C headers
         UseImport,      // use path::| — show modules and symbols
+        DocComment,     // inside /** ... */ — show doc-tags
     };
 
     struct CompletionRequest {
@@ -116,6 +117,7 @@ private:
     // Add locals + params in scope at cursor position.
     void addLocals(std::vector<CompletionItem>& items,
                    LuxParser::ProgramContext* tree, size_t cursorLine,
+                   const CBindings& bindings,
                    const std::string& prefix);
 
     // Add same-file top-level declarations (functions, structs, enums, etc).
@@ -196,6 +198,10 @@ private:
     void addHeaderSuggestions(std::vector<CompletionItem>& items,
                              const std::string& prefix);
 
+    // Add doc-tag completions inside /** ... */ blocks.
+    void addDocTagCompletions(std::vector<CompletionItem>& items,
+                              const std::string& prefix);
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     // Resolve the return type of a method call on a given receiver type.
@@ -206,7 +212,10 @@ private:
 
     // Collect locals from a function body.
     std::unordered_map<std::string, LocalVar>
-    collectLocals(LuxParser::FunctionDeclContext* func, size_t beforeLine);
+    collectLocals(LuxParser::FunctionDeclContext* func, size_t beforeLine,
+                  LuxParser::ProgramContext* tree = nullptr,
+                  const CBindings* bindings = nullptr,
+                  const ProjectContext* project = nullptr);
 
     // Collect locals from an extend method body.
     std::unordered_map<std::string, LocalVar>
@@ -233,7 +242,9 @@ private:
     // Infer struct type from a variable name at cursor line.
     std::string inferVarType(const std::string& varName,
                              LuxParser::ProgramContext* tree,
-                             size_t cursorLine);
+                             size_t cursorLine,
+                             const CBindings* bindings = nullptr,
+                             const ProjectContext* project = nullptr);
 
     // Format a function signature for display.
     static std::string formatFuncSignature(LuxParser::FunctionDeclContext* func);

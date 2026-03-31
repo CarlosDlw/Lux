@@ -328,24 +328,24 @@ These are fundamental operations that every program needs access to without impo
 
 ---
 
-### ⬜ `std::collections` — Data Structures (via Extended Types)
+### ⬜ `collections` — Data Structures (native keywords)
 
-> `Vec<T>` is already implemented. The types below follow the same Extended Type pattern.
+> `vec<T>` is already implemented. The types below follow the same Extended Type pattern.
 
-#### `Map<K,V>` — Hash Map ✅ 
+#### `map<K,V>` — Hash Map ✅ 
 | Method | Signature | Description | Status |
 |--------|-----------|-------------|--------|
 | `len` | `len() -> usize` | Number of key-value pairs | ✅ |
 | `isEmpty` | `isEmpty() -> bool` | Check if map is empty | ✅ |
 | `get` | `get(K) -> V` | Get value by key (abort if missing) | ✅ |
 | `getOrDefault` | `getOrDefault(K, V) -> V` | Get value or return default | ✅ |
-| `set` | `set(K, V)` | Insert or update key-value pair | ✅ |
+| `insert` | `insert(K, V)` | Insert or update key-value pair | ✅ |
 | `has` | `has(K) -> bool` | Check if key exists | ✅ |
 | `remove` | `remove(K) -> bool` | Remove key, return true if existed | ✅ |
 | `clear` | `clear()` | Remove all entries | ✅ |
 | `free` | `free()` | Deallocate map memory | ✅ |
 
-#### `Set<T>` — Hash Set ✅ 
+#### `set<T>` — Hash Set ✅ 
 | Method | Signature | Description | Status |
 |--------|-----------|-------------|--------|
 | `len` | `len() -> usize` | Number of elements | ✅ |

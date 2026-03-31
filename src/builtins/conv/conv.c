@@ -79,7 +79,7 @@ lux_conv_str_result lux_utoa(uint64_t value) {
 /* ── ftoa ────────────────────────────────────────────────────────────── */
 lux_conv_str_result lux_ftoa(double value) {
     char buf[64];
-    int n = snprintf(buf, sizeof(buf), "%g", value);
+    int n = snprintf(buf, sizeof(buf), "%.17g", value);
     return make_result(buf, (size_t)n);
 }
 

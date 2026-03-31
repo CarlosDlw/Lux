@@ -21,6 +21,8 @@ public:
    */
     virtual std::any visitProgram(LuxParser::ProgramContext *context) = 0;
 
+    virtual std::any visitPreambleDecl(LuxParser::PreambleDeclContext *context) = 0;
+
     virtual std::any visitNamespaceDecl(LuxParser::NamespaceDeclContext *context) = 0;
 
     virtual std::any visitUseItem(LuxParser::UseItemContext *context) = 0;
@@ -131,6 +133,12 @@ public:
 
     virtual std::any visitTypeofExpr(LuxParser::TypeofExprContext *context) = 0;
 
+    virtual std::any visitRshiftExpr(LuxParser::RshiftExprContext *context) = 0;
+
+    virtual std::any visitArrowMethodCallExpr(LuxParser::ArrowMethodCallExprContext *context) = 0;
+
+    virtual std::any visitOctLitExpr(LuxParser::OctLitExprContext *context) = 0;
+
     virtual std::any visitBitXorExpr(LuxParser::BitXorExprContext *context) = 0;
 
     virtual std::any visitLogicalNotExpr(LuxParser::LogicalNotExprContext *context) = 0;
@@ -141,6 +149,8 @@ public:
 
     virtual std::any visitTernaryExpr(LuxParser::TernaryExprContext *context) = 0;
 
+    virtual std::any visitChainedTupleIndexExpr(LuxParser::ChainedTupleIndexExprContext *context) = 0;
+
     virtual std::any visitNullLitExpr(LuxParser::NullLitExprContext *context) = 0;
 
     virtual std::any visitMulExpr(LuxParser::MulExprContext *context) = 0;
@@ -149,11 +159,17 @@ public:
 
     virtual std::any visitIsExpr(LuxParser::IsExprContext *context) = 0;
 
+    virtual std::any visitLshiftExpr(LuxParser::LshiftExprContext *context) = 0;
+
+    virtual std::any visitTupleLitExpr(LuxParser::TupleLitExprContext *context) = 0;
+
     virtual std::any visitAddSubExpr(LuxParser::AddSubExprContext *context) = 0;
 
     virtual std::any visitIntLitExpr(LuxParser::IntLitExprContext *context) = 0;
 
     virtual std::any visitAddrOfExpr(LuxParser::AddrOfExprContext *context) = 0;
+
+    virtual std::any visitTupleIndexExpr(LuxParser::TupleIndexExprContext *context) = 0;
 
     virtual std::any visitFloatLitExpr(LuxParser::FloatLitExprContext *context) = 0;
 
@@ -162,8 +178,6 @@ public:
     virtual std::any visitArrowAccessExpr(LuxParser::ArrowAccessExprContext *context) = 0;
 
     virtual std::any visitListCompExpr(LuxParser::ListCompExprContext *context) = 0;
-
-    virtual std::any visitShiftExpr(LuxParser::ShiftExprContext *context) = 0;
 
     virtual std::any visitIndexExpr(LuxParser::IndexExprContext *context) = 0;
 
@@ -197,7 +211,11 @@ public:
 
     virtual std::any visitRelExpr(LuxParser::RelExprContext *context) = 0;
 
+    virtual std::any visitBinLitExpr(LuxParser::BinLitExprContext *context) = 0;
+
     virtual std::any visitRangeInclExpr(LuxParser::RangeInclExprContext *context) = 0;
+
+    virtual std::any visitTupleArrowIndexExpr(LuxParser::TupleArrowIndexExprContext *context) = 0;
 
     virtual std::any visitLogicalAndExpr(LuxParser::LogicalAndExprContext *context) = 0;
 
@@ -224,6 +242,10 @@ public:
     virtual std::any visitPostIncrExpr(LuxParser::PostIncrExprContext *context) = 0;
 
     virtual std::any visitBoolLitExpr(LuxParser::BoolLitExprContext *context) = 0;
+
+    virtual std::any visitHexLitExpr(LuxParser::HexLitExprContext *context) = 0;
+
+    virtual std::any visitChainedTupleArrowIndexExpr(LuxParser::ChainedTupleArrowIndexExprContext *context) = 0;
 
     virtual std::any visitRangeExpr(LuxParser::RangeExprContext *context) = 0;
 

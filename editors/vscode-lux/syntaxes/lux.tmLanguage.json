@@ -32,6 +32,31 @@
           "match": "//.*$"
         },
         {
+          "name": "comment.block.documentation.lux",
+          "begin": "/\\*\\*(?!\\*)",
+          "end": "\\*/",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.begin.lux" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.comment.end.lux" }
+          },
+          "patterns": [
+            {
+              "match": "(@(?:param|property|field))\\s+(\\S+)\\s+(\\S+)",
+              "captures": {
+                "1": { "name": "storage.type.class.jsdoc.lux" },
+                "2": { "name": "entity.name.type.instance.jsdoc.lux" },
+                "3": { "name": "variable.other.jsdoc.lux" }
+              }
+            },
+            {
+              "match": "(@(?:returns?|type|throws|brief|deprecated|version|author|see|since|todo|example|remarks|note|warning|private|public|protected|internal|struct|namespace|field|property))\\b",
+              "name": "storage.type.class.jsdoc.lux"
+            }
+          ]
+        },
+        {
           "name": "comment.block.lux",
           "begin": "/\\*",
           "end": "\\*/",

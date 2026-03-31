@@ -89,6 +89,33 @@ char*             lux_cstr(const char* s, size_t sLen);
 lux_str_result  lux_fromCStr(const char* cstr);
 lux_str_result  lux_fromCStrLen(const char* cstr, size_t len);
 
+// ── Additional String Methods ───────────────────────────────────────────────
+
+lux_str_result lux_trimChar(const char* s, size_t sLen, char ch);
+lux_str_result lux_capitalize(const char* s, size_t sLen);
+lux_str_result lux_removePrefix(const char* s, size_t sLen,
+                                const char* prefix, size_t prefixLen);
+lux_str_result lux_removeSuffix(const char* s, size_t sLen,
+                                const char* suffix, size_t suffixLen);
+lux_str_result lux_strInsert(const char* s, size_t sLen,
+                             size_t pos, const char* ins, size_t insLen);
+lux_str_result lux_strRemove(const char* s, size_t sLen,
+                             size_t start, size_t count);
+lux_str_result lux_concat(const char* a, size_t aLen,
+                          const char* b, size_t bLen);
+int32_t        lux_compareTo(const char* a, size_t aLen,
+                             const char* b, size_t bLen);
+int            lux_equalsIgnoreCase(const char* a, size_t aLen,
+                                    const char* b, size_t bLen);
+int            lux_strIsNumeric(const char* s, size_t sLen);
+int            lux_strIsAlpha(const char* s, size_t sLen);
+int            lux_strIsAlphaNum(const char* s, size_t sLen);
+int            lux_strIsUpper(const char* s, size_t sLen);
+int            lux_strIsLower(const char* s, size_t sLen);
+int            lux_strIsBlank(const char* s, size_t sLen);
+int            lux_strToBool(const char* s, size_t sLen);
+void           lux_words(lux_str_vec_header* out, const char* s, size_t sLen);
+
 #ifdef __cplusplus
 }
 #endif

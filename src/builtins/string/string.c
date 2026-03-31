@@ -592,3 +592,202 @@ lux_str_result lux_fromCStrLen(const char* cstr, size_t len) {
     if (!cstr) return (lux_str_result){ "", 0 };
     return (lux_str_result){ cstr, len };
 }
+
+// ── Additional String Methods ───────────────────────────────────────────────
+
+lux_str_result lux_trimChar(const char* s, size_t sLen, char ch) {
+    size_t start = 0;
+    while (start < sLen && s[start] == ch) start++;
+    size_t end = sLen;
+    while (end > start && s[end - 1] == ch) end--;
+    size_t newLen = end - start;
+    char* buf = (char*)malloc(newLen + 1);
+    if (!buf) return (lux_str_result){ "", 0 };
+    memcpy(buf, s + start, newLen);
+    buf[newLen] = '\0';
+    return (lux_str_result){ buf, newLen };
+}
+
+lux_str_result lux_capitalize(const char* s, size_t sLen) {
+    if (sLen == 0) return (lux_str_result){ "", 0 };
+    char* buf = (char*)malloc(sLen + 1);
+    if (!buf) return (lux_str_result){ "", 0 };
+    memcpy(buf, s, sLen);
+    buf[0] = (char)toupper((unsigned char)buf[0]);
+    buf[sLen] = '\0';
+    return (lux_str_result){ buf, sLen };
+}
+
+lux_str_result lux_removePrefix(const char* s, size_t sLen,
+                                const char* prefix, size_t prefixLen) {
+    if (prefixLen <= sLen && memcmp(s, prefix, prefixLen) == 0) {
+        size_t newLen = sLen - prefixLen;
+        char* buf = (char*)malloc(newLen + 1);
+        if (!buf) return (lux_str_result){ "", 0 };
+        memcpy(buf, s + prefixLen, newLen);
+        buf[newLen] = '\0';
+        return (lux_str_result){ buf, newLen };
+    }
+    char* buf = (char*)malloc(sLen + 1);
+    if (!buf) return (lux_str_result){ "", 0 };
+    memcpy(buf, s, sLen);
+    buf[sLen] = '\0';
+    return (lux_str_result){ buf, sLen };
+}
+
+lux_str_result lux_removeSuffix(const char* s, size_t sLen,
+                                const char* suffix, size_t suffixLen) {
+    if (suffixLen <= sLen && memcmp(s + sLen - suffixLen, suffix, suffixLen) == 0) {
+        size_t newLen = sLen - suffixLen;
+        char* buf = (char*)malloc(newLen + 1);
+        if (!buf) return (lux_str_result){ "", 0 };
+        memcpy(buf, s, newLen);
+        buf[newLen] = '\0';
+        return (lux_str_result){ buf, newLen };
+    }
+    char* buf = (char*)malloc(sLen + 1);
+    if (!buf) return (lux_str_result){ "", 0 };
+    memcpy(buf, s, sLen);
+    buf[sLen] = '\0';
+    return (lux_str_result){ buf, sLen };
+}
+
+lux_str_result lux_strInsert(const char* s, size_t sLen,
+                             size_t pos, const char* ins, size_t insLen) {
+    if (pos > sLen) pos = sLen;
+    size_t newLen = sLen + insLen;
+    char* buf = (char*)malloc(newLen + 1);
+    if (!buf) return (lux_str_result){ "", 0 };
+    memcpy(buf, s, pos);
+    memcpy(buf + pos, ins, insLen);
+    memcpy(buf + pos + insLen, s + pos, sLen - pos);
+    buf[newLen] = '\0';
+    return (lux_str_result){ buf, newLen };
+}
+
+lux_str_result lux_strRemove(const char* s, size_t sLen,
+                             size_t start, size_t count) {
+    if (start >= sLen) return (lux_str_result){ s, sLen };
+    if (start + count > sLen) count = sLen - start;
+    size_t newLen = sLen - count;
+    char* buf = (char*)malloc(newLen + 1);
+    if (!buf) return (lux_str_result){ "", 0 };
+    memcpy(buf, s, start);
+    memcpy(buf + start, s + start + count, sLen - start - count);
+    buf[newLen] = '\0';
+    return (lux_str_result){ buf, newLen };
+}
+
+lux_str_result lux_concat(const char* a, size_t aLen,
+                          const char* b, size_t bLen) {
+    size_t newLen = aLen + bLen;
+    char* buf = (char*)malloc(newLen + 1);
+    if (!buf) return (lux_str_result){ "", 0 };
+    memcpy(buf, a, aLen);
+    memcpy(buf + aLen, b, bLen);
+    buf[newLen] = '\0';
+    return (lux_str_result){ buf, newLen };
+}
+
+int32_t lux_compareTo(const char* a, size_t aLen,
+                      const char* b, size_t bLen) {
+    size_t minLen = aLen < bLen ? aLen : bLen;
+    int cmp = memcmp(a, b, minLen);
+    if (cmp != 0) return cmp < 0 ? -1 : 1;
+    if (aLen < bLen) return -1;
+    if (aLen > bLen) return 1;
+    return 0;
+}
+
+int lux_equalsIgnoreCase(const char* a, size_t aLen,
+                         const char* b, size_t bLen) {
+    if (aLen != bLen) return 0;
+    for (size_t i = 0; i < aLen; i++) {
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i]))
+            return 0;
+    }
+    return 1;
+}
+
+int lux_strIsNumeric(const char* s, size_t sLen) {
+    if (sLen == 0) return 0;
+    for (size_t i = 0; i < sLen; i++) {
+        if (!isdigit((unsigned char)s[i])) return 0;
+    }
+    return 1;
+}
+
+int lux_strIsAlpha(const char* s, size_t sLen) {
+    if (sLen == 0) return 0;
+    for (size_t i = 0; i < sLen; i++) {
+        if (!isalpha((unsigned char)s[i])) return 0;
+    }
+    return 1;
+}
+
+int lux_strIsAlphaNum(const char* s, size_t sLen) {
+    if (sLen == 0) return 0;
+    for (size_t i = 0; i < sLen; i++) {
+        if (!isalnum((unsigned char)s[i])) return 0;
+    }
+    return 1;
+}
+
+int lux_strIsUpper(const char* s, size_t sLen) {
+    if (sLen == 0) return 0;
+    for (size_t i = 0; i < sLen; i++) {
+        if (isalpha((unsigned char)s[i]) && !isupper((unsigned char)s[i]))
+            return 0;
+    }
+    return 1;
+}
+
+int lux_strIsLower(const char* s, size_t sLen) {
+    if (sLen == 0) return 0;
+    for (size_t i = 0; i < sLen; i++) {
+        if (isalpha((unsigned char)s[i]) && !islower((unsigned char)s[i]))
+            return 0;
+    }
+    return 1;
+}
+
+int lux_strIsBlank(const char* s, size_t sLen) {
+    for (size_t i = 0; i < sLen; i++) {
+        if (!isspace((unsigned char)s[i])) return 0;
+    }
+    return 1;
+}
+
+int lux_strToBool(const char* s, size_t sLen) {
+    if (sLen == 4 && memcmp(s, "true", 4) == 0) return 1;
+    if (sLen == 1 && s[0] == '1') return 1;
+    return 0;
+}
+
+void lux_words(lux_str_vec_header* out, const char* s, size_t sLen) {
+    size_t cap = 8;
+    lux_str_result* arr = (lux_str_result*)malloc(cap * sizeof(lux_str_result));
+    size_t count = 0;
+
+    size_t i = 0;
+    while (i < sLen) {
+        while (i < sLen && isspace((unsigned char)s[i])) i++;
+        if (i >= sLen) break;
+        size_t start = i;
+        while (i < sLen && !isspace((unsigned char)s[i])) i++;
+        size_t wordLen = i - start;
+        char* word = (char*)malloc(wordLen + 1);
+        memcpy(word, s + start, wordLen);
+        word[wordLen] = '\0';
+
+        if (count >= cap) {
+            cap *= 2;
+            arr = (lux_str_result*)realloc(arr, cap * sizeof(lux_str_result));
+        }
+        arr[count++] = (lux_str_result){ word, wordLen };
+    }
+
+    out->ptr = arr;
+    out->len = count;
+    out->cap = cap;
+}

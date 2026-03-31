@@ -55,7 +55,7 @@ The complete guide to T's syntax and semantics, from basics to advanced features
 ### Type System
 
 - [Type Aliases](language/type-aliases.md) — The `type` keyword and aliasing rules
-- [Generics](language/generics.md) — Generic type parameters (`Vec<T>`, `Map<K, V>`)
+- [Generics](language/generics.md) — Generic type parameters (`vec<T>`, `map<K, V>`)
 - [Expressions](language/expressions.md) — Expression types, ternary, null coalescing, cast (`as`), type check (`is`), `sizeof`, `typeof`
 
 ### Modules and Namespaces

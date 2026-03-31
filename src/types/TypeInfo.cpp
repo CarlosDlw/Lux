@@ -69,6 +69,14 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
         // Function values are represented as opaque pointers (function pointers)
         return llvm::PointerType::getUnqual(ctx);
 
+    case TypeKind::Tuple: {
+        // Tuple is an anonymous struct: { T1, T2, ... }
+        std::vector<llvm::Type*> elemTypes;
+        for (auto* elem : tupleElements)
+            elemTypes.push_back(elem->toLLVMType(ctx, dl));
+        return llvm::StructType::get(ctx, elemTypes);
+    }
+
     case TypeKind::Extended: {
         if (extendedKind == "Task" || extendedKind == "Mutex") {
             return llvm::PointerType::getUnqual(ctx);

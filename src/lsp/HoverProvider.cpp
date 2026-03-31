@@ -1,16 +1,49 @@
 #include "lsp/HoverProvider.h"
 #include "lsp/ProjectContext.h"
+#include "lsp/DocComment.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
 #include "namespace/NamespaceRegistry.h"
 
 #include <sstream>
+#include <fstream>
 
-// Forward declarations of static helpers used in hoverIdent
+// Normalize lowercase native keywords (vec, map, set) to registry CamelCase (Vec, Map, Set)
+static std::string normalizeExtBaseName(const std::string& name) {
+    if (name == "vec") return "Vec";
+    if (name == "map") return "Map";
+    if (name == "set") return "Set";
+    return name;
+}
+
+// Context for resolving function/method call return types during auto inference.
+struct FuncLookupCtx {
+    LuxParser::ProgramContext* tree = nullptr;
+    const CBindings* bindings = nullptr;
+    const BuiltinRegistry* builtinReg = nullptr;
+    const ExtendedTypeRegistry* extTypeReg = nullptr;
+    const ProjectContext* project = nullptr;
+};
+
+// Forward declarations
+static std::string inferExprTypeName(
+        LuxParser::ExpressionContext* expr,
+        const std::unordered_map<std::string, HoverProvider::LocalVar>& locals,
+        const FuncLookupCtx* flc);
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Doc-comment helper
+// ═══════════════════════════════════════════════════════════════════════
+
+std::string HoverProvider::withDoc(const std::string& md, size_t declLine) {
+    return appendDocToHover(md, docComments_, declLine);
+}
+
 static void collectLocalsFromBlock(
         LuxParser::BlockContext* block,
         size_t beforeLine,
-        std::unordered_map<std::string, HoverProvider::LocalVar>& out);
+        std::unordered_map<std::string, HoverProvider::LocalVar>& out,
+        const FuncLookupCtx* flc = nullptr);
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Main entry point (single-file mode)
@@ -32,6 +65,9 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     auto parsed = Parser::parseString(source);
     if (!parsed.tree) return std::nullopt;
 
+    // Parse doc-comments from raw source for hover enrichment.
+    docComments_ = parseDocComments(source);
+
     // Resolve C headers — use project-level bindings if available.
     CBindings localBindings;
     TypeRegistry cTypeReg;
@@ -40,7 +76,9 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     if (project && project->isValid()) {
         cBindingsPtr = &project->cBindings();
     } else {
-        auto includes = parsed.tree->includeDecl();
+        std::vector<LuxParser::IncludeDeclContext*> includes;
+        for (auto* pre : parsed.tree->preambleDecl())
+            if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
             CHeaderResolver resolver(cTypeReg, localBindings);
             for (auto* incl : includes) {
@@ -86,15 +124,18 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
     // ── Namespace declaration: namespace Main; ──────────────────────
     if (auto* nsDecl = parsed.tree->namespaceDecl()) {
-        if (nsDecl->IDENTIFIER()->getSymbol() == hoveredToken) {
+        if (nsDecl->IDENTIFIER() && nsDecl->IDENTIFIER()->getSymbol() == hoveredToken) {
             std::string md = "```lux\n(namespace) " + tokenText + "\n```";
             return makeResult(hoveredToken, md);
         }
     }
 
     // ── Use declarations: use Utils::{ add, Role, User }; ──────────
-    for (auto* useDecl : parsed.tree->useDecl()) {
+    for (auto* pre : parsed.tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
         if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+            if (!item->IDENTIFIER() || !item->modulePath()) continue;
             // Hover on the imported symbol name
             if (item->IDENTIFIER()->getSymbol() == hoveredToken) {
                 auto symbolName = item->IDENTIFIER()->getText();
@@ -116,6 +157,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             }
         }
         if (auto* group = dynamic_cast<LuxParser::UseGroupContext*>(useDecl)) {
+            if (!group->modulePath()) continue;
             std::string modulePath;
             for (auto* id : group->modulePath()->IDENTIFIER()) {
                 if (!modulePath.empty()) modulePath += "::";
@@ -141,15 +183,17 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     // ── Check if hovering a function name in a functionDecl ─────────
     for (auto* tld : parsed.tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
+            if (!func->IDENTIFIER()) continue;
             auto* nameToken = func->IDENTIFIER()->getSymbol();
             if (nameToken == hoveredToken) {
-                return HoverResult{formatFunctionDecl(func),
+                return HoverResult{withDoc(formatFunctionDecl(func), func->getStart()->getLine() - 1),
                                    line, col,
                                    line, col + tokenText.size()};
             }
             // Check parameter names
             if (auto* params = func->paramList()) {
                 for (auto* p : params->param()) {
+                    if (!p->IDENTIFIER()) continue;
                     auto* pName = p->IDENTIFIER()->getSymbol();
                     if (pName == hoveredToken) {
                         std::string typeStr = typeSpecToString(p->typeSpec());
@@ -165,11 +209,13 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Struct declaration name ─────────────────────────────────
         if (auto* sd = tld->structDecl()) {
+            if (!sd->IDENTIFIER()) continue;
             if (sd->IDENTIFIER()->getSymbol() == hoveredToken) {
-                return makeResult(hoveredToken, formatStructDecl(sd));
+                return makeResult(hoveredToken, withDoc(formatStructDecl(sd), sd->getStart()->getLine() - 1));
             }
             // Hover on field names inside struct
             for (auto* f : sd->structField()) {
+                if (!f->IDENTIFIER()) continue;
                 if (f->IDENTIFIER()->getSymbol() == hoveredToken) {
                     std::string md = "```lux\n(field) " + typeSpecToString(f->typeSpec())
                                    + " " + tokenText + "\n```";
@@ -181,8 +227,9 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
         // ── Enum declaration name ───────────────────────────────────
         if (auto* ed = tld->enumDecl()) {
             auto ids = ed->IDENTIFIER();
+            if (ids.empty()) continue;
             if (ids[0]->getSymbol() == hoveredToken) {
-                return makeResult(hoveredToken, formatEnumDecl(ed));
+                return makeResult(hoveredToken, withDoc(formatEnumDecl(ed), ed->getStart()->getLine() - 1));
             }
             // Hover on variant name
             for (size_t i = 1; i < ids.size(); i++) {
@@ -196,10 +243,12 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Union declaration name ──────────────────────────────────
         if (auto* ud = tld->unionDecl()) {
+            if (!ud->IDENTIFIER()) continue;
             if (ud->IDENTIFIER()->getSymbol() == hoveredToken) {
-                return makeResult(hoveredToken, formatUnionDecl(ud));
+                return makeResult(hoveredToken, withDoc(formatUnionDecl(ud), ud->getStart()->getLine() - 1));
             }
             for (auto* f : ud->unionField()) {
+                if (!f->IDENTIFIER()) continue;
                 if (f->IDENTIFIER()->getSymbol() == hoveredToken) {
                     std::string md = "```lux\n(field) " + typeSpecToString(f->typeSpec())
                                    + " " + tokenText + "\n```";
@@ -210,25 +259,28 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Extend declaration name ─────────────────────────────────
         if (auto* ext = tld->extendDecl()) {
+            if (!ext->IDENTIFIER()) continue;
             if (ext->IDENTIFIER()->getSymbol() == hoveredToken) {
-                std::string md = formatExtendMethods(ext);
+                std::string md = withDoc(formatExtendMethods(ext), ext->getStart()->getLine() - 1);
                 return makeResult(hoveredToken, md);
             }
         }
 
         // ── Type alias declaration ──────────────────────────────────
         if (auto* ta = tld->typeAliasDecl()) {
+            if (!ta->IDENTIFIER()) continue;
             if (ta->IDENTIFIER()->getSymbol() == hoveredToken) {
                 std::string md = "```lux\ntype " + tokenText + " = "
                                + typeSpecToString(ta->typeSpec()) + "\n```";
-                return makeResult(hoveredToken, md);
+                return makeResult(hoveredToken, withDoc(md, ta->getStart()->getLine() - 1));
             }
         }
 
         // ── Extern declaration name ─────────────────────────────────
         if (auto* ext = tld->externDecl()) {
+            if (!ext->IDENTIFIER()) continue;
             if (ext->IDENTIFIER()->getSymbol() == hoveredToken) {
-                return makeResult(hoveredToken, formatExternDecl(ext));
+                return makeResult(hoveredToken, withDoc(formatExternDecl(ext), ext->getStart()->getLine() - 1));
             }
         }
     }
@@ -270,8 +322,8 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     continue;
 
                 // Method name
-                if (method->IDENTIFIER(0)->getSymbol() == hoveredToken) {
-                    std::string structName = ext->IDENTIFIER()->getText();
+                if (method->IDENTIFIER(0) && method->IDENTIFIER(0)->getSymbol() == hoveredToken) {
+                    std::string structName = ext->IDENTIFIER() ? ext->IDENTIFIER()->getText() : "?";
                     bool isStatic = (method->AMPERSAND() == nullptr);
                     std::string retType = typeSpecToString(method->typeSpec());
                     std::string md = "```lux\n(" + std::string(isStatic ? "static method" : "method")
@@ -288,7 +340,8 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     for (auto* p : params) {
                         if (!first) md += ", ";
                         first = false;
-                        md += typeSpecToString(p->typeSpec()) + " " + p->IDENTIFIER()->getText();
+                        md += typeSpecToString(p->typeSpec()) + " "
+                            + (p->IDENTIFIER() ? p->IDENTIFIER()->getText() : "?");
                     }
                     md += ")\n```";
                     return makeResult(hoveredToken, md);
@@ -309,6 +362,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     params = method->param();
                 }
                 for (auto* p : params) {
+                    if (!p->IDENTIFIER()) continue;
                     if (p->IDENTIFIER()->getSymbol() == hoveredToken) {
                         std::string md = "```lux\n(parameter) "
                             + typeSpecToString(p->typeSpec()) + " "
@@ -357,10 +411,9 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 1) Local variable / parameter in enclosing function
     auto* func = findEnclosingFunction(tree, cursorLine);
     if (func) {
-        auto locals = collectLocals(func, cursorLine);
+        auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
         auto it = locals.find(name);
         if (it != locals.end()) {
-            std::string prefix = "[]";
             std::string dims;
             for (unsigned i = 0; i < it->second.arrayDims; i++)
                 dims += "[]";
@@ -380,6 +433,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             auto* ee = ext->getStop();
             if (!es || !ee) continue;
             if (tokenLine < es->getLine() || tokenLine > ee->getLine()) continue;
+            if (!ext->IDENTIFIER()) continue;
             std::string structName = ext->IDENTIFIER()->getText();
             std::string md = "```lux\n(self) *" + structName + "\n```";
             return makeResult(token, md);
@@ -407,6 +461,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     params = method->param();
                 }
                 for (auto* p : params) {
+                    if (!p->IDENTIFIER()) continue;
                     if (p->IDENTIFIER()->getText() == name) {
                         std::string md = "```lux\n(parameter) "
                             + typeSpecToString(p->typeSpec()) + " " + name + "\n```";
@@ -432,38 +487,105 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 2) User-defined function
     auto* funcDecl = findFunctionDecl(tree, name);
     if (funcDecl) {
-        return makeResult(token, formatFunctionDecl(funcDecl));
+        return makeResult(token, withDoc(formatFunctionDecl(funcDecl), funcDecl->getStart()->getLine() - 1));
     }
 
     // 2b) Extern function declaration
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->externDecl()) {
-            if (ext->IDENTIFIER()->getText() == name) {
-                return makeResult(token, formatExternDecl(ext));
+            if (ext->IDENTIFIER() && ext->IDENTIFIER()->getText() == name) {
+                return makeResult(token, withDoc(formatExternDecl(ext), ext->getStart()->getLine() - 1));
             }
         }
     }
 
-    // 3) Builtin function
+    // 3) Cross-file symbol from project registry (imported via `use`)
+    if (project && project->isValid()) {
+        for (auto& ns : project->registry().allNamespaces()) {
+            auto* sym = project->registry().findSymbol(ns, name);
+            if (!sym) continue;
+
+            // Read source file and parse doc-comments for the cross-file symbol.
+            std::vector<DocComment> crossDocs;
+            if (!sym->sourceFile.empty()) {
+                std::ifstream f(sym->sourceFile);
+                if (f) {
+                    std::string crossSource((std::istreambuf_iterator<char>(f)),
+                                             std::istreambuf_iterator<char>());
+                    crossDocs = parseDocComments(crossSource);
+                }
+            }
+
+            switch (sym->kind) {
+                case ExportedSymbol::Function:
+                    if (auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl)) {
+                        std::string crossMd = formatFunctionDecl(fd);
+                        size_t declLine = fd->getStart()->getLine() - 1;
+                        crossMd = appendDocToHover(crossMd, crossDocs, declLine);
+                        return makeResult(token, crossMd);
+                    }
+                    break;
+                case ExportedSymbol::Struct:
+                    if (auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl)) {
+                        std::string crossMd = formatStructDecl(sd);
+                        size_t declLine = sd->getStart()->getLine() - 1;
+                        crossMd = appendDocToHover(crossMd, crossDocs, declLine);
+                        return makeResult(token, crossMd);
+                    }
+                    break;
+                case ExportedSymbol::Enum:
+                    if (auto* ed = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl)) {
+                        std::string crossMd = formatEnumDecl(ed);
+                        size_t declLine = ed->getStart()->getLine() - 1;
+                        crossMd = appendDocToHover(crossMd, crossDocs, declLine);
+                        return makeResult(token, crossMd);
+                    }
+                    break;
+                case ExportedSymbol::Union:
+                    if (auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl)) {
+                        std::string crossMd = formatUnionDecl(ud);
+                        size_t declLine = ud->getStart()->getLine() - 1;
+                        crossMd = appendDocToHover(crossMd, crossDocs, declLine);
+                        return makeResult(token, crossMd);
+                    }
+                    break;
+                case ExportedSymbol::TypeAlias:
+                    if (auto* ta = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl)) {
+                        std::string md = "```lux\ntype " + name + " = "
+                                       + typeSpecToString(ta->typeSpec()) + "\n```";
+                        size_t declLine = ta->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
+                    break;
+                case ExportedSymbol::ExtendBlock:
+                    if (auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl))
+                        return makeResult(token, formatExtendMethods(ext));
+                    break;
+            }
+        }
+    }
+
+    // 4) Builtin function
     auto* builtin = builtinRegistry_.lookup(name);
     if (builtin) {
         return makeResult(token, formatBuiltinSignature(*builtin));
     }
 
-    // 4) Builtin constant (PI, E, INT32_MAX, etc.)
+    // 5) Builtin constant (PI, E, INT32_MAX, etc.)
     auto& constType = builtinRegistry_.lookupConstant(name);
     if (!constType.empty()) {
         std::string md = "```lux\n(constant) " + constType + " " + name + "\n```";
         return makeResult(token, md);
     }
 
-    // 5) C function
+    // 6) C function
     auto* cfunc = bindings.findFunction(name);
     if (cfunc) {
         return makeResult(token, formatCFunction(*cfunc));
     }
 
-    // 6) C struct (used as type or in struct literal)
+    // 7) C struct (used as type or in struct literal)
     auto* cstruct = bindings.findStruct(name);
     if (cstruct) {
         return makeResult(token, formatCStruct(name, *cstruct));
@@ -478,8 +600,14 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 8) C macro constant
     auto* cmacro = bindings.findMacro(name);
     if (cmacro) {
-        std::string md = "```c\n#define " + name + " " +
-                         std::to_string(cmacro->value) + "\n```";
+        std::string valStr;
+        if (cmacro->isFloat)
+            valStr = std::to_string(cmacro->floatValue);
+        else if (cmacro->isString)
+            valStr = "\"" + cmacro->stringValue + "\"";
+        else
+            valStr = std::to_string(cmacro->value);
+        std::string md = "```c\n#define " + name + " " + valStr + "\n```";
         return makeResult(token, md);
     }
 
@@ -523,19 +651,19 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 12) User-defined struct type
     auto* structDecl = findStructDecl(tree, name);
     if (structDecl) {
-        return makeResult(token, formatStructDecl(structDecl));
+        return makeResult(token, withDoc(formatStructDecl(structDecl), structDecl->getStart()->getLine() - 1));
     }
 
     // 13) User-defined enum type
     auto* enumDecl = findEnumDecl(tree, name);
     if (enumDecl) {
-        return makeResult(token, formatEnumDecl(enumDecl));
+        return makeResult(token, withDoc(formatEnumDecl(enumDecl), enumDecl->getStart()->getLine() - 1));
     }
 
     // 14) User-defined union type
     auto* unionDecl = findUnionDecl(tree, name);
     if (unionDecl) {
-        return makeResult(token, formatUnionDecl(unionDecl));
+        return makeResult(token, withDoc(formatUnionDecl(unionDecl), unionDecl->getStart()->getLine() - 1));
     }
 
     // 15) Type alias
@@ -543,7 +671,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     if (aliasDecl) {
         std::string md = "```lux\ntype " + name + " = "
                        + typeSpecToString(aliasDecl->typeSpec()) + "\n```";
-        return makeResult(token, md);
+        return makeResult(token, withDoc(md, aliasDecl->getStart()->getLine() - 1));
     }
 
     // 16) Extended type base name (Vec, Map, Set, Task)
@@ -570,43 +698,6 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     if (typeInfo) {
         std::string md = "```lux\n(type) " + typeInfo->name + "\n```";
         return makeResult(token, md);
-    }
-
-    // 18) Cross-file symbol from project registry (imported via `use`)
-    if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
-            auto* sym = project->registry().findSymbol(ns, name);
-            if (!sym) continue;
-            switch (sym->kind) {
-                case ExportedSymbol::Function:
-                    if (auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl))
-                        return makeResult(token, formatFunctionDecl(fd));
-                    break;
-                case ExportedSymbol::Struct:
-                    if (auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl))
-                        return makeResult(token, formatStructDecl(sd));
-                    break;
-                case ExportedSymbol::Enum:
-                    if (auto* ed = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl))
-                        return makeResult(token, formatEnumDecl(ed));
-                    break;
-                case ExportedSymbol::Union:
-                    if (auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl))
-                        return makeResult(token, formatUnionDecl(ud));
-                    break;
-                case ExportedSymbol::TypeAlias:
-                    if (auto* ta = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl)) {
-                        std::string md = "```lux\ntype " + name + " = "
-                                       + typeSpecToString(ta->typeSpec()) + "\n```";
-                        return makeResult(token, md);
-                    }
-                    break;
-                case ExportedSymbol::ExtendBlock:
-                    if (auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl))
-                        return makeResult(token, formatExtendMethods(ext));
-                    break;
-            }
-        }
     }
 
     return std::nullopt;
@@ -734,7 +825,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 std::string varName = ident->IDENTIFIER()->getText();
                 auto* func = findEnclosingFunction(tree, cursorLine);
                 if (func) {
-                    auto locals = collectLocals(func, cursorLine);
+                    auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
                     auto it = locals.find(varName);
                     if (it != locals.end()) {
                         ptrTypeName = it->second.typeName;
@@ -808,14 +899,10 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                                  tree, bindings, cursorLine, project);
     }
 
-    // ── Address-of: &identifier ─────────────────────────────────────
+    // ── Address-of: &expression ───────────────────────────────────
     if (auto* ao = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
-        auto* id = ao->IDENTIFIER();
-        if (id && id->getSymbol() == hoveredToken) {
-            return hoverIdent(id->getText(), hoveredToken, tree, bindings,
-                               cursorLine, project);
-        }
-        return std::nullopt;
+        return walkExprForHover(ao->expression(), hoveredToken, tokenText,
+                                 tree, bindings, cursorLine, project);
     }
 
     // ── Dereference: *expr ──────────────────────────────────────────
@@ -1052,6 +1139,105 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── Tuple index access: expr.0, expr.1 ─────────────────────────
+    if (auto* ti = dynamic_cast<LuxParser::TupleIndexExprContext*>(expr)) {
+        // If hovering on the INTEGER token (.0, .1 ...), show element type
+        if (ti->INT_LIT() && ti->INT_LIT()->getSymbol() == hoveredToken) {
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                FuncLookupCtx flc;
+                flc.tree = tree; flc.bindings = &bindings;
+                flc.builtinReg = &builtinRegistry_; flc.extTypeReg = &extTypeRegistry_;
+                flc.project = project;
+                std::string typeName = inferExprTypeName(expr, locals, &flc);
+                if (!typeName.empty()) {
+                    std::string idx = ti->INT_LIT()->getText();
+                    std::string md = "```lux\n(tuple element) ." + idx + ": " + typeName + "\n```";
+                    return makeResult(hoveredToken, md);
+                }
+            }
+        }
+        return walkExprForHover(ti->expression(), hoveredToken, tokenText,
+                                 tree, bindings, cursorLine, project);
+    }
+
+    // ── Tuple arrow index: expr->0, expr->1 ────────────────────────
+    if (auto* tai = dynamic_cast<LuxParser::TupleArrowIndexExprContext*>(expr)) {
+        if (tai->INT_LIT() && tai->INT_LIT()->getSymbol() == hoveredToken) {
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                FuncLookupCtx flc;
+                flc.tree = tree; flc.bindings = &bindings;
+                flc.builtinReg = &builtinRegistry_; flc.extTypeReg = &extTypeRegistry_;
+                flc.project = project;
+                std::string typeName = inferExprTypeName(expr, locals, &flc);
+                if (!typeName.empty()) {
+                    std::string idx = tai->INT_LIT()->getText();
+                    std::string md = "```lux\n(tuple element) ->" + idx + ": " + typeName + "\n```";
+                    return makeResult(hoveredToken, md);
+                }
+            }
+        }
+        return walkExprForHover(tai->expression(), hoveredToken, tokenText,
+                                 tree, bindings, cursorLine, project);
+    }
+
+    // ── Chained tuple index: expr.N.M (FLOAT_LIT) ─────────────────
+    if (auto* cti = dynamic_cast<LuxParser::ChainedTupleIndexExprContext*>(expr)) {
+        if (cti->FLOAT_LIT() && cti->FLOAT_LIT()->getSymbol() == hoveredToken) {
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                FuncLookupCtx flc;
+                flc.tree = tree; flc.bindings = &bindings;
+                flc.builtinReg = &builtinRegistry_; flc.extTypeReg = &extTypeRegistry_;
+                flc.project = project;
+                std::string typeName = inferExprTypeName(expr, locals, &flc);
+                if (!typeName.empty()) {
+                    std::string idx = cti->FLOAT_LIT()->getText();
+                    std::string md = "```lux\n(tuple element) ." + idx + ": " + typeName + "\n```";
+                    return makeResult(hoveredToken, md);
+                }
+            }
+        }
+        return walkExprForHover(cti->expression(), hoveredToken, tokenText,
+                                 tree, bindings, cursorLine, project);
+    }
+
+    // ── Chained tuple arrow index: expr->N.M (FLOAT_LIT) ──────────
+    if (auto* ctai = dynamic_cast<LuxParser::ChainedTupleArrowIndexExprContext*>(expr)) {
+        if (ctai->FLOAT_LIT() && ctai->FLOAT_LIT()->getSymbol() == hoveredToken) {
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                FuncLookupCtx flc;
+                flc.tree = tree; flc.bindings = &bindings;
+                flc.builtinReg = &builtinRegistry_; flc.extTypeReg = &extTypeRegistry_;
+                flc.project = project;
+                std::string typeName = inferExprTypeName(expr, locals, &flc);
+                if (!typeName.empty()) {
+                    std::string idx = ctai->FLOAT_LIT()->getText();
+                    std::string md = "```lux\n(tuple element) ->" + idx + ": " + typeName + "\n```";
+                    return makeResult(hoveredToken, md);
+                }
+            }
+        }
+        return walkExprForHover(ctai->expression(), hoveredToken, tokenText,
+                                 tree, bindings, cursorLine, project);
+    }
+
+    // ── Tuple literal: (expr, expr, ...) ────────────────────────────
+    if (auto* tl = dynamic_cast<LuxParser::TupleLitExprContext*>(expr)) {
+        for (auto* e : tl->expression()) {
+            auto r = walkExprForHover(e, hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
     // ── Array literal: [expr, expr, ...] ────────────────────────────
     if (auto* al = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
         for (auto* e : al->expression()) {
@@ -1276,7 +1462,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
     if (auto* ds = stmt->deferStmt()) {
         if (auto* cs = ds->callStmt()) {
             // Hover on the function name in defer call
-            if (cs->IDENTIFIER()->getSymbol() == hoveredToken) {
+            if (cs->IDENTIFIER() && cs->IDENTIFIER()->getSymbol() == hoveredToken) {
                 return hoverIdent(tokenText, hoveredToken, tree,
                                    bindings, cursorLine, project);
             }
@@ -1346,6 +1532,16 @@ std::optional<HoverResult> HoverProvider::hoverTypeSpec(
             return hoverTypeName(name, hoveredToken, tree, bindings, project);
         }
     }
+
+    // Check if hovering on collection type keywords (tuple, Vec, Map, Set)
+    if (ts->TUPLE() && ts->TUPLE()->getSymbol() == hoveredToken)
+        return makeResult(hoveredToken, "```lux\n(keyword) tuple\n```\nFixed-size heterogeneous collection type.");
+    if (ts->VEC() && ts->VEC()->getSymbol() == hoveredToken)
+        return makeResult(hoveredToken, "```lux\n(keyword) Vec\n```\nDynamic array collection type.");
+    if (ts->MAP() && ts->MAP()->getSymbol() == hoveredToken)
+        return makeResult(hoveredToken, "```lux\n(keyword) Map\n```\nKey-value association collection type.");
+    if (ts->SET() && ts->SET()->getSymbol() == hoveredToken)
+        return makeResult(hoveredToken, "```lux\n(keyword) Set\n```\nUnique-element collection type.");
 
     // Check if hovering on a primitive type keyword
     if (auto* pt = ts->primitiveType()) {
@@ -1490,21 +1686,153 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         const ProjectContext* project) {
     std::string methodName = ctx->IDENTIFIER()->getText();
     auto* receiver = ctx->expression();
+
+    // ── Step 1: Resolve the receiver's type FIRST (like the Checker does) ──
+    std::string receiverTypeName;
     std::string receiverText;
 
-    // Try to determine receiver type name from the expression
     if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(receiver)) {
         receiverText = ident->IDENTIFIER()->getText();
     }
 
-    // 1) Check built-in type methods (int.abs, string.len, etc.)
-    //    Try each primitive type kind
-    for (auto kind : {TypeKind::Integer, TypeKind::Float, TypeKind::String,
-                      TypeKind::Bool, TypeKind::Char}) {
-        auto* md = methodRegistry_.lookup(kind, methodName);
-        if (md) {
+    auto* encFunc = findEnclosingFunction(tree, cursorLine);
+    if (encFunc) {
+        auto locals = collectLocals(encFunc, cursorLine, tree, &bindings, project);
+
+        if (!receiverText.empty()) {
+            auto lit = locals.find(receiverText);
+            if (lit != locals.end())
+                receiverTypeName = lit->second.typeName;
+        }
+    }
+
+    // ── Step 2: Determine receiver category ──
+    // Check if this is an extended/collection type (vec<T>, map<K,V>, set<T>)
+    std::string extBaseName;
+    if (!receiverTypeName.empty()) {
+        auto ltPos = receiverTypeName.find('<');
+        if (ltPos != std::string::npos) {
+            std::string raw = receiverTypeName.substr(0, ltPos);
+            std::string normalized = normalizeExtBaseName(raw);
+            if (normalized == "Vec" || normalized == "Map" ||
+                normalized == "Set" || normalized == "Task")
+                extBaseName = normalized;
+        }
+    }
+
+    // Check if receiver is an array type (e.g. [10]int32)
+    bool isArrayReceiver = !receiverTypeName.empty() &&
+                           receiverTypeName.size() > 1 &&
+                           receiverTypeName[0] == '[';
+
+    // Determine if receiver is a known primitive type
+    TypeKind receiverKind = TypeKind::Void;
+    bool hasPrimitiveKind = false;
+    if (!receiverTypeName.empty() && extBaseName.empty() && !isArrayReceiver) {
+        // Map type name to TypeKind
+        auto* typeInfo = typeRegistry_.lookup(receiverTypeName);
+        if (typeInfo) {
+            receiverKind = typeInfo->kind;
+            hasPrimitiveKind = true;
+        }
+    }
+
+    // ── Step 3: Dispatch to the correct registry based on receiver type ──
+
+    // 3a) Extended/collection type methods (vec.push, map.get, etc.)
+    if (!extBaseName.empty()) {
+        // Parse generic type args for placeholder substitution
+        auto ltPos = receiverTypeName.find('<');
+        auto gtPos = receiverTypeName.rfind('>');
+        std::vector<std::string> typeArgs;
+        if (ltPos != std::string::npos && gtPos != std::string::npos) {
+            std::string inner = receiverTypeName.substr(ltPos + 1, gtPos - ltPos - 1);
+            int depth = 0;
+            size_t start = 0;
+            for (size_t i = 0; i < inner.size(); i++) {
+                if (inner[i] == '<') depth++;
+                else if (inner[i] == '>') depth--;
+                else if (inner[i] == ',' && depth == 0) {
+                    auto arg = inner.substr(start, i - start);
+                    size_t b = arg.find_first_not_of(' ');
+                    size_t e = arg.find_last_not_of(' ');
+                    if (b != std::string::npos)
+                        typeArgs.push_back(arg.substr(b, e - b + 1));
+                    start = i + 1;
+                }
+            }
+            auto arg = inner.substr(start);
+            size_t b = arg.find_first_not_of(' ');
+            size_t e = arg.find_last_not_of(' ');
+            if (b != std::string::npos)
+                typeArgs.push_back(arg.substr(b, e - b + 1));
+        }
+
+        auto substituteGeneric = [&](const std::string& placeholder) -> std::string {
+            if (placeholder.empty() || placeholder[0] != '_') return placeholder;
+            if (placeholder == "_self")  return receiverTypeName;
+            if (placeholder == "_elem" && !typeArgs.empty()) return typeArgs[0];
+            if (placeholder == "_key"  && !typeArgs.empty()) return typeArgs[0];
+            if (placeholder == "_val"  && typeArgs.size() >= 2) return typeArgs[1];
+            if (placeholder == "_val"  && typeArgs.size() == 1) return typeArgs[0];
+            if (placeholder == "_vec_key" && !typeArgs.empty())
+                return "vec<" + typeArgs[0] + ">";
+            if (placeholder == "_vec_val" && typeArgs.size() >= 2)
+                return "vec<" + typeArgs[1] + ">";
+            if (placeholder == "_vec_val" && typeArgs.size() == 1)
+                return "vec<" + typeArgs[0] + ">";
+            return placeholder;
+        };
+
+        auto* desc = extTypeRegistry_.lookup(extBaseName);
+        if (desc) {
+            // Lowercase display name for native keywords
+            std::string displayName = extBaseName;
+            if (displayName == "Vec") displayName = "vec";
+            else if (displayName == "Map") displayName = "map";
+            else if (displayName == "Set") displayName = "set";
+
+            for (auto& m : desc->methods) {
+                if (m.name == methodName) {
+                    std::ostringstream ss;
+                    std::string retType = substituteGeneric(m.returnType);
+                    ss << "```lux\n(" << displayName << " method) " << retType
+                       << " " << methodName << "(";
+                    for (size_t i = 0; i < m.paramTypes.size(); i++) {
+                        if (i > 0) ss << ", ";
+                        ss << substituteGeneric(m.paramTypes[i]);
+                    }
+                    ss << ")\n```";
+                    return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+                }
+            }
+        }
+    }
+
+    // 3b) Array methods (e.g. [10]int32.len)
+    if (isArrayReceiver) {
+        auto* arrayMd = methodRegistry_.lookupArrayMethod(methodName);
+        if (arrayMd) {
             std::ostringstream ss;
-            ss << "```lux\n(method) " << md->returnType << " " << methodName << "(";
+            ss << "```lux\n(method) " << arrayMd->returnType << " " << methodName << "(";
+            for (size_t i = 0; i < arrayMd->paramTypes.size(); i++) {
+                if (i > 0) ss << ", ";
+                ss << arrayMd->paramTypes[i];
+            }
+            ss << ")\n```";
+            return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+        }
+    }
+
+    // 3c) Primitive type methods — only check the ACTUAL receiver kind
+    if (hasPrimitiveKind) {
+        auto* md = methodRegistry_.lookup(receiverKind, methodName);
+        if (md) {
+            std::string retType = md->returnType;
+            if (retType == "_self" && !receiverTypeName.empty())
+                retType = receiverTypeName;
+            std::ostringstream ss;
+            ss << "```lux\n(method) " << retType << " " << methodName << "(";
             for (size_t i = 0; i < md->paramTypes.size(); i++) {
                 if (i > 0) ss << ", ";
                 ss << md->paramTypes[i];
@@ -1514,125 +1842,20 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         }
     }
 
-    // 2) Check array methods
-    auto* arrayMd = methodRegistry_.lookupArrayMethod(methodName);
-    if (arrayMd) {
-        std::ostringstream ss;
-        ss << "```lux\n(method) " << arrayMd->returnType << " " << methodName << "(";
-        for (size_t i = 0; i < arrayMd->paramTypes.size(); i++) {
-            if (i > 0) ss << ", ";
-            ss << arrayMd->paramTypes[i];
-        }
-        ss << ")\n```";
-        return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
-    }
-
-    // 3) Check extended type methods (Vec.push, Map.get, etc.)
-    //    Resolve receiver type to substitute generic placeholders (_key, _val, _elem)
-    std::string receiverTypeName;
-    if (!receiverText.empty()) {
-        auto* encFunc = findEnclosingFunction(tree, cursorLine);
-        if (encFunc) {
-            auto locals = collectLocals(encFunc, cursorLine);
-            auto lit = locals.find(receiverText);
-            if (lit != locals.end())
-                receiverTypeName = lit->second.typeName;
-        }
-    }
-
-    // Parse generic type args from receiver type name (e.g. "Map<string, int64>")
-    auto substituteGeneric = [&](const std::string& placeholder) -> std::string {
-        if (placeholder[0] != '_') return placeholder;
-        if (receiverTypeName.empty()) return placeholder;
-
-        auto ltPos = receiverTypeName.find('<');
-        if (ltPos == std::string::npos) return placeholder;
-        auto gtPos = receiverTypeName.rfind('>');
-        if (gtPos == std::string::npos) return placeholder;
-
-        std::string inner = receiverTypeName.substr(ltPos + 1, gtPos - ltPos - 1);
-
-        // Split by ", " respecting nested generics
-        std::vector<std::string> typeArgs;
-        int depth = 0;
-        size_t start = 0;
-        for (size_t i = 0; i < inner.size(); i++) {
-            if (inner[i] == '<') depth++;
-            else if (inner[i] == '>') depth--;
-            else if (inner[i] == ',' && depth == 0) {
-                auto arg = inner.substr(start, i - start);
-                // Trim whitespace
-                size_t b = arg.find_first_not_of(' ');
-                size_t e = arg.find_last_not_of(' ');
-                if (b != std::string::npos)
-                    typeArgs.push_back(arg.substr(b, e - b + 1));
-                start = i + 1;
-            }
-        }
-        {
-            auto arg = inner.substr(start);
-            size_t b = arg.find_first_not_of(' ');
-            size_t e = arg.find_last_not_of(' ');
-            if (b != std::string::npos)
-                typeArgs.push_back(arg.substr(b, e - b + 1));
-        }
-
-        // Determine base name to figure out arity
-        std::string baseName = receiverTypeName.substr(0, ltPos);
-
-        if (placeholder == "_elem" && !typeArgs.empty())
-            return typeArgs[0];
-        if (placeholder == "_key" && !typeArgs.empty())
-            return typeArgs[0];
-        if (placeholder == "_val" && typeArgs.size() >= 2)
-            return typeArgs[1];
-        if (placeholder == "_val" && typeArgs.size() == 1)
-            return typeArgs[0];  // Vec<T>.pop() returns T
-
-        return placeholder;
-    };
-
-    // Determine receiver base name for prioritized matching
-    std::string receiverBaseName;
-    if (!receiverTypeName.empty()) {
-        auto ltPos = receiverTypeName.find('<');
-        receiverBaseName = (ltPos != std::string::npos)
-                            ? receiverTypeName.substr(0, ltPos)
-                            : receiverTypeName;
-    }
-
-    for (auto& extName : {"Vec", "Map", "Set", "Task"}) {
-        // If we know the receiver type, skip non-matching extended types
-        if (!receiverBaseName.empty() && receiverBaseName != extName)
-            continue;
-        auto* desc = extTypeRegistry_.lookup(extName);
-        if (!desc) continue;
-        for (auto& m : desc->methods) {
-            if (m.name == methodName) {
-                std::ostringstream ss;
-                std::string retType = substituteGeneric(m.returnType);
-                ss << "```lux\n(" << extName << " method) " << retType
-                   << " " << methodName << "(";
-                for (size_t i = 0; i < m.paramTypes.size(); i++) {
-                    if (i > 0) ss << ", ";
-                    ss << substituteGeneric(m.paramTypes[i]);
-                }
-                ss << ")\n```";
-                return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
-            }
-        }
-    }
-
-    // Fallback: if receiver was known but no method matched, try all extended types
-    if (!receiverBaseName.empty()) {
+    // 3d) Fallback: if receiver type is unknown, try all registries
+    if (receiverTypeName.empty()) {
+        // Try extended types (without placeholder resolution)
         for (auto& extName : {"Vec", "Map", "Set", "Task"}) {
-            if (receiverBaseName == extName) continue;  // already tried
             auto* desc = extTypeRegistry_.lookup(extName);
             if (!desc) continue;
+            std::string displayName = desc->baseName;
+            if (displayName == "Vec") displayName = "vec";
+            else if (displayName == "Map") displayName = "map";
+            else if (displayName == "Set") displayName = "set";
             for (auto& m : desc->methods) {
                 if (m.name == methodName) {
                     std::ostringstream ss;
-                    ss << "```lux\n(" << extName << " method) " << m.returnType
+                    ss << "```lux\n(" << displayName << " method) " << m.returnType
                        << " " << methodName << "(";
                     for (size_t i = 0; i < m.paramTypes.size(); i++) {
                         if (i > 0) ss << ", ";
@@ -1643,11 +1866,41 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 }
             }
         }
+
+        // Try all primitive kinds
+        for (auto kind : {TypeKind::Integer, TypeKind::Float, TypeKind::String,
+                          TypeKind::Bool, TypeKind::Char}) {
+            auto* md = methodRegistry_.lookup(kind, methodName);
+            if (md) {
+                std::ostringstream ss;
+                ss << "```lux\n(method) " << md->returnType << " " << methodName << "(";
+                for (size_t i = 0; i < md->paramTypes.size(); i++) {
+                    if (i > 0) ss << ", ";
+                    ss << md->paramTypes[i];
+                }
+                ss << ")\n```";
+                return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+            }
+        }
+
+        // Try array methods
+        auto* arrayMd = methodRegistry_.lookupArrayMethod(methodName);
+        if (arrayMd) {
+            std::ostringstream ss;
+            ss << "```lux\n(method) " << arrayMd->returnType << " " << methodName << "(";
+            for (size_t i = 0; i < arrayMd->paramTypes.size(); i++) {
+                if (i > 0) ss << ", ";
+                ss << arrayMd->paramTypes[i];
+            }
+            ss << ")\n```";
+            return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+        }
     }
 
     // 4) Check user extend block methods (local + cross-file)
     auto formatExtendMethod = [&](LuxParser::ExtendDeclContext* ext,
-                                   LuxParser::ExtendMethodContext* m) -> std::optional<HoverResult> {
+                                   LuxParser::ExtendMethodContext* m,
+                                   const std::vector<DocComment>& docs) -> std::optional<HoverResult> {
         std::ostringstream ss;
         ss << "```lux\n(" << ext->IDENTIFIER()->getText()
            << " method) " << typeSpecToString(m->typeSpec())
@@ -1670,7 +1923,10 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
             }
         }
         ss << ")\n```";
-        return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+        std::string md = ss.str();
+        size_t declLine = m->getStart()->getLine();
+        md = appendDocToHover(md, docs, declLine);
+        return makeResult(ctx->IDENTIFIER()->getSymbol(), md);
     };
 
     // Local file extend blocks
@@ -1679,7 +1935,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         if (!ext) continue;
         for (auto* m : ext->extendMethod()) {
             if (m->IDENTIFIER(0)->getText() == methodName)
-                return formatExtendMethod(ext, m);
+                return formatExtendMethod(ext, m, docComments_);
         }
     }
 
@@ -1692,8 +1948,18 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
                 if (!ext) continue;
                 for (auto* m : ext->extendMethod()) {
-                    if (m->IDENTIFIER(0)->getText() == methodName)
-                        return formatExtendMethod(ext, m);
+                    if (m->IDENTIFIER(0)->getText() == methodName) {
+                        std::vector<DocComment> crossDocs;
+                        if (!sym->sourceFile.empty()) {
+                            std::ifstream ifs(sym->sourceFile);
+                            if (ifs.is_open()) {
+                                std::string crossSrc((std::istreambuf_iterator<char>(ifs)),
+                                                      std::istreambuf_iterator<char>());
+                                crossDocs = parseDocComments(crossSrc);
+                            }
+                        }
+                        return formatExtendMethod(ext, m, crossDocs);
+                    }
                 }
             }
         }
@@ -1723,7 +1989,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         // Look up local variable type
         auto* func = findEnclosingFunction(tree, cursorLine);
         if (func) {
-            auto locals = collectLocals(func, cursorLine);
+            auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
             auto it = locals.find(varName);
             if (it != locals.end()) {
                 receiverTypeName = it->second.typeName;
@@ -1847,6 +2113,8 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
     auto* ed = findEnumDecl(tree, typeName);
     if (ed) {
         std::string md = "```lux\n(variant) " + typeName + "::" + variantName + "\n```";
+        size_t declLine = ed->getStart()->getLine();
+        md = appendDocToHover(md, docComments_, declLine);
         return makeResult(token, md);
     }
 
@@ -1873,6 +2141,17 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
             for (size_t i = 1; i < enumIds.size(); i++) {
                 if (enumIds[i]->getText() == variantName) {
                     std::string md = "```lux\n(variant) " + typeName + "::" + variantName + "\n```";
+                    // Read doc-comments from source file
+                    if (!sym->sourceFile.empty()) {
+                        std::ifstream ifs(sym->sourceFile);
+                        if (ifs.is_open()) {
+                            std::string crossSrc((std::istreambuf_iterator<char>(ifs)),
+                                                  std::istreambuf_iterator<char>());
+                            auto crossDocs = parseDocComments(crossSrc);
+                            size_t declLine = enumCtx->getStart()->getLine();
+                            md = appendDocToHover(md, crossDocs, declLine);
+                        }
+                    }
                     return makeResult(token, md);
                 }
             }
@@ -1919,7 +2198,10 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
                     }
                 }
                 ss << ")\n```";
-                return makeResult(token, ss.str());
+                std::string md = ss.str();
+                size_t declLine = m->getStart()->getLine();
+                md = appendDocToHover(md, docComments_, declLine);
+                return makeResult(token, md);
             }
         }
     }
@@ -1965,7 +2247,19 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
                             }
                         }
                         ss << ")\n```";
-                        return makeResult(token, ss.str());
+                        std::string md = ss.str();
+                        // Read doc-comments from the source file
+                        if (!sym->sourceFile.empty()) {
+                            std::ifstream ifs(sym->sourceFile);
+                            if (ifs.is_open()) {
+                                std::string crossSrc((std::istreambuf_iterator<char>(ifs)),
+                                                      std::istreambuf_iterator<char>());
+                                auto crossDocs = parseDocComments(crossSrc);
+                                size_t declLine = m->getStart()->getLine();
+                                md = appendDocToHover(md, crossDocs, declLine);
+                            }
+                        }
+                        return makeResult(token, md);
                     }
                 }
             }
@@ -1979,69 +2273,516 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
 //  Local variable collection
 // ═══════════════════════════════════════════════════════════════════════
 
-static void collectLocalsFromBlock(
-        LuxParser::BlockContext* block,
-        size_t beforeLine,
-        std::unordered_map<std::string, HoverProvider::LocalVar>& out);
+// (FuncLookupCtx defined near top of file)
+
+// Resolve a type name to its tuple<> form, resolving aliases if needed.
+// Returns "" if not a tuple type.
+static std::string resolveTupleTypeName(
+        const std::string& typeName,
+        const FuncLookupCtx* flc) {
+    if (typeName.rfind("tuple<", 0) == 0) return typeName;
+    // Try alias resolution
+    if (flc && flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            if (auto* ta = tld->typeAliasDecl()) {
+                if (ta->IDENTIFIER()->getText() == typeName) {
+                    auto resolved = ta->typeSpec()->getText();
+                    if (resolved.rfind("tuple<", 0) == 0) return resolved;
+                }
+            }
+        }
+    }
+    return "";
+}
+
+// Parse "tuple<T1,T2,...>" into a vector of element type names.
+static std::vector<std::string> parseTupleElements(const std::string& tupleType) {
+    std::vector<std::string> elems;
+    // Strip "tuple<" prefix and ">" suffix
+    if (tupleType.size() < 8 || tupleType.rfind("tuple<", 0) != 0) return elems;
+    auto inner = tupleType.substr(6, tupleType.size() - 7); // remove "tuple<" and ">"
+    // Split by comma, respecting nested <> (for tuple<Vec<int32>, string>)
+    int depth = 0;
+    size_t start = 0;
+    for (size_t i = 0; i < inner.size(); i++) {
+        if (inner[i] == '<') depth++;
+        else if (inner[i] == '>') depth--;
+        else if (inner[i] == ',' && depth == 0) {
+            elems.push_back(inner.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    elems.push_back(inner.substr(start));
+    return elems;
+}
+
+// Look up the return type of a function by name.
+static std::string lookupFuncReturnType(
+        const std::string& funcName,
+        const FuncLookupCtx* flc) {
+    if (!flc) return "";
+
+    // 1) C functions from CBindings (most authoritative for #include)
+    if (flc->bindings) {
+        auto* cfunc = flc->bindings->findFunction(funcName);
+        if (cfunc && cfunc->returnType)
+            return cfunc->returnType->name;
+    }
+
+    // 2) User-defined functions and extern declarations in the AST
+    if (flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            if (auto* fd = tld->functionDecl()) {
+                if (fd->IDENTIFIER()->getText() == funcName)
+                    return fd->typeSpec()->getText();
+            }
+            if (auto* ext = tld->externDecl()) {
+                if (ext->IDENTIFIER()->getText() == funcName) {
+                    auto ret = ext->typeSpec()->getText();
+                    if (ret != "auto") return ret;
+                }
+            }
+        }
+    }
+
+    // 3) Cross-file functions (imported via `use`)
+    if (flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allNamespaces()) {
+            auto* sym = flc->project->registry().findSymbol(ns, funcName);
+            if (!sym) continue;
+            if (sym->kind == ExportedSymbol::Function) {
+                auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                if (fd) return fd->typeSpec()->getText();
+            }
+        }
+    }
+
+    // 4) Builtins
+    if (flc->builtinReg) {
+        auto* builtin = flc->builtinReg->lookup(funcName);
+        if (builtin) return builtin->returnType;
+    }
+
+    return "";
+}
+
+// Infer the type name of an expression for auto variable resolution.
+// This is a lightweight heuristic — no full type-checking.
+static std::string inferExprTypeName(
+        LuxParser::ExpressionContext* expr,
+        const std::unordered_map<std::string, HoverProvider::LocalVar>& locals,
+        const FuncLookupCtx* flc = nullptr) {
+    if (!expr) return "";
+
+    // Literals
+    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::HexLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::OctLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::BinLitExprContext*>(expr))   return "int32";
+    if (dynamic_cast<LuxParser::FloatLitExprContext*>(expr)) return "float64";
+    if (dynamic_cast<LuxParser::BoolLitExprContext*>(expr))  return "bool";
+    if (dynamic_cast<LuxParser::CharLitExprContext*>(expr))  return "char";
+    if (dynamic_cast<LuxParser::StrLitExprContext*>(expr))   return "string";
+    if (dynamic_cast<LuxParser::CStrLitExprContext*>(expr))  return "*char";
+
+    // Identifier: look up in collected locals
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto it = locals.find(id->IDENTIFIER()->getText());
+        if (it != locals.end()) return it->second.typeName;
+        return "";
+    }
+
+    // Address-of: &expr → *type
+    if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
+            auto it = locals.find(ident->IDENTIFIER()->getText());
+            if (it != locals.end()) return "*" + it->second.typeName;
+        }
+        return "";
+    }
+
+    // Function call: resolve return type
+    if (auto* fn = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(fn->expression())) {
+            auto ret = lookupFuncReturnType(ident->IDENTIFIER()->getText(), flc);
+            if (!ret.empty()) return ret;
+        }
+        return "";
+    }
+
+    // Enum access: Direction::North → "Direction"
+    if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
+        auto ids = ea->IDENTIFIER();
+        if (!ids.empty()) return ids[0]->getText();
+        return "";
+    }
+
+    // Static method call: Type::method(...) → look up return type from extend blocks
+    if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
+        auto ids = smc->IDENTIFIER();
+        if (ids.size() >= 2) {
+            std::string typeName   = ids[0]->getText();
+            std::string methodName = ids[1]->getText();
+
+            // Check user-defined extend blocks in current file
+            if (flc && flc->tree) {
+                for (auto* tld : flc->tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    if (ext->IDENTIFIER()->getText() != typeName) continue;
+                    for (auto* m : ext->extendMethod()) {
+                        if (m->IDENTIFIER(0)->getText() == methodName)
+                            return m->typeSpec()->getText();
+                    }
+                }
+            }
+
+            // Check cross-file extend blocks
+            if (flc && flc->project && flc->project->isValid()) {
+                for (auto& ns : flc->project->registry().allNamespaces()) {
+                    auto syms = flc->project->registry().getNamespaceSymbols(ns);
+                    for (auto* sym : syms) {
+                        if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+                        auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                        if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                        for (auto* m : ext->extendMethod()) {
+                            if (m->IDENTIFIER(0)->getText() == methodName)
+                                return m->typeSpec()->getText();
+                        }
+                    }
+                }
+            }
+
+            // Check extended type registry (Vec, Map, Set)
+            if (flc && flc->extTypeReg) {
+                auto* desc = flc->extTypeReg->lookup(typeName);
+                if (desc) {
+                    for (auto& md : desc->methods) {
+                        if (md.name == methodName) return md.returnType;
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
+    // Method call: resolve receiver type, then look up method return type
+    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
+        auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
+        if (!receiverType.empty()) {
+            std::string methodName = mc->IDENTIFIER()->getText();
+
+            // 1) Check user-defined extend methods
+            if (flc && flc->tree) {
+                for (auto* tld : flc->tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    if (ext->IDENTIFIER()->getText() != receiverType) continue;
+                    for (auto* m : ext->extendMethod()) {
+                        if (m->IDENTIFIER(0)->getText() == methodName)
+                            return m->typeSpec()->getText();
+                    }
+                }
+            }
+
+            // 1b) Check cross-file extend methods
+            if (flc && flc->project && flc->project->isValid()) {
+                for (auto& ns : flc->project->registry().allNamespaces()) {
+                    auto syms = flc->project->registry().getNamespaceSymbols(ns);
+                    for (auto* sym : syms) {
+                        if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+                        auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                        if (!ext || ext->IDENTIFIER()->getText() != receiverType) continue;
+                        for (auto* m : ext->extendMethod()) {
+                            if (m->IDENTIFIER(0)->getText() == methodName)
+                                return m->typeSpec()->getText();
+                        }
+                    }
+                }
+            }
+
+            // 2) Check builtin extended type methods (Vec, Map, Set, etc.)
+            if (flc && flc->extTypeReg) {
+                // Extract base name and generic args: "map<string, int32>" → "map", ["string", "int32"]
+                std::string baseName = receiverType;
+                std::vector<std::string> typeArgs;
+                auto ltPos = receiverType.find('<');
+                if (ltPos != std::string::npos) {
+                    baseName = receiverType.substr(0, ltPos);
+                    auto gtPos = receiverType.rfind('>');
+                    if (gtPos != std::string::npos) {
+                        std::string inner = receiverType.substr(ltPos + 1, gtPos - ltPos - 1);
+                        int depth = 0; size_t start = 0;
+                        for (size_t i = 0; i <= inner.size(); ++i) {
+                            if (i == inner.size() || (inner[i] == ',' && depth == 0)) {
+                                auto arg = inner.substr(start, i - start);
+                                size_t b = arg.find_first_not_of(' ');
+                                size_t e = arg.find_last_not_of(' ');
+                                if (b != std::string::npos)
+                                    typeArgs.push_back(arg.substr(b, e - b + 1));
+                                start = i + 1;
+                            } else if (inner[i] == '<') ++depth;
+                            else if (inner[i] == '>') --depth;
+                        }
+                    }
+                }
+
+                auto* desc = flc->extTypeReg->lookup(normalizeExtBaseName(baseName));
+                if (desc) {
+                    for (auto& md : desc->methods) {
+                        if (md.name != methodName) continue;
+                        // Resolve placeholder return type
+                        auto& rt = md.returnType;
+                        if (rt == "_self")  return receiverType;
+                        if (rt == "_elem" && !typeArgs.empty()) return typeArgs[0];
+                        if (rt == "_key"  && !typeArgs.empty()) return typeArgs[0];
+                        if (rt == "_val"  && typeArgs.size() >= 2) return typeArgs[1];
+                        if (rt == "_val"  && typeArgs.size() == 1) return typeArgs[0];
+                        if (rt == "_vec_key" && !typeArgs.empty()) return "vec<" + typeArgs[0] + ">";
+                        if (rt == "_vec_val" && typeArgs.size() >= 2) return "vec<" + typeArgs[1] + ">";
+                        if (rt == "_vec_val" && typeArgs.size() == 1) return "vec<" + typeArgs[0] + ">";
+                        return rt; // "void", "bool", "usize", etc.
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
+    // Dereference: *expr → remove one *
+    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr)) {
+        auto inner = inferExprTypeName(deref->expression(), locals, flc);
+        if (inner.size() > 1 && inner[0] == '*') return inner.substr(1);
+        return "";
+    }
+
+    // Negation: -expr → same type
+    if (auto* neg = dynamic_cast<LuxParser::NegExprContext*>(expr))
+        return inferExprTypeName(neg->expression(), locals, flc);
+
+    // Logical NOT → bool
+    if (dynamic_cast<LuxParser::LogicalNotExprContext*>(expr)) return "bool";
+
+    // Comparisons → bool
+    if (dynamic_cast<LuxParser::RelExprContext*>(expr))        return "bool";
+    if (dynamic_cast<LuxParser::EqExprContext*>(expr))         return "bool";
+    if (dynamic_cast<LuxParser::LogicalAndExprContext*>(expr)) return "bool";
+    if (dynamic_cast<LuxParser::LogicalOrExprContext*>(expr))  return "bool";
+
+    // Binary arithmetic: use left operand type
+    if (auto* mul = dynamic_cast<LuxParser::MulExprContext*>(expr))
+        return inferExprTypeName(mul->expression(0), locals, flc);
+    if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(expr))
+        return inferExprTypeName(add->expression(0), locals, flc);
+
+    // Paren: unwrap
+    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+        return inferExprTypeName(paren->expression(), locals, flc);
+
+    // Cast: target type
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+        return cast->typeSpec()->getText();
+
+    // Ternary: type of true branch
+    if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr))
+        return inferExprTypeName(tern->expression(1), locals, flc);
+
+    // Array literal: [expr, ...] → infer element type, prepend []
+    if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
+        auto elems = arr->expression();
+        if (!elems.empty()) {
+            auto elemType = inferExprTypeName(elems[0], locals, flc);
+            if (!elemType.empty()) return "[]" + elemType;
+        }
+        return "";
+    }
+
+    // Struct literal: Point { x: 10, y: 20 } → "Point"
+    if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(expr)) {
+        auto ids = sl->IDENTIFIER();
+        if (!ids.empty()) return ids[0]->getText();
+        return "";
+    }
+
+    // Sizeof → int64
+    if (dynamic_cast<LuxParser::SizeofExprContext*>(expr)) return "int64";
+
+    // Typeof → string
+    if (dynamic_cast<LuxParser::TypeofExprContext*>(expr)) return "string";
+
+    // Tuple literal: (10, 20) → "tuple<int32, int32>"
+    if (auto* tup = dynamic_cast<LuxParser::TupleLitExprContext*>(expr)) {
+        auto exprs = tup->expression();
+        std::string result = "tuple<";
+        for (size_t i = 0; i < exprs.size(); i++) {
+            if (i > 0) result += ", ";
+            auto elemType = inferExprTypeName(exprs[i], locals, flc);
+            result += elemType.empty() ? "auto" : elemType;
+        }
+        result += ">";
+        return result;
+    }
+
+    // Tuple index: expr.N → element type
+    if (auto* ti = dynamic_cast<LuxParser::TupleIndexExprContext*>(expr)) {
+        auto baseType = inferExprTypeName(ti->expression(), locals, flc);
+        auto resolved = resolveTupleTypeName(baseType, flc);
+        if (!resolved.empty()) {
+            auto elems = parseTupleElements(resolved);
+            unsigned idx = std::stoul(ti->INT_LIT()->getText());
+            if (idx < elems.size()) return elems[idx];
+        }
+        return "";
+    }
+
+    // Chained tuple index: expr.N.M (FLOAT_LIT) → inner element type
+    if (auto* cti = dynamic_cast<LuxParser::ChainedTupleIndexExprContext*>(expr)) {
+        auto baseType = inferExprTypeName(cti->expression(), locals, flc);
+        auto resolved = resolveTupleTypeName(baseType, flc);
+        if (!resolved.empty()) {
+            auto elems = parseTupleElements(resolved);
+            auto text = cti->FLOAT_LIT()->getText();
+            auto dotPos = text.find('.');
+            unsigned idx1 = std::stoul(text.substr(0, dotPos));
+            if (idx1 < elems.size()) {
+                auto innerResolved = resolveTupleTypeName(elems[idx1], flc);
+                if (!innerResolved.empty()) {
+                    auto innerElems = parseTupleElements(innerResolved);
+                    unsigned idx2 = std::stoul(text.substr(dotPos + 1));
+                    if (idx2 < innerElems.size()) return innerElems[idx2];
+                }
+            }
+        }
+        return "";
+    }
+
+    // Tuple arrow index: expr->N → element type
+    if (auto* tai = dynamic_cast<LuxParser::TupleArrowIndexExprContext*>(expr)) {
+        auto baseType = inferExprTypeName(tai->expression(), locals, flc);
+        // Strip leading * from pointer type
+        std::string pointeeType = baseType;
+        if (!pointeeType.empty() && pointeeType[0] == '*')
+            pointeeType = pointeeType.substr(1);
+        auto resolved = resolveTupleTypeName(pointeeType, flc);
+        if (!resolved.empty()) {
+            auto elems = parseTupleElements(resolved);
+            unsigned idx = std::stoul(tai->INT_LIT()->getText());
+            if (idx < elems.size()) return elems[idx];
+        }
+        return "";
+    }
+
+    // Chained tuple arrow index: expr->N.M (FLOAT_LIT) → inner element type
+    if (auto* ctai = dynamic_cast<LuxParser::ChainedTupleArrowIndexExprContext*>(expr)) {
+        auto baseType = inferExprTypeName(ctai->expression(), locals, flc);
+        std::string pointeeType = baseType;
+        if (!pointeeType.empty() && pointeeType[0] == '*')
+            pointeeType = pointeeType.substr(1);
+        auto resolved = resolveTupleTypeName(pointeeType, flc);
+        if (!resolved.empty()) {
+            auto elems = parseTupleElements(resolved);
+            auto text = ctai->FLOAT_LIT()->getText();
+            auto dotPos = text.find('.');
+            unsigned idx1 = std::stoul(text.substr(0, dotPos));
+            if (idx1 < elems.size()) {
+                auto innerResolved = resolveTupleTypeName(elems[idx1], flc);
+                if (!innerResolved.empty()) {
+                    auto innerElems = parseTupleElements(innerResolved);
+                    unsigned idx2 = std::stoul(text.substr(dotPos + 1));
+                    if (idx2 < innerElems.size()) return innerElems[idx2];
+                }
+            }
+        }
+        return "";
+    }
+
+    return "";
+}
 
 static void collectLocalsFromStmts(
         const std::vector<LuxParser::StatementContext*>& stmts,
         size_t beforeLine,
-        std::unordered_map<std::string, HoverProvider::LocalVar>& out) {
+        std::unordered_map<std::string, HoverProvider::LocalVar>& out,
+        const FuncLookupCtx* flc = nullptr) {
     for (auto* stmt : stmts) {
         // Stop collecting if statement starts after the cursor line
         auto* start = stmt->getStart();
         if (start && start->getLine() > beforeLine + 1) break;
 
         if (auto* vd = stmt->varDeclStmt()) {
-            std::string typeName = "";
-            if (vd->typeSpec()) {
-                typeName = vd->typeSpec()->getText();
+            // ── Tuple destructuring: auto (x, y) = expr; ────────────
+            if (vd->LPAREN()) {
+                auto ids = vd->IDENTIFIER();
+                std::string initType;
+                if (vd->expression())
+                    initType = inferExprTypeName(vd->expression(), out, flc);
+                auto resolved = resolveTupleTypeName(initType, flc);
+                auto elems = parseTupleElements(resolved);
+                for (size_t i = 0; i < ids.size(); i++) {
+                    std::string elemType = (i < elems.size()) ? elems[i] : "auto";
+                    out[ids[i]->getText()] = {elemType, 0};
+                }
+            } else {
+                // ── Normal variable declaration ──────────────────────
+                std::string typeName;
+                if (vd->typeSpec())
+                    typeName = vd->typeSpec()->getText();
+                // Resolve 'auto' to the inferred type from the initializer
+                if (typeName == "auto" && vd->expression()) {
+                    auto inferred = inferExprTypeName(vd->expression(), out, flc);
+                    if (!inferred.empty()) typeName = inferred;
+                }
+                std::string varName = !vd->IDENTIFIER().empty() ? vd->IDENTIFIER(0)->getText() : "";
+                if (!varName.empty())
+                    out[varName] = {typeName, 0};
             }
-            std::string varName = vd->IDENTIFIER()->getText();
-            out[varName] = {typeName, 0};
         }
 
         // Recurse into nested blocks
         if (auto* ifS = stmt->ifStmt()) {
-            collectLocalsFromBlock(ifS->block(), beforeLine, out);
+            collectLocalsFromBlock(ifS->block(), beforeLine, out, flc);
             for (auto* elif : ifS->elseIfClause())
-                collectLocalsFromBlock(elif->block(), beforeLine, out);
+                collectLocalsFromBlock(elif->block(), beforeLine, out, flc);
             if (ifS->elseClause())
-                collectLocalsFromBlock(ifS->elseClause()->block(), beforeLine, out);
+                collectLocalsFromBlock(ifS->elseClause()->block(), beforeLine, out, flc);
         }
         if (auto* forIn = stmt->forStmt()) {
             if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forIn)) {
-                std::string tname = fin->typeSpec()->getText();
-                out[fin->IDENTIFIER()->getText()] = {tname, 0};
-                collectLocalsFromBlock(fin->block(), beforeLine, out);
+                if (fin->typeSpec() && fin->IDENTIFIER()) {
+                    std::string tname = fin->typeSpec()->getText();
+                    out[fin->IDENTIFIER()->getText()] = {tname, 0};
+                }
+                collectLocalsFromBlock(fin->block(), beforeLine, out, flc);
             }
             if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(forIn)) {
-                std::string tname = fc->typeSpec()->getText();
-                out[fc->IDENTIFIER()->getText()] = {tname, 0};
-                collectLocalsFromBlock(fc->block(), beforeLine, out);
+                if (fc->typeSpec() && fc->IDENTIFIER()) {
+                    std::string tname = fc->typeSpec()->getText();
+                    out[fc->IDENTIFIER()->getText()] = {tname, 0};
+                }
+                collectLocalsFromBlock(fc->block(), beforeLine, out, flc);
             }
         }
         if (auto* ws = stmt->whileStmt())
-            collectLocalsFromBlock(ws->block(), beforeLine, out);
+            collectLocalsFromBlock(ws->block(), beforeLine, out, flc);
         if (auto* dw = stmt->doWhileStmt())
-            collectLocalsFromBlock(dw->block(), beforeLine, out);
+            collectLocalsFromBlock(dw->block(), beforeLine, out, flc);
         if (auto* ls = stmt->loopStmt())
-            collectLocalsFromBlock(ls->block(), beforeLine, out);
+            collectLocalsFromBlock(ls->block(), beforeLine, out, flc);
         if (auto* sw = stmt->switchStmt()) {
             for (auto* c : sw->caseClause())
-                collectLocalsFromBlock(c->block(), beforeLine, out);
+                collectLocalsFromBlock(c->block(), beforeLine, out, flc);
             if (sw->defaultClause())
-                collectLocalsFromBlock(sw->defaultClause()->block(), beforeLine, out);
+                collectLocalsFromBlock(sw->defaultClause()->block(), beforeLine, out, flc);
         }
         if (auto* tc = stmt->tryCatchStmt()) {
-            collectLocalsFromBlock(tc->block(), beforeLine, out);
+            collectLocalsFromBlock(tc->block(), beforeLine, out, flc);
             for (auto* cc : tc->catchClause()) {
-                out[cc->IDENTIFIER()->getText()] = {cc->typeSpec()->getText(), 0};
-                collectLocalsFromBlock(cc->block(), beforeLine, out);
+                if (cc->IDENTIFIER() && cc->typeSpec())
+                    out[cc->IDENTIFIER()->getText()] = {cc->typeSpec()->getText(), 0};
+                collectLocalsFromBlock(cc->block(), beforeLine, out, flc);
             }
             if (tc->finallyClause())
-                collectLocalsFromBlock(tc->finallyClause()->block(), beforeLine, out);
+                collectLocalsFromBlock(tc->finallyClause()->block(), beforeLine, out, flc);
         }
     }
 }
@@ -2049,19 +2790,32 @@ static void collectLocalsFromStmts(
 static void collectLocalsFromBlock(
         LuxParser::BlockContext* block,
         size_t beforeLine,
-        std::unordered_map<std::string, HoverProvider::LocalVar>& out) {
+        std::unordered_map<std::string, HoverProvider::LocalVar>& out,
+        const FuncLookupCtx* flc) {
     if (!block) return;
-    collectLocalsFromStmts(block->statement(), beforeLine, out);
+    collectLocalsFromStmts(block->statement(), beforeLine, out, flc);
 }
 
 std::unordered_map<std::string, HoverProvider::LocalVar>
 HoverProvider::collectLocals(LuxParser::FunctionDeclContext* func,
-                             size_t beforeLine) {
+                             size_t beforeLine,
+                             LuxParser::ProgramContext* tree,
+                             const CBindings* bindings,
+                             const ProjectContext* project) {
     std::unordered_map<std::string, LocalVar> result;
+
+    // Build lookup context for resolving function call return types
+    FuncLookupCtx flc;
+    flc.tree       = tree;
+    flc.bindings   = bindings;
+    flc.builtinReg = &builtinRegistry_;
+    flc.extTypeReg = &extTypeRegistry_;
+    flc.project    = project;
 
     // Collect parameters
     if (auto* params = func->paramList()) {
         for (auto* p : params->param()) {
+            if (!p->typeSpec() || !p->IDENTIFIER()) continue;
             std::string typeName = p->typeSpec()->getText();
             std::string paramName = p->IDENTIFIER()->getText();
             result[paramName] = {typeName, 0};
@@ -2069,7 +2823,7 @@ HoverProvider::collectLocals(LuxParser::FunctionDeclContext* func,
     }
 
     // Collect locals from function body
-    collectLocalsFromBlock(func->block(), beforeLine, result);
+    collectLocalsFromBlock(func->block(), beforeLine, result, &flc);
     return result;
 }
 

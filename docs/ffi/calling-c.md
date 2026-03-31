@@ -285,6 +285,69 @@ int32 main() {
 
 ---
 
+## Name Conflicts Between C and Lux
+
+When a C header and a Lux `use` import declare a function with the same name (e.g., `sprintf`), the **last declaration wins** based on the order they appear in the preamble.
+
+### Lux Overrides C (common case)
+
+If `use` appears **after** `#include`, the Lux stdlib version takes precedence:
+
+```tm
+#include <stdio.h>          // declares C sprintf (returns int32)
+use std::log::sprintf;      // ← overrides: Lux sprintf (returns string)
+
+int32 main() {
+    // Uses Lux sprintf — returns a formatted string
+    string msg = sprintf("x={}, y={}", 10, 20);
+    println(msg);   // x=10, y=20
+    ret 0;
+}
+```
+
+### C Overrides Lux
+
+If `#include` appears **after** `use`, the C version takes precedence:
+
+```tm
+use std::log::sprintf;      // declares Lux sprintf (returns string)
+#include <stdio.h>          // ← overrides: C sprintf (returns int32)
+
+int32 main() {
+    // Uses C sprintf — writes to a char buffer
+    // string msg = sprintf(...);  ← compile error: C sprintf returns int32
+    ret 0;
+}
+```
+
+### Recommended Pattern
+
+Place `#include` directives **before** `use` declarations. This way, Lux stdlib functions naturally override any C functions with the same name:
+
+```tm
+#include <stdio.h>
+#include <math.h>
+#include <string.h>
+
+use std::log::{ println, sprintf };
+use Utils::{ doubleVal, square };
+
+int32 main() {
+    // printf → C version (no Lux override)
+    printf(c"hello %s\n", c"world");
+
+    // sprintf → Lux version (overrides C)
+    string msg = sprintf("val={}", 42);
+    println(msg);
+
+    ret 0;
+}
+```
+
+> **Note:** This override rule applies only to functions. C structs, enums, typedefs, and macro constants are not affected by `use` imports.
+
+---
+
 ## Common Patterns
 
 ### Calling `printf` with Format Specifiers

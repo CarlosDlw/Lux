@@ -33,8 +33,11 @@ static void collectLocalsFromStmts(
         if (auto* vd = stmt->varDeclStmt()) {
             std::string typeName;
             if (vd->typeSpec()) typeName = vd->typeSpec()->getText();
-            std::string varName = vd->IDENTIFIER()->getText();
-            out[varName] = {typeName, 0, vd->IDENTIFIER()->getSymbol()};
+            if (!vd->IDENTIFIER().empty()) {
+                auto* id = vd->IDENTIFIER(0);
+                std::string varName = id->getText();
+                out[varName] = {typeName, 0, id->getSymbol()};
+            }
         }
 
         // Recurse into nested blocks
@@ -47,15 +50,19 @@ static void collectLocalsFromStmts(
         }
         if (auto* forIn = stmt->forStmt()) {
             if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forIn)) {
-                std::string tname = fin->typeSpec()->getText();
-                out[fin->IDENTIFIER()->getText()] =
-                    {tname, 0, fin->IDENTIFIER()->getSymbol()};
+                if (fin->typeSpec() && fin->IDENTIFIER()) {
+                    std::string tname = fin->typeSpec()->getText();
+                    out[fin->IDENTIFIER()->getText()] =
+                        {tname, 0, fin->IDENTIFIER()->getSymbol()};
+                }
                 collectLocalsFromBlock(fin->block(), beforeLine, out);
             }
             if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(forIn)) {
-                std::string tname = fc->typeSpec()->getText();
-                out[fc->IDENTIFIER()->getText()] =
-                    {tname, 0, fc->IDENTIFIER()->getSymbol()};
+                if (fc->typeSpec() && fc->IDENTIFIER()) {
+                    std::string tname = fc->typeSpec()->getText();
+                    out[fc->IDENTIFIER()->getText()] =
+                        {tname, 0, fc->IDENTIFIER()->getSymbol()};
+                }
                 collectLocalsFromBlock(fc->block(), beforeLine, out);
             }
         }
@@ -74,8 +81,10 @@ static void collectLocalsFromStmts(
         if (auto* tc = stmt->tryCatchStmt()) {
             collectLocalsFromBlock(tc->block(), beforeLine, out);
             for (auto* cc : tc->catchClause()) {
-                out[cc->IDENTIFIER()->getText()] =
-                    {cc->typeSpec()->getText(), 0, cc->IDENTIFIER()->getSymbol()};
+                if (cc->IDENTIFIER() && cc->typeSpec()) {
+                    out[cc->IDENTIFIER()->getText()] =
+                        {cc->typeSpec()->getText(), 0, cc->IDENTIFIER()->getSymbol()};
+                }
                 collectLocalsFromBlock(cc->block(), beforeLine, out);
             }
             if (tc->finallyClause())
@@ -110,7 +119,9 @@ std::optional<DefinitionResult> DefinitionProvider::definition(
     if (project && project->isValid()) {
         cBindingsPtr = &project->cBindings();
     } else {
-        auto includes = parsed.tree->includeDecl();
+        std::vector<LuxParser::IncludeDeclContext*> includes;
+        for (auto* pre : parsed.tree->preambleDecl())
+            if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
             CHeaderResolver resolver(cTypeReg, localBindings);
             for (auto* incl : includes) {
@@ -188,8 +199,11 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
     }
 
     // ── Use declarations: go to definition of the imported symbol ────
-    for (auto* useDecl : tree->useDecl()) {
+    for (auto* pre : tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
         if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+            if (!item->IDENTIFIER() || !item->modulePath()) continue;
             if (item->IDENTIFIER()->getSymbol() == hoveredToken) {
                 std::string modulePath;
                 for (auto* id : item->modulePath()->IDENTIFIER()) {
@@ -201,6 +215,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
             }
         }
         if (auto* group = dynamic_cast<LuxParser::UseGroupContext*>(useDecl)) {
+            if (!group->modulePath()) continue;
             std::string modulePath;
             for (auto* id : group->modulePath()->IDENTIFIER()) {
                 if (!modulePath.empty()) modulePath += "::";
@@ -218,7 +233,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
     for (auto* tld : tree->topLevelDecl()) {
         // Function name → jump to self
         if (auto* func = tld->functionDecl()) {
-            if (func->IDENTIFIER()->getSymbol() == hoveredToken)
+            if (func->IDENTIFIER() && func->IDENTIFIER()->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
             // Parameter type spec → resolve type name
             if (auto* params = func->paramList()) {
@@ -236,7 +251,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
 
         // Struct name
         if (auto* sd = tld->structDecl()) {
-            if (sd->IDENTIFIER()->getSymbol() == hoveredToken)
+            if (sd->IDENTIFIER() && sd->IDENTIFIER()->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
             // Field type specs
             for (auto* f : sd->structField()) {
@@ -248,13 +263,13 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
 
         // Enum name
         if (auto* ed = tld->enumDecl()) {
-            if (ed->IDENTIFIER()[0]->getSymbol() == hoveredToken)
+            if (!ed->IDENTIFIER().empty() && ed->IDENTIFIER()[0]->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
         }
 
         // Union name
         if (auto* ud = tld->unionDecl()) {
-            if (ud->IDENTIFIER()->getSymbol() == hoveredToken)
+            if (ud->IDENTIFIER() && ud->IDENTIFIER()->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
             for (auto* f : ud->unionField()) {
                 if (auto r = resolveTypeSpecToken(f->typeSpec(), hoveredToken,
@@ -265,7 +280,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
 
         // Extend declaration
         if (auto* ext = tld->extendDecl()) {
-            if (ext->IDENTIFIER()->getSymbol() == hoveredToken) {
+            if (ext->IDENTIFIER() && ext->IDENTIFIER()->getSymbol() == hoveredToken) {
                 // Jump to the struct definition
                 return resolveTypeName(tokenText, tree, bindings, filePath, project);
             }
@@ -273,7 +288,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
 
         // Type alias
         if (auto* ta = tld->typeAliasDecl()) {
-            if (ta->IDENTIFIER()->getSymbol() == hoveredToken)
+            if (ta->IDENTIFIER() && ta->IDENTIFIER()->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
             if (auto r = resolveTypeSpecToken(ta->typeSpec(), hoveredToken,
                     tree, bindings, filePath, project))
@@ -282,7 +297,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
 
         // Extern declaration
         if (auto* ext = tld->externDecl()) {
-            if (ext->IDENTIFIER()->getSymbol() == hoveredToken)
+            if (ext->IDENTIFIER() && ext->IDENTIFIER()->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
         }
     }
@@ -392,7 +407,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
                     params = method->param();
                 }
                 for (auto* p : params) {
-                    if (p->IDENTIFIER()->getText() == name)
+                    if (p->IDENTIFIER() && p->IDENTIFIER()->getText() == name)
                         return makeResult(p->IDENTIFIER()->getSymbol(), filePath);
                 }
 
@@ -925,14 +940,9 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                               bindings, cursorLine, filePath, project);
     }
     if (auto* ao = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
-        // &identifier — resolve the identifier
-        if (auto* id = ao->IDENTIFIER()) {
-            if (id->getSymbol() == hoveredToken) {
-                return resolveIdent(id->getText(), tree, bindings, cursorLine,
-                                    filePath, project);
-            }
-        }
-        return std::nullopt;
+        // &expression — resolve the inner expression
+        return walkExprForDef(ao->expression(), hoveredToken, tokenText, tree,
+                              bindings, cursorLine, filePath, project);
     }
 
     // ── Binary expressions (arithmetic, comparison, logical, etc.) ──

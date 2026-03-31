@@ -75,6 +75,10 @@ void LspServer::dispatch(const json& msg) {
         handleDefinition(msg);
     } else if (method == "textDocument/completion") {
         handleCompletion(msg);
+    } else if (method == "textDocument/semanticTokens/full") {
+        handleSemanticTokensFull(msg);
+    } else if (method == "textDocument/signatureHelp") {
+        handleSignatureHelp(msg);
     } else {
         // Unknown method — if it has an id, it's a request → respond with error
         if (msg.contains("id")) {
@@ -101,8 +105,18 @@ void LspServer::handleInitialize(const json& msg) {
         {"hoverProvider", true},
         {"definitionProvider", true},
         {"completionProvider", {
-            {"triggerCharacters", {".", ":", ">"}},
+            {"triggerCharacters", {".", ":", ">", "@"}},
             {"resolveProvider", false}
+        }},
+        {"signatureHelpProvider", {
+            {"triggerCharacters", {"(", ","}}
+        }},
+        {"semanticTokensProvider", {
+            {"full", true},
+            {"legend", {
+                {"tokenTypes", SemanticTokensProvider::tokenTypes()},
+                {"tokenModifiers", SemanticTokensProvider::tokenModifiers()}
+            }}
         }}
     };
 
@@ -444,6 +458,99 @@ void LspServer::handleCompletion(const json& msg) {
     } catch (...) {
         std::cerr << "[lux-lsp] completion unknown error\n";
         sendResponse(msg["id"], json::array());
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Signature Help
+// ═══════════════════════════════════════════════════════════════════════
+
+void LspServer::handleSignatureHelp(const json& msg) {
+    try {
+        auto& params = msg["params"];
+        std::string uri = params["textDocument"]["uri"];
+        size_t line = params["position"]["line"];
+        size_t col  = params["position"]["character"];
+
+        std::string source = documents_.get(uri);
+        if (source.empty()) {
+            sendResponse(msg["id"], nullptr);
+            return;
+        }
+
+        std::string filePath = uri;
+        if (filePath.rfind("file://", 0) == 0)
+            filePath = filePath.substr(7);
+
+        auto result = signatureHelpProvider_.signatureHelp(
+            source, line, col, filePath,
+            projectContext_.isValid() ? &projectContext_ : nullptr);
+
+        if (!result) {
+            sendResponse(msg["id"], nullptr);
+            return;
+        }
+
+        json sigs = json::array();
+        for (auto& si : result->signatures) {
+            json params_arr = json::array();
+            for (auto& pi : si.parameters) {
+                json p = {{"label", pi.label}};
+                params_arr.push_back(std::move(p));
+            }
+            json sigJson = {
+                {"label", si.label},
+                {"parameters", params_arr}
+            };
+            if (!si.documentation.empty()) {
+                sigJson["documentation"] = {
+                    {"kind", "markdown"},
+                    {"value", si.documentation}
+                };
+            }
+            sigs.push_back(std::move(sigJson));
+        }
+
+        json response = {
+            {"signatures", sigs},
+            {"activeSignature", result->activeSignature},
+            {"activeParameter", result->activeParameter}
+        };
+
+        sendResponse(msg["id"], response);
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] signatureHelp error: " << e.what() << "\n";
+        sendResponse(msg["id"], nullptr);
+    } catch (...) {
+        std::cerr << "[lux-lsp] signatureHelp unknown error\n";
+        sendResponse(msg["id"], nullptr);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Semantic Tokens
+// ═══════════════════════════════════════════════════════════════════════
+
+void LspServer::handleSemanticTokensFull(const json& msg) {
+    try {
+        auto& params = msg["params"];
+        std::string uri = params["textDocument"]["uri"];
+
+        std::string source = documents_.get(uri);
+        if (source.empty()) {
+            sendResponse(msg["id"], {{"data", json::array()}});
+            return;
+        }
+
+        auto data = semanticTokensProvider_.tokenize(source);
+
+        sendResponse(msg["id"], {{"data", data}});
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] semantic tokens error: " << e.what() << "\n";
+        sendResponse(msg["id"], {{"data", json::array()}});
+    } catch (...) {
+        std::cerr << "[lux-lsp] semantic tokens unknown error\n";
+        sendResponse(msg["id"], {{"data", json::array()}});
     }
 }
 

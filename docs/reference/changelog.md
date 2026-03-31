@@ -31,9 +31,9 @@ First public release of the Lux language compiler.
 
 ### Collections
 
-- `Vec<T>` — dynamic array
-- `Map<K, V>` — hash map
-- `Set<T>` — hash set
+- `vec<T>` — dynamic array
+- `map<K, V>` — hash map
+- `set<T>` — hash set
 
 ### Compiler
 

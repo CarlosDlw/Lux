@@ -68,14 +68,14 @@ use std::str::{ contains, split, parseInt, toUpper };
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `split` | `(string, string) -> Vec<string>` | Split into parts |
-| `splitN` | `(string, string, int64) -> Vec<string>` | Split with max count |
-| `joinVec` | `(Vec<string>, string) -> string` | Join Vec with separator |
-| `lines` | `(string) -> Vec<string>` | Split into lines |
-| `chars` | `(string) -> Vec<char>` | Split into characters |
-| `fromChars` | `(Vec<char>) -> string` | Build string from characters |
-| `toBytes` | `(string) -> Vec<uint8>` | Convert to byte vector |
-| `fromBytes` | `(Vec<uint8>) -> string` | Build string from bytes |
+| `split` | `(string, string) -> vec<string>` | Split into parts |
+| `splitN` | `(string, string, int64) -> vec<string>` | Split with max count |
+| `joinVec` | `(vec<string>, string) -> string` | Join Vec with separator |
+| `lines` | `(string) -> vec<string>` | Split into lines |
+| `chars` | `(string) -> vec<char>` | Split into characters |
+| `fromChars` | `(vec<char>) -> string` | Build string from characters |
+| `toBytes` | `(string) -> vec<uint8>` | Convert to byte vector |
+| `fromBytes` | `(vec<uint8>) -> string` | Build string from bytes |
 
 ## Example
 
@@ -88,7 +88,7 @@ println(toUpper("hello"));                   // HELLO
 println(parseInt("42"));                     // 42
 println(slice("Hello, World!", 7, 12));      // World
 
-Vec<string> parts = split("a,b,c", ",");
+vec<string> parts = split("a,b,c", ",");
 println(parts.len());   // 3
 parts.free();
 ```

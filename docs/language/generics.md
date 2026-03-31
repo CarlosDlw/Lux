@@ -9,9 +9,9 @@ T supports generic type parameters for its built-in collection types and concurr
 Generic types are parameterized with angle brackets `<T>`:
 
 ```tm
-Vec<int32> numbers = [1, 2, 3];
-Map<string, int64> ages = [];
-Set<uint64> ids = [];
+vec<int32> numbers = [1, 2, 3];
+map<string, int64> ages;
+set<uint64> ids = [];
 Task<int32> t = spawn compute(10);
 ```
 
@@ -23,21 +23,19 @@ T provides four built-in generic types:
 
 | Type | Parameters | Description |
 |------|-----------|-------------|
-| `Vec<T>` | 1 | Dynamic growable array |
-| `Map<K, V>` | 2 | Open-addressing hash map |
-| `Set<T>` | 1 | Open-addressing hash set |
+| `vec<T>` | 1 | Dynamic growable array |
+| `map<K, V>` | 2 | Open-addressing hash map |
+| `set<T>` | 1 | Open-addressing hash set |
 | `Task<T>` | 1 | Async task handle |
 
 ---
 
-## Vec\<T\> — Dynamic Array
+## vec\<T\> — Dynamic Array
 
 A growable, heap-allocated array. Initialized from an array literal or empty `[]`:
 
 ```tm
-use std::collections::Vec;
-
-Vec<int32> v = [10, 20, 30];
+vec<int32> v = [10, 20, 30];
 println(v.len());      // 3
 println(v.first());    // 10
 println(v.last());     // 30
@@ -52,7 +50,7 @@ println(popped);       // 40
 ### Index Access
 
 ```tm
-Vec<int32> v = [100, 200, 300];
+vec<int32> v = [100, 200, 300];
 println(v[0]);    // 100
 println(v[2]);    // 300
 
@@ -71,11 +69,11 @@ println(v[1]);    // 999
 | **Search** | `contains(T)`, `indexOf(T)`, `lastIndexOf(T)`, `count(T)` |
 | **Order** | `reverse()`, `sort()`, `sortDesc()`, `rotate(int32)` |
 | **Aggregation** | `sum()`, `product()`, `min()`, `max()`, `average()` |
-| **Query** | `equals(Vec<T>)`, `isSorted()` |
+| **Query** | `equals(vec<T>)`, `isSorted()` |
 | **Conversion** | `toString()`, `join(string)`, `clone()` |
 
 ```tm
-Vec<int32> v = [30, 10, 20, 10, 40];
+vec<int32> v = [30, 10, 20, 10, 40];
 
 println(v.contains(10));    // true
 println(v.indexOf(10));     // 1
@@ -93,35 +91,33 @@ v.free();
 
 ### Type Flexibility
 
-`Vec<T>` works with any type:
+`vec<T>` works with any type:
 
 ```tm
-Vec<float64> fv = [1.5, 2.5, 3.5];
+vec<float64> fv = [1.5, 2.5, 3.5];
 fv.push(4.5);
 println(fv.last());   // 4.5
 fv.free();
 
-Vec<string> names = ["alice", "bob"];
+vec<string> names = ["alice", "bob"];
 println(names.first());   // alice
 names.free();
 ```
 
-> **Important:** `Vec<T>` is heap-allocated. Call `.free()` when done, or use `defer` for automatic cleanup.
+> **Important:** `vec<T>` is heap-allocated. Call `.free()` when done, or use `defer` for automatic cleanup.
 
 ---
 
-## Map\<K, V\> — Hash Map
+## map\<K, V\> — Hash Map
 
-A key-value store using open-addressing hashing. Initialized with empty `[]`:
+A key-value store using open-addressing hashing:
 
 ```tm
-use std::collections::Map;
+map<string, int64> ages;
 
-Map<string, int64> ages = [];
-
-ages.set("alice", 30);
-ages.set("bob", 25);
-ages.set("carol", 35);
+ages.insert("alice", 30);
+ages.insert("bob", 25);
+ages.insert("carol", 35);
 
 println(ages.len());          // 3
 println(ages.get("alice"));   // 30
@@ -131,7 +127,7 @@ println(ages.has("bob"));     // true
 ### Subscript Access
 
 ```tm
-Map<string, int64> ages = [];
+map<string, int64> ages;
 ages["dave"] = 40;
 println(ages["dave"]);   // 40
 ```
@@ -145,17 +141,17 @@ println(ages["dave"]);   // 40
 | `get` | `(K) -> V` | Value for key |
 | `getOrDefault` | `(K, V) -> V` | Value for key, or default if missing |
 | `has` | `(K) -> bool` | Whether key exists |
-| `set` | `(K, V)` | Insert or update entry |
+| `insert` | `(K, V)` | Insert or update entry |
 | `remove` | `(K) -> bool` | Remove entry, returns success |
 | `clear` | `()` | Remove all entries |
-| `keys` | `() -> Vec<K>` | All keys as a Vec |
-| `values` | `() -> Vec<V>` | All values as a Vec |
+| `keys` | `() -> vec<K>` | All keys as a Vec |
+| `values` | `() -> vec<V>` | All values as a Vec |
 | `free` | `()` | Release memory |
 
 ```tm
-Map<int32, int64> scores = [];
-scores.set(1, 100);
-scores.set(2, 200);
+map<int32, int64> scores;
+scores.insert(1, 100);
+scores.insert(2, 200);
 
 println(scores.get(1));              // 100
 println(scores.has(3));              // false
@@ -166,14 +162,12 @@ scores.free();
 
 ---
 
-## Set\<T\> — Hash Set
+## set\<T\> — Hash Set
 
-A collection of unique elements using open-addressing hashing. Initialized with empty `[]`:
+A collection of unique elements using open-addressing hashing:
 
 ```tm
-use std::collections::Set;
-
-Set<int32> s = [];
+set<int32> s = [];
 
 s.add(10);
 s.add(20);
@@ -195,11 +189,11 @@ println(s.len());       // 3 (unchanged)
 | `has` | `(T) -> bool` | Whether element exists |
 | `remove` | `(T) -> bool` | Remove element, returns success |
 | `clear` | `()` | Remove all elements |
-| `values` | `() -> Set<T>` | Copy of the set |
+| `values` | `() -> set<T>` | Copy of the set |
 | `free` | `()` | Release memory |
 
 ```tm
-Set<string> ss = [];
+set<string> ss = [];
 ss.add("hello");
 ss.add("world");
 ss.add("hello");       // returns false — duplicate
@@ -231,10 +225,10 @@ int32 result = await t;
 
 ## Memory Management
 
-`Vec<T>`, `Map<K, V>`, and `Set<T>` are heap-allocated. They must be freed when no longer needed:
+`vec<T>`, `map<K, V>`, and `set<T>` are heap-allocated. They must be freed when no longer needed:
 
 ```tm
-Vec<int32> v = [1, 2, 3];
+vec<int32> v = [1, 2, 3];
 defer v.free();
 
 // use v normally...

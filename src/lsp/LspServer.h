@@ -6,6 +6,8 @@
 #include "lsp/HoverProvider.h"
 #include "lsp/DefinitionProvider.h"
 #include "lsp/CompletionProvider.h"
+#include "lsp/SemanticTokensProvider.h"
+#include "lsp/SignatureHelpProvider.h"
 #include "lsp/ProjectContext.h"
 
 #include <nlohmann/json.hpp>
@@ -25,6 +27,8 @@ private:
     HoverProvider      hoverProvider_;
     DefinitionProvider definitionProvider_;
     CompletionProvider   completionProvider_;
+    SemanticTokensProvider semanticTokensProvider_;
+    SignatureHelpProvider signatureHelpProvider_;
     ProjectContext   projectContext_;
     bool             initialized_ = false;
     bool             shutdown_    = false;
@@ -47,6 +51,8 @@ private:
     void handleHover(const json& msg);
     void handleDefinition(const json& msg);
     void handleCompletion(const json& msg);
+    void handleSemanticTokensFull(const json& msg);
+    void handleSignatureHelp(const json& msg);
 
     // Publish diagnostics for a document.
     void publishDiagnostics(const std::string& uri, const std::string& source);

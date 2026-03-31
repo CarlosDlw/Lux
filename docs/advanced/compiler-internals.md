@@ -197,7 +197,7 @@ The checker maintains several registries:
 
 - **TypeRegistry** — all known types (builtins, structs, enums, aliases)
 - **MethodRegistry** — methods on types (e.g., `Vec.push()`, `string.len()`)
-- **ExtendedTypeRegistry** — generic collection types (`Vec<T>`, `Map<K,V>`, `Set<T>`)
+- **ExtendedTypeRegistry** — generic collection types (`vec<T>`, `map<K,V>`, `set<T>`)
 - **BuiltinRegistry** — stdlib functions (`println`, `sqrt`, `abs`, etc.)
 
 ### Error Reporting
@@ -249,12 +249,12 @@ For each function, the IR generator:
 
 ### Monomorphization
 
-Generic types like `Vec<T>` are compiled into type-specific implementations. The compiler generates a unique function name for each concrete type:
+Generic types like `vec<T>` are compiled into type-specific implementations. The compiler generates a unique function name for each concrete type:
 
 ```
-Vec<int32>.push()  → calls lux_vec_push_i32()
-Vec<string>.push() → calls lux_vec_push_str()
-Vec<float64>.pop() → calls lux_vec_pop_f64()
+vec<int32>.push()  → calls lux_vec_push_i32()
+vec<string>.push() → calls lux_vec_push_str()
+vec<float64>.pop() → calls lux_vec_pop_f64()
 ```
 
 The suffix (`i32`, `str`, `f64`, etc.) is determined by the element type's `builtinSuffix` property. Each suffixed function is implemented in C in the builtins library.

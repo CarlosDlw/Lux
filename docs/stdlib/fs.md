@@ -17,8 +17,8 @@ use std::fs::{ readFile, writeFile, exists, mkdir, listDir };
 | `readFile` | `(string) -> string` | Read entire file as string |
 | `writeFile` | `(string, string) -> void` | Write string to file (creates/overwrites) |
 | `appendFile` | `(string, string) -> void` | Append string to file |
-| `readBytes` | `(string) -> Vec<uint8>` | Read file as byte vector |
-| `writeBytes` | `(string, Vec<uint8>) -> void` | Write bytes to file |
+| `readBytes` | `(string) -> vec<uint8>` | Read file as byte vector |
+| `writeBytes` | `(string, vec<uint8>) -> void` | Write bytes to file |
 
 ### Queries
 
@@ -43,7 +43,7 @@ use std::fs::{ readFile, writeFile, exists, mkdir, listDir };
 | `mkdir` | `(string) -> bool` | Create a directory |
 | `mkdirAll` | `(string) -> bool` | Create directory and parents |
 | `removeDir` | `(string) -> bool` | Remove empty directory |
-| `listDir` | `(string) -> Vec<string>` | List directory entries |
+| `listDir` | `(string) -> vec<string>` | List directory entries |
 
 ### Working Directory
 

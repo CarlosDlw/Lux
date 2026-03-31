@@ -12,6 +12,7 @@
 #include "types/ExtendedTypeRegistry.h"
 #include "types/BuiltinRegistry.h"
 #include "ffi/CBindings.h"
+#include "lsp/DocComment.h"
 
 class ProjectContext;
 
@@ -49,10 +50,17 @@ private:
     MethodRegistry       methodRegistry_;
     ExtendedTypeRegistry extTypeRegistry_;
     BuiltinRegistry      builtinRegistry_;
+    std::vector<DocComment> docComments_;  // rebuilt per hover() call
+
+    // Attach doc-comment (if any) to hover markdown.
+    std::string withDoc(const std::string& md, size_t declLine);
 
     // Collect local variables + params in a function up to a given line.
     std::unordered_map<std::string, LocalVar>
-    collectLocals(LuxParser::FunctionDeclContext* func, size_t beforeLine);
+    collectLocals(LuxParser::FunctionDeclContext* func, size_t beforeLine,
+                  LuxParser::ProgramContext* tree = nullptr,
+                  const CBindings* bindings = nullptr,
+                  const ProjectContext* project = nullptr);
 
     // Find the function declaration that encloses a given line.
     LuxParser::FunctionDeclContext*

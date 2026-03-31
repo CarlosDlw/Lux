@@ -182,6 +182,8 @@ Node a = Node { value: 10, next: &b };
 | `->` | Pointers to structs | `ptr->x` |
 | `->` | `&self` in methods | `self->x` |
 
+> **Precedence note:** postfix operators (`.`, `[]`, `()`) bind tighter than the unary dereference `*`. This means `*ptr.field` is parsed as `*(ptr.field)`, **not** `(*ptr).field`. When accessing a field through a pointer, always use `ptr->field` or parentheses: `(*ptr).field`.
+
 ---
 
 ## See Also

@@ -36,6 +36,11 @@ FINALLY   : 'finally';
 THROW     : 'throw';
 DEFER     : 'defer';
 EXTERN    : 'extern';
+AUTO      : 'auto';
+VEC       : 'vec';
+MAP       : 'map';
+SET       : 'set';
+TUPLE     : 'tuple';
 ARROW     : '->';
 
 // C header include directives
@@ -79,8 +84,11 @@ STRING    : 'string';
 CSTRING   : 'cstring';  // alias for *char
 
 // Literals
+HEX_LIT   : '0' [xX] [0-9a-fA-F]+;
+OCT_LIT   : '0' [oO] [0-7]+;
+BIN_LIT   : '0' [bB] [01]+;
 INT_LIT   : [0-9]+;
-FLOAT_LIT : ([0-9]+ '.' [0-9]+ | '.' [0-9]+) ([eE] [+-]? [0-9]+)?
+FLOAT_LIT : [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)?
            | [0-9]+ [eE] [+-]? [0-9]+
            ;
 BOOL_LIT  : 'true' | 'false';
@@ -138,7 +146,6 @@ NOT       : '!';
 INCR      : '++';
 DECR      : '--';
 LSHIFT    : '<<';
-RSHIFT    : '>>';
 PIPE      : '|';
 CARET     : '^';
 TILDE     : '~';

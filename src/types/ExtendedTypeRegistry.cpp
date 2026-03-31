@@ -28,7 +28,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     //
     // LLVM layout: { T* ptr, usize len, usize cap }
     // C prefix: lux_vec
-    // Module: std::collections::vec
+    // Native keyword: vec<T>
     // ═══════════════════════════════════════════════════════════════════════
 
     ExtendedTypeDescriptor vec;
@@ -143,7 +143,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     // LLVM layout: { ptr states, ptr keys, ptr values, ptr hashes,
     //                usize len, usize cap, usize key_size, usize val_size }
     // C prefix: lux_map
-    // Module: std::collections::Map
+    // Native keyword: map<K,V>
     // ═══════════════════════════════════════════════════════════════════════
 
     ExtendedTypeDescriptor map;
@@ -176,8 +176,8 @@ void ExtendedTypeRegistry::registerBuiltins() {
                             .emitTag = "map.has" });
 
     // ── Mutation ─────────────────────────────────────────────────────────
-    map.methods.push_back({ "set",    {TypeKind::Extended}, {"_key", "_val"}, "void",
-                            .emitTag = "map.set" });
+    map.methods.push_back({ "insert", {TypeKind::Extended}, {"_key", "_val"}, "void",
+                            .emitTag = "map.insert" });
     map.methods.push_back({ "remove", {TypeKind::Extended}, {"_key"}, "bool",
                             .emitTag = "map.remove" });
     map.methods.push_back({ "clear",  {TypeKind::Extended}, {}, "void",
@@ -188,9 +188,9 @@ void ExtendedTypeRegistry::registerBuiltins() {
                             .emitTag = "map.free" });
 
     // ── Iteration ────────────────────────────────────────────────────────
-    map.methods.push_back({ "keys",   {TypeKind::Extended}, {}, "_self",
+    map.methods.push_back({ "keys",   {TypeKind::Extended}, {}, "_vec_key",
                             .emitTag = "map.keys" });
-    map.methods.push_back({ "values", {TypeKind::Extended}, {}, "_self",
+    map.methods.push_back({ "values", {TypeKind::Extended}, {}, "_vec_val",
                             .emitTag = "map.values" });
 
     registerType(std::move(map));
@@ -201,7 +201,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     // LLVM layout: { ptr states, ptr keys, ptr hashes,
     //                usize len, usize cap, usize key_size }
     // C prefix: lux_set
-    // Module: std::collections::Set
+    // Native keyword: set<T>
     // ═══════════════════════════════════════════════════════════════════════
 
     ExtendedTypeDescriptor set;

@@ -20,8 +20,9 @@ Multiple symbols from the same module can be imported in a single `use` declarat
 
 ```tm
 use std::log::{ println, print, dbg };
-use std::collections::{ Vec, Map, Set };
 ```
+
+> **Note:** `vec`, `map`, and `set` are native keywords — no import required.
 
 ### Available Standard Library Modules
 
@@ -50,7 +51,8 @@ use std::collections::{ Vec, Map, Set };
 | `std::compress` | Compression: `gzipCompress`, `deflate`, etc. |
 | `std::net` | Networking: `tcpConnect`, `tcpSend`, etc. |
 | `std::thread` | Threading: `cpuCount`, `Task`, `Mutex`, etc. |
-| `std::collections` | Collections: `Vec`, `Map`, `Set` |
+
+> **Note:** `vec<T>`, `map<K,V>`, and `set<T>` are native keywords — no import needed.
 
 ---
 
@@ -100,7 +102,20 @@ C headers are included with the `#include` directive (not `use`):
 
 Functions, structs, enums, and constants from the header are automatically parsed via libclang and made available in scope.
 
-See [C Interop](../ffi/c-interop.md) for details on FFI usage.
+`use` and `#include` can appear in any order. When a C header and a `use` import declare a function with the same name, the **last declaration in file order wins**. The recommended pattern is to place `#include` before `use`, so Lux stdlib functions naturally override C equivalents:
+
+```tm
+#include <stdio.h>              // C sprintf (int32)
+use std::log::{ println, sprintf };  // Lux sprintf (string) ← wins
+
+int32 main() {
+    string msg = sprintf("val={}", 42);
+    println(msg);
+    ret 0;
+}
+```
+
+See [Calling C Functions](../ffi/calling-c.md#name-conflicts-between-c-and-lux) for details.
 
 ---
 

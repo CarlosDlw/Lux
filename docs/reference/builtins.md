@@ -36,8 +36,8 @@ use std::io::{readLine, readInt, prompt, flush};
 | `readBool` | `() → bool` | Read and parse a boolean |
 | `readAll` | `() → string` | Read all of stdin |
 | `readByte` | `() → uint8` | Read a single byte |
-| `readLines` | `() → Vec<string>` | Read all lines into a vector |
-| `readNBytes` | `(usize) → Vec<uint8>` | Read N bytes |
+| `readLines` | `() → vec<string>` | Read all lines into a vector |
+| `readNBytes` | `(usize) → vec<uint8>` | Read N bytes |
 | `readPassword` | `() → string` | Read without echo |
 | `prompt` | `(string) → string` | Display prompt, read line |
 | `promptInt` | `(string) → int64` | Display prompt, read integer |
@@ -204,14 +204,14 @@ use std::str::{contains, split, replace, trim, parseInt};
 
 | Function | Signature |
 |----------|-----------|
-| `split` | `(string, string) → Vec<string>` |
-| `splitN` | `(string, string, usize) → Vec<string>` |
-| `joinVec` | `(Vec<string>, string) → string` |
-| `lines` | `(string) → Vec<string>` |
-| `chars` | `(string) → Vec<char>` |
-| `fromChars` | `(Vec<char>) → string` |
-| `toBytes` | `(string) → Vec<uint8>` |
-| `fromBytes` | `(Vec<uint8>) → string` |
+| `split` | `(string, string) → vec<string>` |
+| `splitN` | `(string, string, usize) → vec<string>` |
+| `joinVec` | `(vec<string>, string) → string` |
+| `lines` | `(string) → vec<string>` |
+| `chars` | `(string) → vec<char>` |
+| `fromChars` | `(vec<char>) → string` |
+| `toBytes` | `(string) → vec<uint8>` |
+| `fromBytes` | `(vec<uint8>) → string` |
 
 ### Conversion
 
@@ -287,9 +287,9 @@ use std::fs::{readFile, writeFile, exists, mkdir, listDir};
 | `rename` | `(string, string) → bool` | Rename/move a file |
 | `mkdir` | `(string) → bool` | Create a directory |
 | `mkdirAll` | `(string) → bool` | Create directories recursively |
-| `listDir` | `(string) → Vec<string>` | List directory contents |
-| `readBytes` | `(string) → Vec<uint8>` | Read file as bytes |
-| `writeBytes` | `(string, Vec<uint8>) → void` | Write bytes to file |
+| `listDir` | `(string) → vec<string>` | List directory contents |
+| `readBytes` | `(string) → vec<uint8>` | Read file as bytes |
+| `writeBytes` | `(string, vec<uint8>) → void` | Write bytes to file |
 | `fileSize` | `(string) → int64` | Get file size in bytes |
 | `cwd` | `() → string` | Current working directory |
 | `setCwd` | `(string) → bool` | Change working directory |
@@ -306,7 +306,7 @@ use std::path::{join, parent, extension, isAbsolute};
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `join` | `(string, string) → string` | Join two path segments |
-| `joinAll` | `(Vec<string>) → string` | Join multiple segments |
+| `joinAll` | `(vec<string>) → string` | Join multiple segments |
 | `parent` | `(string) → string` | Parent directory |
 | `fileName` | `(string) → string` | File name with extension |
 | `stem` | `(string) → string` | File name without extension |
@@ -446,8 +446,8 @@ use std::hash::{hashString, hashInt, crc32};
 | `hashString` | `(string) → uint64` | Hash a string |
 | `hashInt` | `(int64) → uint64` | Hash an integer |
 | `hashCombine` | `(uint64, uint64) → uint64` | Combine two hashes |
-| `hashBytes` | `(Vec<uint8>) → uint64` | Hash a byte vector |
-| `crc32` | `(Vec<uint8>) → uint32` | CRC32 checksum |
+| `hashBytes` | `(vec<uint8>) → uint64` | Hash a byte vector |
+| `crc32` | `(vec<uint8>) → uint32` | CRC32 checksum |
 
 ---
 
@@ -510,10 +510,10 @@ use std::regex::{match, find, findAll, regexReplace};
 | `match` | `(string, string) → bool` | Test if pattern matches |
 | `find` | `(string, string) → string` | Find first match |
 | `findIndex` | `(string, string) → int64` | Index of first match |
-| `findAll` | `(string, string) → Vec<string>` | Find all matches |
+| `findAll` | `(string, string) → vec<string>` | Find all matches |
 | `regexReplace` | `(string, string, string) → string` | Replace all matches |
 | `regexReplaceFirst` | `(string, string, string) → string` | Replace first match |
-| `regexSplit` | `(string, string) → Vec<string>` | Split by pattern |
+| `regexSplit` | `(string, string) → vec<string>` | Split by pattern |
 | `isValid` | `(string) → bool` | Check if pattern is valid |
 
 ---
@@ -528,8 +528,8 @@ use std::encoding::{base64EncodeStr, base64DecodeStr, urlEncode, urlDecode};
 |----------|-----------|-------------|
 | `base64EncodeStr` | `(string) → string` | Encode string to Base64 |
 | `base64DecodeStr` | `(string) → string` | Decode Base64 to string |
-| `base64Encode` | `(Vec<uint8>) → string` | Encode bytes to Base64 |
-| `base64Decode` | `(string) → Vec<uint8>` | Decode Base64 to bytes |
+| `base64Encode` | `(vec<uint8>) → string` | Encode bytes to Base64 |
+| `base64Decode` | `(string) → vec<uint8>` | Decode Base64 to bytes |
 | `urlEncode` | `(string) → string` | URL-encode string |
 | `urlDecode` | `(string) → string` | URL-decode string |
 
@@ -547,12 +547,12 @@ use std::crypto::{sha256String, md5String, randomBytes};
 | `sha1String` | `(string) → string` | SHA-1 hash of string |
 | `sha256String` | `(string) → string` | SHA-256 hash of string |
 | `sha512String` | `(string) → string` | SHA-512 hash of string |
-| `md5` | `(Vec<uint8>) → string` | MD5 hash of bytes |
-| `sha1` | `(Vec<uint8>) → string` | SHA-1 hash of bytes |
-| `sha256` | `(Vec<uint8>) → string` | SHA-256 hash of bytes |
-| `sha512` | `(Vec<uint8>) → string` | SHA-512 hash of bytes |
-| `hmacSha256` | `(Vec<uint8>, Vec<uint8>) → Vec<uint8>` | HMAC-SHA256 |
-| `randomBytes` | `(usize) → Vec<uint8>` | Cryptographic random bytes |
+| `md5` | `(vec<uint8>) → string` | MD5 hash of bytes |
+| `sha1` | `(vec<uint8>) → string` | SHA-1 hash of bytes |
+| `sha256` | `(vec<uint8>) → string` | SHA-256 hash of bytes |
+| `sha512` | `(vec<uint8>) → string` | SHA-512 hash of bytes |
+| `hmacSha256` | `(vec<uint8>, vec<uint8>) → vec<uint8>` | HMAC-SHA256 |
+| `randomBytes` | `(usize) → vec<uint8>` | Cryptographic random bytes |
 
 ---
 

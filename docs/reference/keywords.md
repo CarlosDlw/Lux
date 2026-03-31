@@ -1,6 +1,6 @@
 # Keywords
 
-Lux has 35 reserved keywords and 20 type keywords. All keywords are lowercase.
+Lux has 39 reserved keywords and 20 type keywords. All keywords are lowercase.
 
 ---
 
@@ -71,6 +71,7 @@ Lux has 35 reserved keywords and 20 type keywords. All keywords are lowercase.
 
 | Keyword | Description | Example |
 |---------|-------------|---------|
+| `auto` | Infer variable type from initializer | `auto x = 42;` |
 | `as` | Type cast | `float64 f = x as float64;` |
 | `is` | Type check | `if val is int32 { ... }` |
 | `sizeof` | Size of a type in bytes | `usize n = sizeof(int32);` |
@@ -126,6 +127,14 @@ Type keywords are reserved identifiers for primitive types.
 | `void` | No value (used for function return types) |
 | `string` | Immutable UTF-8 string (fat pointer: ptr + len) |
 | `cstring` | C-compatible string (alias for `*char`) |
+
+### Collection Types
+
+| Keyword | Description |
+|---------|-------------|
+| `vec` | Dynamic growable array (`vec<T>`) |
+| `map` | Open-addressing hash map (`map<K, V>`) |
+| `set` | Open-addressing hash set (`set<T>`) |
 
 ---
 

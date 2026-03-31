@@ -74,7 +74,7 @@ int32 main() {
 }
 ```
 
-- The entry point is `int32 main()`, or `int32 main(Vec<string> args)` to receive command-line arguments.
+- The entry point is `int32 main()`, or `int32 main(vec<string> args)` to receive command-line arguments.
 - Functions use type-first syntax: the return type comes before the function name.
 - `ret 0;` returns an exit code. A zero value signals success.
 - `ret` is required — the compiler does not auto-insert a return.

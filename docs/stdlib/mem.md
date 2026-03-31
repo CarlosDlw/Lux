@@ -44,7 +44,7 @@ defer free(buf2);
 copy(buf2, buf, 100);
 ```
 
-> **Note:** For most use cases, prefer `Vec<T>`, `Map<K,V>`, or `Set<T>` which handle allocation automatically. Use `std::mem` only when you need direct control over memory.
+> **Note:** For most use cases, prefer `vec<T>`, `map<K,V>`, or `set<T>` which handle allocation automatically. Use `std::mem` only when you need direct control over memory.
 
 ## See Also
 

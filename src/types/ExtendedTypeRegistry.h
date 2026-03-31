@@ -26,9 +26,9 @@ struct ExtendedTypeDescriptor {
     std::vector<MethodDescriptor>     methods;        // methods for this extended type
 };
 
-// Central registry of all extended types available in stdlib.
-// When an import like `use std::collections::vec` triggers,
-// the compiler queries this to get the type descriptor.
+// Central registry of all extended types available in the language.
+// vec<T>, map<K,V>, set<T> are native keywords — no import required.
+// The compiler queries this to get the type descriptor.
 class ExtendedTypeRegistry {
 public:
     ExtendedTypeRegistry();

@@ -103,6 +103,7 @@ Available on `float32`, `float64`, `float80`, `float128`, and `double`.
 | `max(other)` | `(T) → T` | Maximum |
 | `clamp(min, max)` | `(T, T) → T` | Clamp to range |
 | `lerp(other, t)` | `(T, T) → T` | Linear interpolation |
+| `sign()` | `→ T` | Sign (-1, 0, or 1) |
 | `copySign(other)` | `(T) → T` | Copy sign from other |
 
 ### Checks
@@ -207,6 +208,7 @@ Available on `float32`, `float64`, `float80`, `float128`, and `double`.
 | `capitalize()` | `→ string` | Capitalize first character |
 | `reverse()` | `→ string` | Reverse string |
 | `repeat(n)` | `(usize) → string` | Repeat N times |
+| `concat(other)` | `(string) → string` | Concatenate two strings |
 
 ### Padding
 
@@ -230,12 +232,12 @@ Available on `float32`, `float64`, `float80`, `float128`, and `double`.
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `split(delim)` | `(string) → Vec<string>` | Split by delimiter |
-| `join(sep)` | `(string) → string` | Join (only on Vec\<string\>) |
-| `chars()` | `→ Vec<char>` | Decompose into characters |
-| `bytes()` | `→ Vec<uint8>` | Decompose into bytes |
-| `lines()` | `→ Vec<string>` | Split by newlines |
-| `words()` | `→ Vec<string>` | Split by whitespace |
+| `split(delim)` | `(string) → vec<string>` | Split by delimiter |
+| `join(sep)` | `(string) → string` | Join (only on vec\<string\>) |
+| `chars()` | `→ vec<char>` | Decompose into characters |
+| `bytes()` | `→ vec<uint8>` | Decompose into bytes |
+| `lines()` | `→ vec<string>` | Split by newlines |
+| `words()` | `→ vec<string>` | Split by whitespace |
 
 ### Comparison
 
@@ -323,7 +325,6 @@ Available on fixed-size arrays (`[N]T`) and dynamic arrays (`[]T`).
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `copy()` | `→ []T` | Shallow copy |
-| `distinct()` | `→ []T` | Remove duplicates |
 | `rotate(n)` | `(int32) → void` | Rotate elements |
 | `equals(other)` | `([]T) → bool` | Element-wise equality |
 | `toString()` | `→ string` | String representation |
@@ -331,7 +332,7 @@ Available on fixed-size arrays (`[N]T`) and dynamic arrays (`[]T`).
 
 ---
 
-## Vec\<T\> Methods
+## vec\<T\> Methods
 
 ### Capacity
 
@@ -394,15 +395,15 @@ Available on fixed-size arrays (`[N]T`) and dynamic arrays (`[]T`).
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `equals(other)` | `(Vec<T>) → bool` | Element-wise equality |
+| `equals(other)` | `(vec<T>) → bool` | Element-wise equality |
 | `toString()` | `→ string` | String representation |
 | `join(sep)` | `(string) → string` | Join with separator |
-| `clone()` | `→ Vec<T>` | Deep copy |
+| `clone()` | `→ vec<T>` | Deep copy |
 | `free()` | `→ void` | Release heap memory |
 
 ---
 
-## Map\<K, V\> Methods
+## map\<K, V\> Methods
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
@@ -411,16 +412,16 @@ Available on fixed-size arrays (`[N]T`) and dynamic arrays (`[]T`).
 | `get(key)` | `(K) → V` | Get value by key |
 | `getOrDefault(key, def)` | `(K, V) → V` | Get value or default |
 | `has(key)` | `(K) → bool` | Check if key exists |
-| `set(key, val)` | `(K, V) → void` | Set or update entry |
+| `insert(key, val)` | `(K, V) → void` | Insert or update entry |
 | `remove(key)` | `(K) → void` | Remove entry |
 | `clear()` | `→ void` | Remove all entries |
-| `keys()` | `→ Vec<K>` | All keys as vector |
-| `values()` | `→ Vec<V>` | All values as vector |
+| `keys()` | `→ vec<K>` | All keys as vector |
+| `values()` | `→ vec<V>` | All values as vector |
 | `free()` | `→ void` | Release heap memory |
 
 ---
 
-## Set\<T\> Methods
+## set\<T\> Methods
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
@@ -430,5 +431,5 @@ Available on fixed-size arrays (`[N]T`) and dynamic arrays (`[]T`).
 | `has(val)` | `(T) → bool` | Check membership |
 | `remove(val)` | `(T) → void` | Remove element |
 | `clear()` | `→ void` | Remove all elements |
-| `values()` | `→ Vec<T>` | All elements as vector |
+| `values()` | `→ vec<T>` | All elements as vector |
 | `free()` | `→ void` | Release heap memory |

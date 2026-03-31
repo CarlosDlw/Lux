@@ -33,7 +33,7 @@ use std::crypto::{ sha256String, md5String, hmacSha256, randomBytes };
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `hmacSha256` | `(string, string) -> string` | HMAC-SHA256 of message with key |
-| `randomBytes` | `(int32) -> Vec<uint8>` | Cryptographically secure random bytes |
+| `randomBytes` | `(int32) -> vec<uint8>` | Cryptographically secure random bytes |
 
 ## Example
 
@@ -50,7 +50,7 @@ println(sha256String("hello"));
 string mac = hmacSha256("message", "secret-key");
 println(mac);
 
-Vec<uint8> bytes = randomBytes(16);
+vec<uint8> bytes = randomBytes(16);
 // 16 cryptographically secure random bytes
 ```
 

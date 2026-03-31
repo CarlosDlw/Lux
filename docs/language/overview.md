@@ -20,7 +20,7 @@ Lux is a compiled systems programming language that targets LLVM IR. It is desig
 |---|---|
 | Native compilation | LLVM backend, produces native binaries for x86-64, ARM, and more |
 | C FFI | `extern`, `#include`, `c"..."` literals, struct ABI compatibility |
-| Generics | `Vec<T>`, `Map<K, V>`, `Set<T>`, `Task<T>` |
+| Generics | `vec<T>`, `map<K, V>`, `set<T>`, `Task<T>` |
 | Concurrency | `spawn`, `await`, `Mutex`, `lock` statement |
 | Error handling | `try`/`catch`/`finally`, `throw`, built-in `Error` type |
 | Memory control | Manual allocation, `defer` cleanup, auto-cleanup for collections |

@@ -236,7 +236,9 @@ int CLI::compile() {
 
         for (auto& unit : units) {
             auto* tree = unit.parseResult.tree;
-            for (auto* incl : tree->includeDecl()) {
+            for (auto* pre : tree->preambleDecl()) {
+                auto* incl = pre->includeDecl();
+                if (!incl) continue;
                 auto text = incl->getText();
                 if (incl->INCLUDE_SYS()) {
                     auto header = CHeaderResolver::extractSystemHeader(text);

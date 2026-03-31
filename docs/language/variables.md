@@ -13,6 +13,51 @@ string name = "Alice";
 bool is_active = true;
 ```
 
+## Type Inference with `auto`
+
+Instead of writing the type explicitly, you can use `auto` to let the compiler infer the type from the initializer expression:
+
+```t
+namespace AutoDemo;
+
+use std::log::println;
+
+#include <stdio.h>
+
+int32 main() {
+    auto x = 42;              // inferred as int32
+    auto pi = 3.14;           // inferred as float64
+    auto name = "Alice";      // inferred as string
+    auto flag = true;         // inferred as bool
+    auto ch = 'A';            // inferred as char
+
+    println(typeof(x));       // int32
+    println(typeof(pi));      // float64
+    println(typeof(name));    // string
+
+    // also works with function call return types
+    auto n = printf(c"hello\n");
+    println(typeof(n));       // int32
+
+    ret 0;
+}
+```
+
+`auto` requires an initializer — the compiler needs a value to infer the type from. Declaring `auto x;` without an assignment is a compile-time error.
+
+The inferred type follows the same rules as explicit types:
+
+| Expression | Inferred Type |
+|---|---|
+| `42` | `int32` |
+| `3.14` | `float64` |
+| `true` / `false` | `bool` |
+| `'A'` | `char` |
+| `"hello"` | `string` |
+| `c"hello"` | `*char` |
+| `null` | `*void` |
+| Function call | Return type of the function |
+
 ## Uninitialized Variables
 
 You can declare a variable without assigning a value. The compiler zero-initializes it:
@@ -239,3 +284,4 @@ int32 main() {
 - [Operators](operators.md) — Arithmetic, comparison, logical, bitwise operators
 - [Control Flow](control-flow.md) — If, for, while, switch
 - [Functions](functions.md) — Function parameters and return values
+- [Keywords](../reference/keywords.md) — Complete list of reserved keywords including `auto`

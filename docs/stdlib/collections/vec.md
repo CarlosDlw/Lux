@@ -1,18 +1,14 @@
-# Vec\<T\>
+# vec\<T\>
 
 A dynamically-growable array backed by contiguous heap memory.
 
-## Import
+## Declaration
+
+`vec`, `map`, and `set` are native keywords — no import required.
 
 ```tm
-use std::collections::Vec;
-```
-
-## Construction
-
-```tm
-Vec<int32> numbers = [];                  // empty
-Vec<string> names = ["alice", "bob"];     // with initial values
+vec<int32> numbers = [];                  // empty
+vec<string> names = ["alice", "bob"];     // with initial values
 ```
 
 ## Methods
@@ -90,18 +86,16 @@ Elements can also be accessed via indexing: `v[0]`, `v[1]`.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `equals(Vec<T>)` | `bool` | Whether two vectors are equal |
+| `equals(vec<T>)` | `bool` | Whether two vectors are equal |
 | `isSorted()` | `bool` | Whether sorted ascending (numeric) |
 | `toString()` | `string` | String representation |
 | `join(string)` | `string` | Join elements with separator |
-| `clone()` | `Vec<T>` | Deep copy |
+| `clone()` | `vec<T>` | Deep copy |
 
 ## Example
 
 ```tm
-use std::log::println;
-
-Vec<int32> nums = [];
+vec<int32> nums = [];
 
 nums.push(3);
 nums.push(1);
@@ -136,7 +130,7 @@ See [Arrays — List Comprehensions](../../language/arrays.md) for full syntax d
 
 ## Auto-Cleanup
 
-`Vec<T>` memory is automatically freed when the containing function returns. You can also call `.free()` manually or use `defer`.
+`vec<T>` memory is automatically freed when the containing function returns. You can also call `.free()` manually or use `defer`.
 
 ## See Also
 

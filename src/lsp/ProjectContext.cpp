@@ -43,7 +43,9 @@ bool ProjectContext::build(const std::string& filePath) {
         fileNamespaces_[path] = unit.namespaceName;
 
         // Resolve C headers from this file.
-        auto includes = unit.parseResult.tree->includeDecl();
+        std::vector<LuxParser::IncludeDeclContext*> includes;
+        for (auto* pre : unit.parseResult.tree->preambleDecl())
+            if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
             CHeaderResolver resolver(cTypeReg_, cBindings_);
             for (auto* incl : includes) {

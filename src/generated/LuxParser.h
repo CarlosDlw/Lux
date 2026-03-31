@@ -17,41 +17,42 @@ public:
     ELSE = 15, FOR = 16, IN = 17, LOOP = 18, WHILE = 19, DO = 20, BREAK = 21, 
     CONTINUE = 22, SWITCH = 23, CASE = 24, DEFAULT = 25, SPAWN = 26, AWAIT = 27, 
     LOCK = 28, EXTEND = 29, TRY = 30, CATCH = 31, FINALLY = 32, THROW = 33, 
-    DEFER = 34, EXTERN = 35, ARROW = 36, INCLUDE_SYS = 37, INCLUDE_LOCAL = 38, 
-    NULLCOAL = 39, SPREAD = 40, RANGE_INCL = 41, RANGE = 42, INT1 = 43, 
-    INT8 = 44, INT16 = 45, INT32 = 46, INT64 = 47, INT128 = 48, INTINF = 49, 
-    ISIZE = 50, UINT1 = 51, UINT8 = 52, UINT16 = 53, UINT32 = 54, UINT64 = 55, 
-    UINT128 = 56, USIZE = 57, FLOAT32 = 58, FLOAT64 = 59, FLOAT80 = 60, 
-    FLOAT128 = 61, DOUBLE = 62, BOOL = 63, CHAR = 64, VOID = 65, STRING = 66, 
-    CSTRING = 67, INT_LIT = 68, FLOAT_LIT = 69, BOOL_LIT = 70, C_STR_LIT = 71, 
-    STR_LIT = 72, CHAR_LIT = 73, IDENTIFIER = 74, PLUS_ASSIGN = 75, MINUS_ASSIGN = 76, 
-    STAR_ASSIGN = 77, SLASH_ASSIGN = 78, PERCENT_ASSIGN = 79, AMP_ASSIGN = 80, 
-    PIPE_ASSIGN = 81, CARET_ASSIGN = 82, LSHIFT_ASSIGN = 83, RSHIFT_ASSIGN = 84, 
-    SEMI = 85, COLON = 86, SCOPE = 87, COMMA = 88, DOT = 89, ASSIGN = 90, 
-    LPAREN = 91, RPAREN = 92, LBRACE = 93, RBRACE = 94, LBRACKET = 95, RBRACKET = 96, 
-    STAR = 97, AMPERSAND = 98, MINUS = 99, PLUS = 100, SLASH = 101, PERCENT = 102, 
-    EQ = 103, NEQ = 104, LTE = 105, GTE = 106, LT = 107, GT = 108, LAND = 109, 
-    LOR = 110, NOT = 111, INCR = 112, DECR = 113, LSHIFT = 114, RSHIFT = 115, 
-    PIPE = 116, CARET = 117, TILDE = 118, QUESTION = 119, WS = 120, LINE_COMMENT = 121, 
-    BLOCK_COMMENT = 122
+    DEFER = 34, EXTERN = 35, AUTO = 36, VEC = 37, MAP = 38, SET = 39, TUPLE = 40, 
+    ARROW = 41, INCLUDE_SYS = 42, INCLUDE_LOCAL = 43, NULLCOAL = 44, SPREAD = 45, 
+    RANGE_INCL = 46, RANGE = 47, INT1 = 48, INT8 = 49, INT16 = 50, INT32 = 51, 
+    INT64 = 52, INT128 = 53, INTINF = 54, ISIZE = 55, UINT1 = 56, UINT8 = 57, 
+    UINT16 = 58, UINT32 = 59, UINT64 = 60, UINT128 = 61, USIZE = 62, FLOAT32 = 63, 
+    FLOAT64 = 64, FLOAT80 = 65, FLOAT128 = 66, DOUBLE = 67, BOOL = 68, CHAR = 69, 
+    VOID = 70, STRING = 71, CSTRING = 72, HEX_LIT = 73, OCT_LIT = 74, BIN_LIT = 75, 
+    INT_LIT = 76, FLOAT_LIT = 77, BOOL_LIT = 78, C_STR_LIT = 79, STR_LIT = 80, 
+    CHAR_LIT = 81, IDENTIFIER = 82, PLUS_ASSIGN = 83, MINUS_ASSIGN = 84, 
+    STAR_ASSIGN = 85, SLASH_ASSIGN = 86, PERCENT_ASSIGN = 87, AMP_ASSIGN = 88, 
+    PIPE_ASSIGN = 89, CARET_ASSIGN = 90, LSHIFT_ASSIGN = 91, RSHIFT_ASSIGN = 92, 
+    SEMI = 93, COLON = 94, SCOPE = 95, COMMA = 96, DOT = 97, ASSIGN = 98, 
+    LPAREN = 99, RPAREN = 100, LBRACE = 101, RBRACE = 102, LBRACKET = 103, 
+    RBRACKET = 104, STAR = 105, AMPERSAND = 106, MINUS = 107, PLUS = 108, 
+    SLASH = 109, PERCENT = 110, EQ = 111, NEQ = 112, LTE = 113, GTE = 114, 
+    LT = 115, GT = 116, LAND = 117, LOR = 118, NOT = 119, INCR = 120, DECR = 121, 
+    LSHIFT = 122, PIPE = 123, CARET = 124, TILDE = 125, QUESTION = 126, 
+    WS = 127, LINE_COMMENT = 128, BLOCK_COMMENT = 129
   };
 
   enum {
-    RuleProgram = 0, RuleNamespaceDecl = 1, RuleUseDecl = 2, RuleModulePath = 3, 
-    RuleIncludeDecl = 4, RuleTopLevelDecl = 5, RuleTypeAliasDecl = 6, RuleEnumDecl = 7, 
-    RuleStructDecl = 8, RuleStructField = 9, RuleUnionDecl = 10, RuleUnionField = 11, 
-    RuleExternDecl = 12, RuleExternParamList = 13, RuleExternParam = 14, 
-    RuleFunctionDecl = 15, RuleExtendDecl = 16, RuleExtendMethod = 17, RuleParamList = 18, 
-    RuleParam = 19, RuleBlock = 20, RuleStatement = 21, RuleDeferStmt = 22, 
-    RuleExprStmt = 23, RuleVarDeclStmt = 24, RuleAssignStmt = 25, RuleCompoundAssignStmt = 26, 
-    RuleFieldAssignStmt = 27, RuleIndexFieldAssignStmt = 28, RuleDerefAssignStmt = 29, 
-    RuleArrowAssignStmt = 30, RuleArrowCompoundAssignStmt = 31, RuleCallStmt = 32, 
-    RuleArgList = 33, RuleReturnStmt = 34, RuleIfStmt = 35, RuleElseIfClause = 36, 
-    RuleElseClause = 37, RuleForStmt = 38, RuleBreakStmt = 39, RuleContinueStmt = 40, 
-    RuleLoopStmt = 41, RuleWhileStmt = 42, RuleDoWhileStmt = 43, RuleLockStmt = 44, 
-    RuleTryCatchStmt = 45, RuleCatchClause = 46, RuleFinallyClause = 47, 
-    RuleThrowStmt = 48, RuleSwitchStmt = 49, RuleCaseClause = 50, RuleDefaultClause = 51, 
-    RuleExpression = 52, RuleTypeSpec = 53, RuleFnTypeSpec = 54, RulePrimitiveType = 55
+    RuleProgram = 0, RulePreambleDecl = 1, RuleNamespaceDecl = 2, RuleUseDecl = 3, 
+    RuleModulePath = 4, RuleIncludeDecl = 5, RuleTopLevelDecl = 6, RuleTypeAliasDecl = 7, 
+    RuleEnumDecl = 8, RuleStructDecl = 9, RuleStructField = 10, RuleUnionDecl = 11, 
+    RuleUnionField = 12, RuleExternDecl = 13, RuleExternParamList = 14, 
+    RuleExternParam = 15, RuleFunctionDecl = 16, RuleExtendDecl = 17, RuleExtendMethod = 18, 
+    RuleParamList = 19, RuleParam = 20, RuleBlock = 21, RuleStatement = 22, 
+    RuleDeferStmt = 23, RuleExprStmt = 24, RuleVarDeclStmt = 25, RuleAssignStmt = 26, 
+    RuleCompoundAssignStmt = 27, RuleFieldAssignStmt = 28, RuleIndexFieldAssignStmt = 29, 
+    RuleDerefAssignStmt = 30, RuleArrowAssignStmt = 31, RuleArrowCompoundAssignStmt = 32, 
+    RuleCallStmt = 33, RuleArgList = 34, RuleReturnStmt = 35, RuleIfStmt = 36, 
+    RuleElseIfClause = 37, RuleElseClause = 38, RuleForStmt = 39, RuleBreakStmt = 40, 
+    RuleContinueStmt = 41, RuleLoopStmt = 42, RuleWhileStmt = 43, RuleDoWhileStmt = 44, 
+    RuleLockStmt = 45, RuleTryCatchStmt = 46, RuleCatchClause = 47, RuleFinallyClause = 48, 
+    RuleThrowStmt = 49, RuleSwitchStmt = 50, RuleCaseClause = 51, RuleDefaultClause = 52, 
+    RuleExpression = 53, RuleTypeSpec = 54, RuleFnTypeSpec = 55, RulePrimitiveType = 56
   };
 
   explicit LuxParser(antlr4::TokenStream *input);
@@ -72,6 +73,7 @@ public:
 
 
   class ProgramContext;
+  class PreambleDeclContext;
   class NamespaceDeclContext;
   class UseDeclContext;
   class ModulePathContext;
@@ -134,10 +136,8 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *EOF();
     NamespaceDeclContext *namespaceDecl();
-    std::vector<UseDeclContext *> useDecl();
-    UseDeclContext* useDecl(size_t i);
-    std::vector<IncludeDeclContext *> includeDecl();
-    IncludeDeclContext* includeDecl(size_t i);
+    std::vector<PreambleDeclContext *> preambleDecl();
+    PreambleDeclContext* preambleDecl(size_t i);
     std::vector<TopLevelDeclContext *> topLevelDecl();
     TopLevelDeclContext* topLevelDecl(size_t i);
 
@@ -147,6 +147,20 @@ public:
   };
 
   ProgramContext* program();
+
+  class  PreambleDeclContext : public antlr4::ParserRuleContext {
+  public:
+    PreambleDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    UseDeclContext *useDecl();
+    IncludeDeclContext *includeDecl();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  PreambleDeclContext* preambleDecl();
 
   class  NamespaceDeclContext : public antlr4::ParserRuleContext {
   public:
@@ -587,10 +601,15 @@ public:
     VarDeclStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     TypeSpecContext *typeSpec();
-    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LPAREN();
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *RPAREN();
     antlr4::tree::TerminalNode *ASSIGN();
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *SEMI();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -1149,6 +1168,41 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  RshiftExprContext : public ExpressionContext {
+  public:
+    RshiftExprContext(ExpressionContext *ctx);
+
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> GT();
+    antlr4::tree::TerminalNode* GT(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ArrowMethodCallExprContext : public ExpressionContext {
+  public:
+    ArrowMethodCallExprContext(ExpressionContext *ctx);
+
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *ARROW();
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    ArgListContext *argList();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  OctLitExprContext : public ExpressionContext {
+  public:
+    OctLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *OCT_LIT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  BitXorExprContext : public ExpressionContext {
   public:
     BitXorExprContext(ExpressionContext *ctx);
@@ -1201,6 +1255,17 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  ChainedTupleIndexExprContext : public ExpressionContext {
+  public:
+    ChainedTupleIndexExprContext(ExpressionContext *ctx);
+
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *DOT();
+    antlr4::tree::TerminalNode *FLOAT_LIT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  NullLitExprContext : public ExpressionContext {
   public:
     NullLitExprContext(ExpressionContext *ctx);
@@ -1246,6 +1311,31 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  LshiftExprContext : public ExpressionContext {
+  public:
+    LshiftExprContext(ExpressionContext *ctx);
+
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    antlr4::tree::TerminalNode *LSHIFT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  TupleLitExprContext : public ExpressionContext {
+  public:
+    TupleLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *LPAREN();
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+    antlr4::tree::TerminalNode *RPAREN();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  AddSubExprContext : public ExpressionContext {
   public:
     AddSubExprContext(ExpressionContext *ctx);
@@ -1273,7 +1363,18 @@ public:
     AddrOfExprContext(ExpressionContext *ctx);
 
     antlr4::tree::TerminalNode *AMPERSAND();
-    antlr4::tree::TerminalNode *IDENTIFIER();
+    ExpressionContext *expression();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  TupleIndexExprContext : public ExpressionContext {
+  public:
+    TupleIndexExprContext(ExpressionContext *ctx);
+
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *DOT();
+    antlr4::tree::TerminalNode *INT_LIT();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1322,19 +1423,6 @@ public:
     antlr4::tree::TerminalNode *IN();
     antlr4::tree::TerminalNode *RBRACKET();
     antlr4::tree::TerminalNode *IF();
-
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
-  class  ShiftExprContext : public ExpressionContext {
-  public:
-    ShiftExprContext(ExpressionContext *ctx);
-
-    antlr4::Token *op = nullptr;
-    std::vector<ExpressionContext *> expression();
-    ExpressionContext* expression(size_t i);
-    antlr4::tree::TerminalNode *LSHIFT();
-    antlr4::tree::TerminalNode *RSHIFT();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1530,6 +1618,15 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  BinLitExprContext : public ExpressionContext {
+  public:
+    BinLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *BIN_LIT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  RangeInclExprContext : public ExpressionContext {
   public:
     RangeInclExprContext(ExpressionContext *ctx);
@@ -1537,6 +1634,17 @@ public:
     std::vector<ExpressionContext *> expression();
     ExpressionContext* expression(size_t i);
     antlr4::tree::TerminalNode *RANGE_INCL();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  TupleArrowIndexExprContext : public ExpressionContext {
+  public:
+    TupleArrowIndexExprContext(ExpressionContext *ctx);
+
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *ARROW();
+    antlr4::tree::TerminalNode *INT_LIT();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1677,6 +1785,26 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  HexLitExprContext : public ExpressionContext {
+  public:
+    HexLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *HEX_LIT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ChainedTupleArrowIndexExprContext : public ExpressionContext {
+  public:
+    ChainedTupleArrowIndexExprContext(ExpressionContext *ctx);
+
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *ARROW();
+    antlr4::tree::TerminalNode *FLOAT_LIT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  RangeExprContext : public ExpressionContext {
   public:
     RangeExprContext(ExpressionContext *ctx);
@@ -1701,12 +1829,17 @@ public:
     antlr4::tree::TerminalNode *INT_LIT();
     antlr4::tree::TerminalNode *RBRACKET();
     FnTypeSpecContext *fnTypeSpec();
-    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *VEC();
     antlr4::tree::TerminalNode *LT();
     antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *MAP();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
+    antlr4::tree::TerminalNode *SET();
+    antlr4::tree::TerminalNode *TUPLE();
+    antlr4::tree::TerminalNode *IDENTIFIER();
     PrimitiveTypeContext *primitiveType();
+    antlr4::tree::TerminalNode *AUTO();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -1714,7 +1847,7 @@ public:
   };
 
   TypeSpecContext* typeSpec();
-
+  TypeSpecContext* typeSpec(int precedence);
   class  FnTypeSpecContext : public antlr4::ParserRuleContext {
   public:
     FnTypeSpecContext(antlr4::ParserRuleContext *parent, size_t invokingState);
@@ -1776,6 +1909,7 @@ public:
   bool sempred(antlr4::RuleContext *_localctx, size_t ruleIndex, size_t predicateIndex) override;
 
   bool expressionSempred(ExpressionContext *_localctx, size_t predicateIndex);
+  bool typeSpecSempred(TypeSpecContext *_localctx, size_t predicateIndex);
 
   // By default the static state used to implement the parser is lazily initialized during the first
   // call to the constructor. You can call this function if you wish to initialize the static state

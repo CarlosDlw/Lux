@@ -607,9 +607,6 @@ void MethodRegistry::registerBuiltins() {
     registerArrayMethod({ "join",       {}, {"string"}, "string",
                           .emitTag = "array.join" });
 
-    registerArrayMethod({ "distinct",   {}, {}, "_self",
-                          .emitTag = "array.distinct" });
-
     registerArrayMethod({ "rotate",     {}, {"int32"}, "void",
                           .emitTag = "array.rotate" });
 }

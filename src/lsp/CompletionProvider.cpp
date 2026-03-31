@@ -1,11 +1,20 @@
 #include "lsp/CompletionProvider.h"
 #include "lsp/ProjectContext.h"
+#include "lsp/DocComment.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
 #include "namespace/NamespaceRegistry.h"
 
 #include <algorithm>
 #include <sstream>
+
+// Normalize lowercase native keywords (vec, map, set) to registry CamelCase (Vec, Map, Set)
+static std::string normalizeExtBaseName(const std::string& name) {
+    if (name == "vec") return "Vec";
+    if (name == "map") return "Map";
+    if (name == "set") return "Set";
+    return name;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Static helpers
@@ -21,13 +30,273 @@ static bool cursorInsideNode(antlr4::ParserRuleContext* node, size_t cursorLine0
     return cursorLine0 >= startLine && cursorLine0 <= stopLine;
 }
 
+// Context for resolving function/method call return types during auto inference.
+struct FuncLookupCtx {
+    LuxParser::ProgramContext* tree = nullptr;
+    const CBindings* bindings = nullptr;
+    const BuiltinRegistry* builtinReg = nullptr;
+    const ExtendedTypeRegistry* extTypeReg = nullptr;
+    const ProjectContext* project = nullptr;
+};
+
 static void collectLocalsFromBlock(
     LuxParser::BlockContext* block, size_t beforeLine,
-    std::unordered_map<std::string, CompletionProvider::LocalVar>& out);
+    std::unordered_map<std::string, CompletionProvider::LocalVar>& out,
+    const FuncLookupCtx* flc = nullptr);
+
+// Look up the return type of a function by name.
+static std::string lookupFuncReturnType(
+        const std::string& funcName,
+        const FuncLookupCtx* flc) {
+    if (!flc) return "";
+    if (flc->bindings) {
+        auto* cfunc = flc->bindings->findFunction(funcName);
+        if (cfunc && cfunc->returnType)
+            return cfunc->returnType->name;
+    }
+    if (flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            if (auto* fd = tld->functionDecl()) {
+                if (fd->IDENTIFIER() && fd->IDENTIFIER()->getText() == funcName
+                    && fd->typeSpec())
+                    return fd->typeSpec()->getText();
+            }
+            if (auto* ext = tld->externDecl()) {
+                if (ext->IDENTIFIER() && ext->IDENTIFIER()->getText() == funcName
+                    && ext->typeSpec()) {
+                    auto ret = ext->typeSpec()->getText();
+                    if (ret != "auto") return ret;
+                }
+            }
+        }
+    }
+    // Cross-file functions (imported via `use`)
+    if (flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allNamespaces()) {
+            auto* sym = flc->project->registry().findSymbol(ns, funcName);
+            if (!sym) continue;
+            if (sym->kind == ExportedSymbol::Function) {
+                auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                if (fd) return fd->typeSpec()->getText();
+            }
+        }
+    }
+    if (flc->builtinReg) {
+        auto* builtin = flc->builtinReg->lookup(funcName);
+        if (builtin) return builtin->returnType;
+    }
+    return "";
+}
+
+// Infer the type name of an expression for auto variable resolution.
+static std::string inferExprTypeName(
+        LuxParser::ExpressionContext* expr,
+        const std::unordered_map<std::string, CompletionProvider::LocalVar>& locals,
+        const FuncLookupCtx* flc = nullptr) {
+    if (!expr) return "";
+    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::HexLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::OctLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::BinLitExprContext*>(expr))   return "int32";
+    if (dynamic_cast<LuxParser::FloatLitExprContext*>(expr)) return "float64";
+    if (dynamic_cast<LuxParser::BoolLitExprContext*>(expr))  return "bool";
+    if (dynamic_cast<LuxParser::CharLitExprContext*>(expr))  return "char";
+    if (dynamic_cast<LuxParser::StrLitExprContext*>(expr))   return "string";
+    if (dynamic_cast<LuxParser::CStrLitExprContext*>(expr))  return "*char";
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto it = locals.find(id->IDENTIFIER()->getText());
+        if (it != locals.end()) return it->second.typeName;
+        return "";
+    }
+    if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
+            auto it = locals.find(ident->IDENTIFIER()->getText());
+            if (it != locals.end()) return "*" + it->second.typeName;
+        }
+        return "";
+    }
+    // Function call: resolve return type
+    if (auto* fn = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(fn->expression())) {
+            auto ret = lookupFuncReturnType(ident->IDENTIFIER()->getText(), flc);
+            if (!ret.empty()) return ret;
+        }
+        return "";
+    }
+    // Enum access: Direction::North → "Direction"
+    if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
+        auto ids = ea->IDENTIFIER();
+        if (!ids.empty()) return ids[0]->getText();
+        return "";
+    }
+    // Static method call: Type::method(...) → look up return type from extend blocks
+    if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
+        auto ids = smc->IDENTIFIER();
+        if (ids.size() >= 2) {
+            std::string typeName   = ids[0]->getText();
+            std::string methodName = ids[1]->getText();
+            if (flc && flc->tree) {
+                for (auto* tld : flc->tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    if (ext->IDENTIFIER()->getText() != typeName) continue;
+                    for (auto* m : ext->extendMethod()) {
+                        if (m->IDENTIFIER(0)->getText() == methodName)
+                            return m->typeSpec()->getText();
+                    }
+                }
+            }
+            if (flc && flc->project && flc->project->isValid()) {
+                for (auto& ns : flc->project->registry().allNamespaces()) {
+                    auto syms = flc->project->registry().getNamespaceSymbols(ns);
+                    for (auto* sym : syms) {
+                        if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+                        auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                        if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                        for (auto* m : ext->extendMethod()) {
+                            if (m->IDENTIFIER(0)->getText() == methodName)
+                                return m->typeSpec()->getText();
+                        }
+                    }
+                }
+            }
+            if (flc && flc->extTypeReg) {
+                auto* desc = flc->extTypeReg->lookup(typeName);
+                if (desc) {
+                    for (auto& md : desc->methods) {
+                        if (md.name == methodName) return md.returnType;
+                    }
+                }
+            }
+        }
+        return "";
+    }
+    // Method call: resolve receiver type, then look up method return type
+    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
+        auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
+        if (!receiverType.empty()) {
+            std::string methodName = mc->IDENTIFIER()->getText();
+
+            // 1) Check user-defined extend methods
+            if (flc && flc->tree) {
+                for (auto* tld : flc->tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    if (ext->IDENTIFIER()->getText() != receiverType) continue;
+                    for (auto* m : ext->extendMethod()) {
+                        if (m->IDENTIFIER(0)->getText() == methodName
+                            && m->typeSpec())
+                            return m->typeSpec()->getText();
+                    }
+                }
+            }
+
+            // 1b) Check cross-file extend methods
+            if (flc && flc->project && flc->project->isValid()) {
+                for (auto& ns : flc->project->registry().allNamespaces()) {
+                    auto syms = flc->project->registry().getNamespaceSymbols(ns);
+                    for (auto* sym : syms) {
+                        if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+                        auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                        if (!ext || ext->IDENTIFIER()->getText() != receiverType) continue;
+                        for (auto* m : ext->extendMethod()) {
+                            if (m->IDENTIFIER(0)->getText() == methodName
+                                && m->typeSpec())
+                                return m->typeSpec()->getText();
+                        }
+                    }
+                }
+            }
+
+            // 2) Check builtin extended type methods (Vec, Map, Set, etc.)
+            if (flc && flc->extTypeReg) {
+                std::string baseName = receiverType;
+                std::vector<std::string> typeArgs;
+                auto ltPos = receiverType.find('<');
+                if (ltPos != std::string::npos) {
+                    baseName = receiverType.substr(0, ltPos);
+                    auto gtPos = receiverType.rfind('>');
+                    if (gtPos != std::string::npos) {
+                        std::string inner = receiverType.substr(ltPos + 1, gtPos - ltPos - 1);
+                        int depth = 0; size_t start = 0;
+                        for (size_t i = 0; i <= inner.size(); ++i) {
+                            if (i == inner.size() || (inner[i] == ',' && depth == 0)) {
+                                auto arg = inner.substr(start, i - start);
+                                size_t b = arg.find_first_not_of(' ');
+                                size_t e = arg.find_last_not_of(' ');
+                                if (b != std::string::npos)
+                                    typeArgs.push_back(arg.substr(b, e - b + 1));
+                                start = i + 1;
+                            } else if (inner[i] == '<') ++depth;
+                            else if (inner[i] == '>') --depth;
+                        }
+                    }
+                }
+
+                auto* desc = flc->extTypeReg->lookup(normalizeExtBaseName(baseName));
+                if (desc) {
+                    for (auto& md : desc->methods) {
+                        if (md.name != methodName) continue;
+                        auto& rt = md.returnType;
+                        if (rt == "_self")  return receiverType;
+                        if (rt == "_elem" && !typeArgs.empty()) return typeArgs[0];
+                        if (rt == "_key"  && !typeArgs.empty()) return typeArgs[0];
+                        if (rt == "_val"  && typeArgs.size() >= 2) return typeArgs[1];
+                        if (rt == "_val"  && typeArgs.size() == 1) return typeArgs[0];
+                        if (rt == "_vec_key" && !typeArgs.empty()) return "vec<" + typeArgs[0] + ">";
+                        if (rt == "_vec_val" && typeArgs.size() >= 2) return "vec<" + typeArgs[1] + ">";
+                        return rt;
+                    }
+                }
+            }
+        }
+        return "";
+    }
+    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr)) {
+        auto inner = inferExprTypeName(deref->expression(), locals, flc);
+        if (inner.size() > 1 && inner[0] == '*') return inner.substr(1);
+        return "";
+    }
+    if (auto* neg = dynamic_cast<LuxParser::NegExprContext*>(expr))
+        return inferExprTypeName(neg->expression(), locals, flc);
+    if (dynamic_cast<LuxParser::LogicalNotExprContext*>(expr)) return "bool";
+    if (dynamic_cast<LuxParser::RelExprContext*>(expr))        return "bool";
+    if (dynamic_cast<LuxParser::EqExprContext*>(expr))         return "bool";
+    if (dynamic_cast<LuxParser::LogicalAndExprContext*>(expr)) return "bool";
+    if (dynamic_cast<LuxParser::LogicalOrExprContext*>(expr))  return "bool";
+    if (auto* mul = dynamic_cast<LuxParser::MulExprContext*>(expr))
+        return inferExprTypeName(mul->expression(0), locals, flc);
+    if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(expr))
+        return inferExprTypeName(add->expression(0), locals, flc);
+    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+        return inferExprTypeName(paren->expression(), locals, flc);
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+        return cast->typeSpec() ? cast->typeSpec()->getText() : "";
+    if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr))
+        return inferExprTypeName(tern->expression(1), locals, flc);
+    if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
+        auto elems = arr->expression();
+        if (!elems.empty()) {
+            auto elemType = inferExprTypeName(elems[0], locals, flc);
+            if (!elemType.empty()) return "[]" + elemType;
+        }
+        return "";
+    }
+    if (dynamic_cast<LuxParser::SizeofExprContext*>(expr)) return "int64";
+    if (dynamic_cast<LuxParser::TypeofExprContext*>(expr)) return "string";
+    // Struct literal: Point { x: 10, y: 20 } → "Point"
+    if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(expr)) {
+        auto ids = sl->IDENTIFIER();
+        if (!ids.empty()) return ids[0]->getText();
+        return "";
+    }
+    return "";
+}
 
 static void collectLocalsFromStmts(
     const std::vector<LuxParser::StatementContext*>& stmts, size_t beforeLine,
-    std::unordered_map<std::string, CompletionProvider::LocalVar>& out) {
+    std::unordered_map<std::string, CompletionProvider::LocalVar>& out,
+    const FuncLookupCtx* flc = nullptr) {
     for (auto* stmt : stmts) {
         auto* start = stmt->getStart();
         if (start && start->getLine() > beforeLine + 1) break;
@@ -35,71 +304,79 @@ static void collectLocalsFromStmts(
         if (auto* vd = stmt->varDeclStmt()) {
             std::string typeName;
             if (vd->typeSpec()) typeName = vd->typeSpec()->getText();
-            out[vd->IDENTIFIER()->getText()] = {typeName, 0};
+            if (typeName == "auto" && vd->expression()) {
+                auto inferred = inferExprTypeName(vd->expression(), out, flc);
+                if (!inferred.empty()) typeName = inferred;
+            }
+            out[vd->IDENTIFIER(0)->getText()] = {typeName, 0};
         }
 
         if (auto* ifS = stmt->ifStmt()) {
             if (cursorInsideNode(ifS->block(), beforeLine))
-                collectLocalsFromBlock(ifS->block(), beforeLine, out);
+                collectLocalsFromBlock(ifS->block(), beforeLine, out, flc);
             for (auto* elif : ifS->elseIfClause())
                 if (cursorInsideNode(elif->block(), beforeLine))
-                    collectLocalsFromBlock(elif->block(), beforeLine, out);
+                    collectLocalsFromBlock(elif->block(), beforeLine, out, flc);
             if (ifS->elseClause())
                 if (cursorInsideNode(ifS->elseClause()->block(), beforeLine))
-                    collectLocalsFromBlock(ifS->elseClause()->block(), beforeLine, out);
+                    collectLocalsFromBlock(ifS->elseClause()->block(), beforeLine, out, flc);
         }
         if (auto* forS = stmt->forStmt()) {
             if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forS)) {
                 if (cursorInsideNode(fin, beforeLine)) {
-                    out[fin->IDENTIFIER()->getText()] = {fin->typeSpec()->getText(), 0};
-                    collectLocalsFromBlock(fin->block(), beforeLine, out);
+                    if (fin->IDENTIFIER() && fin->typeSpec())
+                        out[fin->IDENTIFIER()->getText()] = {fin->typeSpec()->getText(), 0};
+                    collectLocalsFromBlock(fin->block(), beforeLine, out, flc);
                 }
             }
             if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(forS)) {
                 if (cursorInsideNode(fc, beforeLine)) {
-                    out[fc->IDENTIFIER()->getText()] = {fc->typeSpec()->getText(), 0};
-                    collectLocalsFromBlock(fc->block(), beforeLine, out);
+                    if (fc->IDENTIFIER() && fc->typeSpec())
+                        out[fc->IDENTIFIER()->getText()] = {fc->typeSpec()->getText(), 0};
+                    collectLocalsFromBlock(fc->block(), beforeLine, out, flc);
                 }
             }
         }
         if (auto* ws = stmt->whileStmt())
             if (cursorInsideNode(ws->block(), beforeLine))
-                collectLocalsFromBlock(ws->block(), beforeLine, out);
+                collectLocalsFromBlock(ws->block(), beforeLine, out, flc);
         if (auto* dw = stmt->doWhileStmt())
             if (cursorInsideNode(dw->block(), beforeLine))
-                collectLocalsFromBlock(dw->block(), beforeLine, out);
+                collectLocalsFromBlock(dw->block(), beforeLine, out, flc);
         if (auto* ls = stmt->loopStmt())
             if (cursorInsideNode(ls->block(), beforeLine))
-                collectLocalsFromBlock(ls->block(), beforeLine, out);
+                collectLocalsFromBlock(ls->block(), beforeLine, out, flc);
         if (auto* sw = stmt->switchStmt()) {
             for (auto* c : sw->caseClause())
                 if (cursorInsideNode(c->block(), beforeLine))
-                    collectLocalsFromBlock(c->block(), beforeLine, out);
+                    collectLocalsFromBlock(c->block(), beforeLine, out, flc);
             if (sw->defaultClause())
                 if (cursorInsideNode(sw->defaultClause()->block(), beforeLine))
-                    collectLocalsFromBlock(sw->defaultClause()->block(), beforeLine, out);
+                    collectLocalsFromBlock(sw->defaultClause()->block(), beforeLine, out, flc);
         }
         if (auto* tc = stmt->tryCatchStmt()) {
             if (cursorInsideNode(tc->block(), beforeLine))
-                collectLocalsFromBlock(tc->block(), beforeLine, out);
+                collectLocalsFromBlock(tc->block(), beforeLine, out, flc);
             for (auto* cc : tc->catchClause()) {
                 if (cursorInsideNode(cc, beforeLine)) {
-                    out[cc->IDENTIFIER()->getText()] = {cc->typeSpec()->getText(), 0};
-                    collectLocalsFromBlock(cc->block(), beforeLine, out);
+                    if (cc->IDENTIFIER() && cc->typeSpec())
+                        out[cc->IDENTIFIER()->getText()] = {cc->typeSpec()->getText(), 0};
+                    collectLocalsFromBlock(cc->block(), beforeLine, out, flc);
                 }
             }
             if (tc->finallyClause())
                 if (cursorInsideNode(tc->finallyClause()->block(), beforeLine))
-                    collectLocalsFromBlock(tc->finallyClause()->block(), beforeLine, out);
+                    collectLocalsFromBlock(tc->finallyClause()->block(), beforeLine, out, flc);
         }
     }
 }
 
 static void collectLocalsFromBlock(
     LuxParser::BlockContext* block, size_t beforeLine,
-    std::unordered_map<std::string, CompletionProvider::LocalVar>& out) {
+    std::unordered_map<std::string, CompletionProvider::LocalVar>& out,
+    const FuncLookupCtx* flc) {
     if (!block) return;
-    collectLocalsFromStmts(block->statement(), beforeLine, out);
+    collectLocalsFromStmts(block->statement(), beforeLine, out, flc);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -116,6 +393,8 @@ static std::string resolveTypePlaceholder(const std::string& raw,
     if (raw == "_elem") return elemType;
     if (raw == "_key")  return keyType.empty()  ? raw : keyType;
     if (raw == "_val")  return valType.empty()  ? raw : valType;
+    if (raw == "_vec_key") return keyType.empty() ? raw : "vec<" + keyType + ">";
+    if (raw == "_vec_val") return valType.empty() ? raw : "vec<" + valType + ">";
     return raw;
 }
 
@@ -226,6 +505,13 @@ std::vector<CompletionItem> CompletionProvider::complete(
         return items;
     }
 
+    // Short-circuit for doc-comment tag completion — no parsing needed
+    if (req.context == CompletionContext::DocComment) {
+        std::vector<CompletionItem> items;
+        addDocTagCompletions(items, req.prefix);
+        return items;
+    }
+
     // 2) Build a "patched" source for parsing: comment out the cursor line
     //    so the parser doesn't choke on incomplete expressions like "p." or "ptr->"
     std::string patchedSource;
@@ -253,7 +539,9 @@ std::vector<CompletionItem> CompletionProvider::complete(
     if (project && project->isValid()) {
         cBindingsPtr = &project->cBindings();
     } else {
-        auto includes = parsed.tree->includeDecl();
+        std::vector<LuxParser::IncludeDeclContext*> includes;
+        for (auto* pre : parsed.tree->preambleDecl())
+            if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
             CHeaderResolver resolver(cTypeReg, localBindings);
             for (auto* incl : includes) {
@@ -276,7 +564,7 @@ std::vector<CompletionItem> CompletionProvider::complete(
     if (req.context == CompletionContext::DotAccess ||
         req.context == CompletionContext::ArrowAccess) {
         if (req.receiverType.empty() && !req.receiverVar.empty()) {
-            std::string varType = inferVarType(req.receiverVar, parsed.tree, line);
+            std::string varType = inferVarType(req.receiverVar, parsed.tree, line, cBindingsPtr, project);
             if (req.context == CompletionContext::ArrowAccess) {
                 // Strip pointer for arrow access
                 if (!varType.empty() && varType[0] == '*')
@@ -349,7 +637,7 @@ std::vector<CompletionItem> CompletionProvider::complete(
             break;
         }
         case CompletionContext::General: {
-            addLocals(items, parsed.tree, line, req.prefix);
+            addLocals(items, parsed.tree, line, *cBindingsPtr, req.prefix);
             addLocalDecls(items, parsed.tree, req.prefix);
             addImportedSymbols(items, parsed.tree, project, req.prefix);
             addGlobalBuiltins(items, req.prefix);
@@ -389,6 +677,17 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
 
     // Extract the text before cursor on this line
     std::string before = lineText.substr(0, col);
+
+    // ── Check for doc-comment context (/** ... */) ──────────────────
+    if (isInsideDocComment(source, line, col)) {
+        req.context = CompletionContext::DocComment;
+        // Extract prefix: text after the last '@' on this line
+        auto atPos = before.rfind('@');
+        if (atPos != std::string::npos) {
+            req.prefix = before.substr(atPos + 1);
+        }
+        return req;
+    }
 
     // Check for #include directive completion
     {
@@ -662,11 +961,12 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
 void CompletionProvider::addLocals(std::vector<CompletionItem>& items,
                                    LuxParser::ProgramContext* tree,
                                    size_t cursorLine,
+                                   const CBindings& bindings,
                                    const std::string& prefix) {
     // Check if inside a function
     auto* func = findEnclosingFunction(tree, cursorLine);
     if (func) {
-        auto locals = collectLocals(func, cursorLine);
+        auto locals = collectLocals(func, cursorLine, tree, &bindings);
         for (auto& [name, var] : locals) {
             if (!matchesPrefix(name, prefix)) continue;
             CompletionItem item;
@@ -679,6 +979,7 @@ void CompletionProvider::addLocals(std::vector<CompletionItem>& items,
         // Also add function parameters
         if (auto* params = func->paramList()) {
             for (auto* p : params->param()) {
+                if (!p->IDENTIFIER()) continue;
                 std::string name = p->IDENTIFIER()->getText();
                 if (!matchesPrefix(name, prefix)) continue;
                 CompletionItem item;
@@ -712,6 +1013,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem>& items,
     for (auto* tld : tree->topLevelDecl()) {
         // Functions
         if (auto* func = tld->functionDecl()) {
+            if (!func->IDENTIFIER()) continue;
             std::string name = func->IDENTIFIER()->getText();
             if (!matchesPrefix(name, prefix)) continue;
             CompletionItem item;
@@ -765,6 +1067,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem>& items,
 
         // Unions
         if (auto* ud = tld->unionDecl()) {
+            if (!ud->IDENTIFIER()) continue;
             std::string name = ud->IDENTIFIER()->getText();
             if (!matchesPrefix(name, prefix)) continue;
             CompletionItem item;
@@ -776,6 +1079,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem>& items,
 
         // Type aliases
         if (auto* ta = tld->typeAliasDecl()) {
+            if (!ta->IDENTIFIER()) continue;
             std::string name = ta->IDENTIFIER()->getText();
             if (!matchesPrefix(name, prefix)) continue;
             CompletionItem item;
@@ -787,6 +1091,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem>& items,
 
         // Extern functions
         if (auto* ext = tld->externDecl()) {
+            if (!ext->IDENTIFIER()) continue;
             std::string name = ext->IDENTIFIER()->getText();
             if (!matchesPrefix(name, prefix)) continue;
             CompletionItem item;
@@ -838,7 +1143,9 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem>& items,
                                             const std::string& prefix) {
     if (!project || !project->isValid()) return;
 
-    for (auto* useDecl : tree->useDecl()) {
+    for (auto* pre : tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
         std::string modulePath;
         std::vector<std::string> symbolNames;
 
@@ -1331,7 +1638,7 @@ void CompletionProvider::addTypeMethods(std::vector<CompletionItem>& items,
             valType = innerType;
         }
 
-        auto* extDesc = extTypeRegistry_.lookup(baseName);
+        auto* extDesc = extTypeRegistry_.lookup(normalizeExtBaseName(baseName));
         if (extDesc) {
             for (auto& md : extDesc->methods) {
                 if (!matchesPrefix(md.name, prefix)) continue;
@@ -1414,7 +1721,6 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem>& items,
                        "atoi", "atof",
                        "toHex", "toOctal", "toBinary", "fromHex",
                        "charToInt", "intToChar"}},
-        {"std::collections", {"Vec", "Map", "Set"}},
         {"std::mem", {"alloc", "allocZeroed", "realloc", "free",
                       "copy", "move", "set", "zero", "compare"}},
         {"std::time", {"now", "nowNanos", "nowMicros",
@@ -1973,6 +2279,31 @@ std::string CompletionProvider::resolveMethodReturnType(
             }
             return "";
         }
+        if (retType == "_vec_key") {
+            // map<K,V> → vec<K>
+            auto ab = receiverType.find('<');
+            if (ab != std::string::npos) {
+                auto inner = receiverType.substr(ab + 1);
+                auto comma = inner.find(',');
+                if (comma != std::string::npos) return "vec<" + inner.substr(0, comma) + ">";
+            }
+            return "";
+        }
+        if (retType == "_vec_val") {
+            // map<K,V> → vec<V>
+            auto ab = receiverType.find('<');
+            if (ab != std::string::npos) {
+                auto inner = receiverType.substr(ab + 1);
+                auto comma = inner.find(',');
+                auto closeAngle = inner.rfind('>');
+                if (comma != std::string::npos && closeAngle != std::string::npos) {
+                    auto val = inner.substr(comma + 1, closeAngle - comma - 1);
+                    while (!val.empty() && val[0] == ' ') val.erase(0, 1);
+                    return "vec<" + val + ">";
+                }
+            }
+            return "";
+        }
         return retType;
     };
 
@@ -1985,11 +2316,11 @@ std::string CompletionProvider::resolveMethodReturnType(
         }
     }
 
-    // 2) Check extended type methods (Vec<T>, Map<K,V>, Set<T>)
+    // 2) Check extended type methods (vec<T>, map<K,V>, set<T>)
     auto angleBracket = receiverType.find('<');
     if (angleBracket != std::string::npos) {
         std::string baseName = receiverType.substr(0, angleBracket);
-        auto* extDesc = extTypeRegistry_.lookup(baseName);
+        auto* extDesc = extTypeRegistry_.lookup(normalizeExtBaseName(baseName));
         if (extDesc) {
             for (auto& md : extDesc->methods) {
                 if (md.name == methodName)
@@ -2054,8 +2385,18 @@ std::string CompletionProvider::resolveMethodReturnType(
 
 std::unordered_map<std::string, CompletionProvider::LocalVar>
 CompletionProvider::collectLocals(LuxParser::FunctionDeclContext* func,
-                                  size_t beforeLine) {
+                                  size_t beforeLine,
+                                  LuxParser::ProgramContext* tree,
+                                  const CBindings* bindings,
+                                  const ProjectContext* project) {
     std::unordered_map<std::string, LocalVar> result;
+
+    FuncLookupCtx flc;
+    flc.tree       = tree;
+    flc.bindings   = bindings;
+    flc.builtinReg = &builtinRegistry_;
+    flc.extTypeReg = &extTypeRegistry_;
+    flc.project    = project;
 
     if (auto* params = func->paramList()) {
         for (auto* p : params->param()) {
@@ -2063,7 +2404,7 @@ CompletionProvider::collectLocals(LuxParser::FunctionDeclContext* func,
         }
     }
 
-    collectLocalsFromBlock(func->block(), beforeLine, result);
+    collectLocalsFromBlock(func->block(), beforeLine, result, &flc);
     return result;
 }
 
@@ -2162,11 +2503,13 @@ CompletionProvider::findExtendDecl(LuxParser::ProgramContext* tree,
 
 std::string CompletionProvider::inferVarType(const std::string& varName,
                                              LuxParser::ProgramContext* tree,
-                                             size_t cursorLine) {
+                                             size_t cursorLine,
+                                             const CBindings* bindings,
+                                             const ProjectContext* project) {
     // Check function locals
     auto* func = findEnclosingFunction(tree, cursorLine);
     if (func) {
-        auto locals = collectLocals(func, cursorLine);
+        auto locals = collectLocals(func, cursorLine, tree, bindings, project);
         auto it = locals.find(varName);
         if (it != locals.end()) return it->second.typeName;
     }
@@ -2247,4 +2590,146 @@ void CompletionProvider::dedup(std::vector<CompletionItem>& items) {
             return !seen.insert(item.label).second;
         });
     items.erase(it, items.end());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Doc-tag completions (inside /** ... */ blocks)
+// ═══════════════════════════════════════════════════════════════════════
+
+void CompletionProvider::addDocTagCompletions(std::vector<CompletionItem>& items,
+                                               const std::string& prefix) {
+    struct DocTagDef {
+        const char* name;
+        const char* detail;
+        const char* snippet;        // nullptr = plain text insert
+        const char* documentation;
+    };
+
+    static const DocTagDef tags[] = {
+        // name + description
+        {"@param",      "name description",
+         "param ${1:name} ${2:description}",
+         "Document a function parameter."},
+
+        {"@property",   "name description",
+         "property ${1:name} ${2:description}",
+         "Document a property."},
+
+        {"@field",      "name description",
+         "field ${1:name} ${2:description}",
+         "Document a struct field."},
+
+        // description
+        {"@return",     "description",
+         "return ${1:description}",
+         "Describe the return value."},
+
+        {"@returns",    "description",
+         "returns ${1:description}",
+         "Describe what the function returns."},
+
+        {"@brief",      "description",
+         "brief ${1:description}",
+         "Short summary of the documented element."},
+
+        {"@deprecated", "[reason]",
+         "deprecated ${1:reason}",
+         "Mark as deprecated with optional reason."},
+
+        {"@version",    "semver",
+         "version ${1:0.0.1}",
+         "Specify the version."},
+
+        {"@author",     "name",
+         "author ${1:name}",
+         "Specify the author."},
+
+        {"@see",        "reference",
+         "see ${1:reference}",
+         "Add a cross-reference to related documentation."},
+
+        {"@since",      "version",
+         "since ${1:version}",
+         "Specify when this was introduced."},
+
+        {"@throws",     "description",
+         "throws ${1:description}",
+         "Document an error or exception condition."},
+
+        {"@todo",       "description",
+         "todo ${1:description}",
+         "Add a to-do note."},
+
+        // multi-line block
+        {"@example",    "code example",
+         "example\n * ${1:code}",
+         "Provide a usage example (code block until next tag)."},
+
+        {"@remarks",    "additional notes",
+         "remarks ${1:text}",
+         "Add additional remarks or detailed explanation."},
+
+        {"@note",       "note text",
+         "note ${1:text}",
+         "Add an informational note."},
+
+        {"@warning",    "warning text",
+         "warning ${1:text}",
+         "Add a warning about potential issues."},
+
+        // flags (no arguments)
+        {"@private",    nullptr, "private",
+         "Mark as private visibility."},
+
+        {"@public",     nullptr, "public",
+         "Mark as public visibility."},
+
+        {"@protected",  nullptr, "protected",
+         "Mark as protected visibility."},
+
+        {"@internal",   nullptr, "internal",
+         "Mark as internal (not part of public API)."},
+
+        {"@struct",     nullptr, "struct",
+         "Mark documentation as struct-related."},
+
+        {"@namespace",  nullptr, "namespace",
+         "Mark documentation as namespace-related."},
+    };
+
+    for (auto& tag : tags) {
+        std::string label = tag.name;
+        // Match against prefix (without the '@')
+        std::string tagNameOnly = label.substr(1);  // remove '@'
+        if (!prefix.empty() && !matchesPrefix(tagNameOnly, prefix))
+            continue;
+
+        CompletionItem item;
+        item.label = label;
+        item.kind = CompletionKind::Keyword;
+        item.filterText = tagNameOnly;  // filter without '@'
+        if (tag.detail)
+            item.detail = tag.detail;
+        if (tag.documentation)
+            item.documentation = tag.documentation;
+
+        if (tag.snippet) {
+            item.insertText = tag.snippet;
+            // Only use snippet format if it contains tab stops
+            if (std::string(tag.snippet).find("${") != std::string::npos)
+                item.insertTextFormat = InsertTextFormat::Snippet;
+        } else {
+            item.insertText = tagNameOnly;
+        }
+
+        // Sort tags so param/returns appear first
+        if (tagNameOnly == "param")         item.sortText = "00_param";
+        else if (tagNameOnly == "returns")  item.sortText = "01_returns";
+        else if (tagNameOnly == "return")   item.sortText = "02_return";
+        else if (tagNameOnly == "example")  item.sortText = "03_example";
+        else if (tagNameOnly == "throws")   item.sortText = "04_throws";
+        else                                item.sortText = "10_" + tagNameOnly;
+
+        items.push_back(std::move(item));
+    }
 }

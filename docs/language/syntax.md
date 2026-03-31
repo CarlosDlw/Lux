@@ -47,6 +47,8 @@ T supports two comment styles:
 
 Block comments do not nest.
 
+Lux also supports **doc-comments** (`/** ... */`) for documenting functions, structs, enums, and other declarations. Doc-comments are parsed by the LSP and displayed as hover information in the editor. See [Doc-Comments](doc-comments.md) for full details.
+
 ## Identifiers
 
 Identifiers follow standard rules: they start with a letter or underscore, followed by letters, digits, or underscores:

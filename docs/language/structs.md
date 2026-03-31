@@ -266,4 +266,4 @@ println(sum);   // 30
 - [Enums](enums.md) — Enum types
 - [Unions](unions.md) — Union types (shared memory)
 - [Pointers](pointers.md) — Pointer operations and `->` access
-- [Generics](generics.md) — Generic types like `Vec<T>`
+- [Generics](generics.md) — Generic types like `vec<T>`

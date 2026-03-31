@@ -3,6 +3,7 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Verifier.h>
 
 #include "generated/LuxLexer.h"
@@ -235,9 +236,14 @@ std::any IRGen::visitProgram(LuxParser::ProgramContext* ctx) {
             }
         }
 
-        // Register C #define integer constants
+        // Register C #define constants (integer, float, string)
         for (auto& [name, cmacro] : cBindings_->macros()) {
-            cEnumConstants_[name] = cmacro.value;
+            if (cmacro.isFloat)
+                cFloatConstants_[name] = cmacro.floatValue;
+            else if (cmacro.isString)
+                cStringConstants_[name] = cmacro.stringValue;
+            else
+                cEnumConstants_[name] = cmacro.value;
         }
 
         // Register C #define struct literal macros (e.g. RAYWHITE)
@@ -269,8 +275,8 @@ std::any IRGen::visitProgram(LuxParser::ProgramContext* ctx) {
     }
 
     // Process `use` declarations first so all imports are known
-    for (auto* useDecl : ctx->useDecl()) {
-        visit(useDecl);
+    for (auto* pre : ctx->preambleDecl()) {
+        if (auto* ud = pre->useDecl()) visit(ud);
     }
 
     // Register cross-file symbols (extern declarations, types, etc.)
@@ -644,6 +650,9 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
 
     auto* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
     llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, emitName, module_);
+
+    // Cache return TypeInfo for resolveExprTypeInfo
+    fnReturnTypes_[emitName] = retInfo;
 
     // Register in callTargetMap_ so calls resolve before body generation
     if (nsRegistry_ && funcName != "main") {
@@ -1107,9 +1116,72 @@ std::string IRGen::resolveCallTarget(const std::string& name) const {
 
 // int32 x = 42;   or   []int32 arr = [1, 2, 3];   or   Vec<int32> v = [1, 2, 3];
 std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
+    // ── Tuple destructuring: auto (x, y) = expr; ────────────────────
+    if (ctx->LPAREN()) {
+        auto ids = ctx->IDENTIFIER();
+        auto  initVal = visit(ctx->expression());
+        auto* val     = castValue(initVal);
+        auto* tupleTI = resolveExprTypeInfo(ctx->expression());
+
+        for (size_t i = 0; i < ids.size(); i++) {
+            auto varName = ids[i]->getText();
+            auto* elemVal = builder_->CreateExtractValue(val, {(unsigned)i},
+                                                          varName);
+            auto* alloca = builder_->CreateAlloca(elemVal->getType(), nullptr,
+                                                   varName);
+            builder_->CreateStore(elemVal, alloca);
+            const TypeInfo* elemTI = (tupleTI && tupleTI->kind == TypeKind::Tuple
+                                       && i < tupleTI->tupleElements.size())
+                                      ? tupleTI->tupleElements[i]
+                                      : typeRegistry_.lookup("int32");
+            locals_[varName] = { alloca, elemTI, 0 };
+        }
+        return {};
+    }
+
+    auto  name = ctx->IDENTIFIER(0)->getText();
+
+    // ── Auto type inference: auto x = expr; ──────────────────────────
+    if (ctx->typeSpec() && ctx->typeSpec()->AUTO()) {
+        // auto always has an initializer (Checker enforces this)
+        auto  initVal = visit(ctx->expression());
+        auto* val     = castValue(initVal);
+
+        // Infer TypeInfo from the expression AST
+        auto* ti = resolveExprTypeInfo(ctx->expression());
+        if (!ti) {
+            // Fallback: infer from LLVM type
+            ti = typeRegistry_.lookup("int32");
+        }
+
+        // Check if the initializer is an array literal
+        if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(
+                ctx->expression())) {
+            auto elems = arrLit->expression();
+            if (!elems.empty()) {
+                auto* elemTI = resolveExprTypeInfo(elems[0]);
+                if (!elemTI) elemTI = typeRegistry_.lookup("int32");
+                auto* elemType = elemTI->toLLVMType(*context_,
+                                                     module_->getDataLayout());
+                auto* targetTy = buildTargetArrayType(val->getType(), elemType);
+                auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
+                storeArrayElements(val, alloca, targetTy, elemTI, 1);
+                locals_[name] = { alloca, elemTI, 1 };
+                return {};
+            }
+        }
+
+        // Scalar auto variable
+        auto* type   = val->getType();
+        auto* alloca = builder_->CreateAlloca(type, nullptr, name);
+        builder_->CreateStore(val, alloca);
+        locals_[name] = { alloca, ti, 0 };
+        return {};
+    }
+
+    // ── Explicit type ────────────────────────────────────────────────
     auto* ti   = resolveTypeInfo(ctx->typeSpec());
     auto  dims = countArrayDims(ctx->typeSpec());
-    auto  name = ctx->IDENTIFIER()->getText();
 
     // Handle type-alias arrays (e.g. type Matrix = [3][3]float32)
     std::vector<unsigned> aliasArraySizes;
@@ -1130,7 +1202,7 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
             locals_[name] = { alloca, ti, 0 };
             if (ctx->expression()) {
                 auto  initVal = visit(ctx->expression());
-                auto* val     = std::any_cast<llvm::Value*>(initVal);
+                auto* val     = castValue(initVal);
                 builder_->CreateStore(val, alloca);
             } else {
                 builder_->CreateStore(
@@ -1165,8 +1237,12 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         }
 
         if (ti->extendedKind == "Set") {
-            // Set<T> — always init empty
+            // Set<T> — init, then add elements from array literal if present
             auto* setTy  = getOrCreateSetStructType();
+            if (!ti->elementType) {
+                std::cerr << "lux: internal error: Set missing elementType\n";
+                return {};
+            }
             auto  suffix = ti->elementType->builtinSuffix;
             auto* alloca = builder_->CreateAlloca(setTy, nullptr, name);
             locals_[name] = { alloca, ti, 0 };
@@ -1176,11 +1252,38 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
                 llvm::Type::getVoidTy(*context_),
                 { ptrTy });
             builder_->CreateCall(initFn, { alloca });
+
+            // If initializer is an array literal, add each element
+            if (ctx->expression()) {
+                auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(
+                    ctx->expression());
+                if (arrLit && !arrLit->expression().empty()) {
+                    auto* elemLLTy = ti->elementType->toLLVMType(
+                        *context_, module_->getDataLayout());
+                    auto addFn = declareBuiltin(
+                        "lux_set_add_" + suffix,
+                        llvm::Type::getInt32Ty(*context_),
+                        { ptrTy, elemLLTy });
+                    for (auto* e : arrLit->expression()) {
+                        auto* val = castValue(visit(e));
+                        if (val->getType() != elemLLTy) {
+                            if (val->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
+                                val = builder_->CreateIntCast(val, elemLLTy,
+                                                              ti->elementType->isSigned);
+                        }
+                        builder_->CreateCall(addFn, { alloca, val });
+                    }
+                }
+            }
             return {};
         }
 
         // Vec<T> initialized from array literal or function call
         auto* vecTy   = getOrCreateVecStructType();
+        if (!ti->elementType) {
+            std::cerr << "lux: internal error: Vec missing elementType\n";
+            return {};
+        }
         auto  suffix  = getVecSuffix(ti->elementType);
 
         auto* alloca = builder_->CreateAlloca(vecTy, nullptr, name);
@@ -1204,7 +1307,7 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
             // Collect element values
             std::vector<llvm::Value*> vals;
             for (auto* e : arrLit->expression())
-                vals.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                vals.push_back(castValue(visit(e)));
 
             auto* elemLLTy = ti->elementType->toLLVMType(
                 *context_, module_->getDataLayout());
@@ -1243,7 +1346,7 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         } else {
             // Function call or other expression returning Vec struct
             auto initVal = visit(ctx->expression());
-            auto* val = std::any_cast<llvm::Value*>(initVal);
+            auto* val = castValue(initVal);
             builder_->CreateStore(val, alloca);
         }
 
@@ -1266,6 +1369,18 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
             // Fallback for type-alias arrays
             if (sizes.empty() && !aliasArraySizes.empty())
                 sizes = aliasArraySizes;
+            if (sizes.empty()) {
+                std::cerr << "lux: array variable '" << name
+                          << "' requires explicit dimensions\n";
+                return {};
+            }
+            // Validate no zero dimensions
+            for (auto sz : sizes) {
+                if (sz == 0) {
+                    std::cerr << "lux: array dimension cannot be zero\n";
+                    return {};
+                }
+            }
             // Build nested array type from innermost to outermost
             llvm::Type* arrTy = elemType;
             for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
@@ -1277,7 +1392,15 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         }
 
         auto  initVal = visit(ctx->expression());
-        auto* val     = std::any_cast<llvm::Value*>(initVal);
+        auto* val     = castValue(initVal);
+
+        if (!val->getType()->isArrayTy()) {
+            auto* arrTy = llvm::ArrayType::get(elemType, 0);
+            auto* alloca = builder_->CreateAlloca(arrTy, nullptr, name);
+            builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
+            locals_[name] = { alloca, ti, dims };
+            return {};
+        }
 
         auto* targetTy = buildTargetArrayType(val->getType(), elemType);
         auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
@@ -1297,7 +1420,7 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         }
 
         auto  initVal = visit(ctx->expression());
-        auto* val     = std::any_cast<llvm::Value*>(initVal);
+        auto* val     = castValue(initVal);
 
         if (val->getType() != type) {
             if (val->getType()->isIntegerTy() && type->isIntegerTy()) {
@@ -1307,6 +1430,29 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
                     val = builder_->CreateFPTrunc(val, type, name + "_trunc");
                 else
                     val = builder_->CreateFPExt(val, type, name + "_ext");
+            } else if (val->getType()->isStructTy() && type->isStructTy()) {
+                // Tuple/struct element-wise cast
+                auto* srcST = llvm::cast<llvm::StructType>(val->getType());
+                auto* dstST = llvm::cast<llvm::StructType>(type);
+                if (srcST->getNumElements() == dstST->getNumElements()) {
+                    llvm::Value* agg = llvm::UndefValue::get(dstST);
+                    for (unsigned i = 0; i < srcST->getNumElements(); i++) {
+                        auto* elem = builder_->CreateExtractValue(val, {i});
+                        auto* dstElemTy = dstST->getElementType(i);
+                        if (elem->getType() != dstElemTy) {
+                            if (elem->getType()->isIntegerTy() && dstElemTy->isIntegerTy())
+                                elem = builder_->CreateIntCast(elem, dstElemTy, true);
+                            else if (elem->getType()->isFloatingPointTy() && dstElemTy->isFloatingPointTy()) {
+                                if (elem->getType()->getPrimitiveSizeInBits() > dstElemTy->getPrimitiveSizeInBits())
+                                    elem = builder_->CreateFPTrunc(elem, dstElemTy);
+                                else
+                                    elem = builder_->CreateFPExt(elem, dstElemTy);
+                            }
+                        }
+                        agg = builder_->CreateInsertValue(agg, elem, {i});
+                    }
+                    val = agg;
+                }
             }
         }
 
@@ -1328,7 +1474,7 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
             auto& entry = git->second;
             auto exprs = ctx->expression();
             if (exprs.size() == 1) {
-                auto* val = std::any_cast<llvm::Value*>(visit(exprs[0]));
+                auto* val = castValue(visit(exprs[0]));
                 auto* gvTy = entry.global->getValueType();
                 if (val->getType() != gvTy) {
                     if (val->getType()->isIntegerTy() && gvTy->isIntegerTy())
@@ -1351,7 +1497,7 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
 
     // Simple reassignment: x = 42; (no bracket expressions)
     if (exprs.size() == 1) {
-        auto* val = std::any_cast<llvm::Value*>(visit(exprs[0]));
+        auto* val = castValue(visit(exprs[0]));
         auto* varTy = allocType;
 
         if (val->getType() != varTy) {
@@ -1383,13 +1529,13 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
             auto* valLLTy = elemTI->valueType->toLLVMType(*context_, module_->getDataLayout());
             auto suffix = elemTI->builtinSuffix;
 
-            auto* keyVal = std::any_cast<llvm::Value*>(visit(exprs[0]));
+            auto* keyVal = castValue(visit(exprs[0]));
             if (keyVal->getType() != keyLLTy) {
                 if (keyVal->getType()->isIntegerTy() && keyLLTy->isIntegerTy())
                     keyVal = builder_->CreateIntCast(keyVal, keyLLTy, elemTI->keyType->isSigned);
             }
 
-            auto* val = std::any_cast<llvm::Value*>(visit(exprs.back()));
+            auto* val = castValue(visit(exprs.back()));
             if (val->getType() != valLLTy) {
                 if (val->getType()->isIntegerTy() && valLLTy->isIntegerTy())
                     val = builder_->CreateIntCast(val, valLLTy, elemTI->valueType->isSigned);
@@ -1410,15 +1556,19 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
         }
 
         // Vec<T> index assignment: v[i] = x → lux_vec_set_<suffix>
+        if (!elemTI->elementType) {
+            std::cerr << "lux: internal error: Vec missing elementType for index assignment\n";
+            return {};
+        }
         auto* elemLLTy = elemTI->elementType->toLLVMType(
             *context_, module_->getDataLayout());
         auto suffix = getVecSuffix(elemTI->elementType);
 
-        auto* idx = std::any_cast<llvm::Value*>(visit(exprs[0]));
+        auto* idx = castValue(visit(exprs[0]));
         if (idx->getType() != usizeTy)
             idx = builder_->CreateIntCast(idx, usizeTy, false);
 
-        auto* val = std::any_cast<llvm::Value*>(visit(exprs.back()));
+        auto* val = castValue(visit(exprs.back()));
         if (val->getType() != elemLLTy) {
             if (val->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
                 val = builder_->CreateIntCast(val, elemLLTy,
@@ -1442,13 +1592,13 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
     }
 
     // ── Array index assignment (original path) ──────────────────────
-    auto* val = std::any_cast<llvm::Value*>(visit(exprs.back()));
+    auto* val = castValue(visit(exprs.back()));
 
     auto* i64Ty = llvm::Type::getInt64Ty(*context_);
     std::vector<llvm::Value*> gepIndices;
     gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
     for (size_t i = 0; i + 1 < exprs.size(); i++) {
-        auto* idx = std::any_cast<llvm::Value*>(visit(exprs[i]));
+        auto* idx = castValue(visit(exprs[i]));
         if (idx->getType() != i64Ty)
             idx = builder_->CreateIntCast(idx, i64Ty, true);
         gepIndices.push_back(idx);
@@ -1490,7 +1640,7 @@ std::any IRGen::visitCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* ct
     auto* elemTI = it->second.typeInfo;
 
     auto* cur = builder_->CreateLoad(varTy, alloca, varName);
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* rhs = castValue(visit(ctx->expression()));
 
     // Cast RHS to variable type
     if (rhs->getType() != varTy) {
@@ -1506,6 +1656,12 @@ std::any IRGen::visitCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* ct
 
     bool isFloat = varTy->isFloatingPointTy();
     llvm::Value* result = nullptr;
+
+    // Division by zero guard for /= and %=
+    if (!isFloat && (ctx->op->getType() == LuxLexer::SLASH_ASSIGN ||
+                     ctx->op->getType() == LuxLexer::PERCENT_ASSIGN)) {
+        emitDivByZeroGuard(rhs, ctx->op);
+    }
 
     switch (ctx->op->getType()) {
     case LuxLexer::PLUS_ASSIGN:
@@ -1594,7 +1750,7 @@ std::any IRGen::visitFieldAssignStmt(LuxParser::FieldAssignStmtContext* ctx) {
         }
     }
 
-    auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* val = castValue(visit(ctx->expression()));
 
     // Cast if needed
     if (val->getType() != currentTy) {
@@ -1639,7 +1795,7 @@ std::any IRGen::visitIndexFieldAssignStmt(
     std::vector<llvm::Value*> gepIndices;
     gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
     for (size_t i = 0; i < numIndices; i++) {
-        auto* idx = std::any_cast<llvm::Value*>(visit(expressions[i]));
+        auto* idx = castValue(visit(expressions[i]));
         if (idx->getType() != i64Ty)
             idx = builder_->CreateIntCast(idx, i64Ty, true);
         gepIndices.push_back(idx);
@@ -1686,7 +1842,7 @@ std::any IRGen::visitIndexFieldAssignStmt(
     }
 
     // The RHS value is the last expression
-    auto* val = std::any_cast<llvm::Value*>(visit(expressions[expressions.size() - 1]));
+    auto* val = castValue(visit(expressions[expressions.size() - 1]));
 
     // Cast if needed
     if (val->getType() != currentTy) {
@@ -1745,7 +1901,7 @@ std::any IRGen::visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext* ctx) {
         return {};
     }
 
-    auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* val = castValue(visit(ctx->expression()));
     auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
 
     if (val->getType() != fieldLLTy) {
@@ -1810,7 +1966,7 @@ std::any IRGen::visitArrowCompoundAssignStmt(
                         ->toLLVMType(*context_, module_->getDataLayout());
 
     auto* oldVal = builder_->CreateLoad(fieldTy, gep, fieldName + "_old");
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* rhs = castValue(visit(ctx->expression()));
 
     if (rhs->getType() != fieldTy) {
         if (rhs->getType()->isIntegerTy() && fieldTy->isIntegerTy())
@@ -1821,6 +1977,12 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     llvm::Value* result;
     auto opType = ctx->op->getType();
     bool isFloat = fieldTy->isFloatingPointTy();
+
+    // Division by zero guard for /= and %=
+    if (!isFloat && (opType == LuxLexer::SLASH_ASSIGN ||
+                     opType == LuxLexer::PERCENT_ASSIGN)) {
+        emitDivByZeroGuard(rhs, ctx->op);
+    }
 
     if (opType == LuxLexer::PLUS_ASSIGN)
         result = isFloat ? builder_->CreateFAdd(oldVal, rhs) : builder_->CreateAdd(oldVal, rhs);
@@ -1880,7 +2042,7 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
 
         if (funcName == "exit") {
@@ -1890,11 +2052,13 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             auto callee = declareBuiltin("lux_exit", voidTy, {i32Ty});
             builder_->CreateCall(callee, {arg});
         } else if (funcName == "panic") {
+            if (!requireArgs(funcName, args, 1)) return {};
             auto* strPtr = builder_->CreateExtractValue(args[0], 0, "panic_ptr");
             auto* strLen = builder_->CreateExtractValue(args[0], 1, "panic_len");
             auto callee = declareBuiltin("lux_panic", voidTy, {ptrTy, usizeTy});
             builder_->CreateCall(callee, {strPtr, strLen});
         } else if (funcName == "assert") {
+            if (!requireArgs(funcName, args, 1)) return {};
             auto* cond = args[0];
             if (!cond->getType()->isIntegerTy(32))
                 cond = builder_->CreateZExt(cond, i32Ty, "assert_cond");
@@ -1907,6 +2071,7 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
                                          {i32Ty, ptrTy, usizeTy, i32Ty});
             builder_->CreateCall(callee, {cond, fileGlobal, fileLen, lineNo});
         } else if (funcName == "assertMsg") {
+            if (!requireArgs(funcName, args, 2)) return {};
             auto* cond = args[0];
             if (!cond->getType()->isIntegerTy(32))
                 cond = builder_->CreateZExt(cond, i32Ty, "assertmsg_cond");
@@ -1939,7 +2104,7 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> rawArgs;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                rawArgs.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                rawArgs.push_back(castValue(visit(exprCtx)));
         }
 
         // ── C extern variadic function (e.g. printf) ───────────────
@@ -1971,6 +2136,13 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
                         }
                         else if (bw > 64)
                             a = builder_->CreateTrunc(a, llvm::Type::getInt32Ty(*context_), "c_trunc_i32");
+                    } else if (a->getType()->isStructTy()) {
+                        // Lux string { ptr, i64 } → extract ptr for C variadics
+                        auto* st = llvm::cast<llvm::StructType>(a->getType());
+                        if (st->getNumElements() == 2 &&
+                            st->getElementType(0)->isPointerTy() &&
+                            st->getElementType(1)->isIntegerTy())
+                            a = builder_->CreateExtractValue(a, 0, "str_to_cptr");
                     }
                 }
                 rawArgs[i] = a;
@@ -1983,6 +2155,10 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         if (vit != variadicFunctions_.end()) {
             auto& vfInfo = vit->second;
             size_t varIdx = vfInfo.variadicParamIdx;
+            if (!vfInfo.elementType) {
+                std::cerr << "lux: internal error: variadic function missing elementType\n";
+                return {};
+            }
             auto* elemTy = vfInfo.elementType->toLLVMType(*context_, module_->getDataLayout());
             auto* fnType = userFn->getFunctionType();
 
@@ -2138,7 +2314,7 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
 
         for (auto* arg : args) {
@@ -2149,6 +2325,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
                 for (auto& [vname, info] : locals_) {
                     if (info.alloca == src) { argTypeInfo = info.typeInfo; break; }
                 }
+                if (argTypeInfo && argTypeInfo->kind == TypeKind::Union)
+                    argTypeInfo = nullptr;
             }
 
             bool isString = (argTypeInfo && argTypeInfo->kind == TypeKind::String)
@@ -2211,11 +2389,12 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
         auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
         auto callee = declareBuiltin("lux_free",
             llvm::Type::getVoidTy(*context_), {ptrTy});
+        if (!requireArgs(funcName, args, 1)) return {};
         builder_->CreateCall(callee, {args[0]});
         return {};
     }
@@ -2223,8 +2402,9 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
+        if (!requireArgs(funcName, args, 3)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* n = args[2];
@@ -2239,8 +2419,9 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
+        if (!requireArgs(funcName, args, 3)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* n = args[2];
@@ -2255,8 +2436,9 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
+        if (!requireArgs(funcName, args, 3)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* i8Ty    = llvm::Type::getInt8Ty(*context_);
@@ -2275,8 +2457,9 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
+        if (!requireArgs(funcName, args, 2)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* n = args[1];
@@ -2293,9 +2476,10 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
         auto* u64Ty = llvm::Type::getInt64Ty(*context_);
+        if (!requireArgs(funcName, args, 1)) return {};
         auto* s = args[0];
         if (s->getType() != u64Ty)
             s = builder_->CreateIntCast(s, u64Ty, false);
@@ -2316,9 +2500,10 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
         auto* u64Ty = llvm::Type::getInt64Ty(*context_);
+        if (!requireArgs(funcName, args, 1)) return {};
         auto* ms = args[0];
         if (ms->getType() != u64Ty)
             ms = builder_->CreateIntCast(ms, u64Ty, false);
@@ -2331,9 +2516,10 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
         auto* u64Ty = llvm::Type::getInt64Ty(*context_);
+        if (!requireArgs(funcName, args, 1)) return {};
         auto* us = args[0];
         if (us->getType() != u64Ty)
             us = builder_->CreateIntCast(us, u64Ty, false);
@@ -2348,12 +2534,13 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* voidTy  = llvm::Type::getVoidTy(*context_);
 
+        if (!requireArgs(funcName, args, 2)) return {};
         auto* pathPtr = builder_->CreateExtractValue(args[0], 0, "fs_path_ptr");
         auto* pathLen = builder_->CreateExtractValue(args[0], 1, "fs_path_len");
         auto* dataPtr = builder_->CreateExtractValue(args[1], 0, "fs_data_ptr");
@@ -2376,8 +2563,9 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             std::vector<llvm::Value*> args;
             if (auto* argList = ctx->argList()) {
                 for (auto* exprCtx : argList->expression())
-                    args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                    args.push_back(castValue(visit(exprCtx)));
             }
+            if (!requireArgs(funcName, args, 1)) return {};
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
             auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
@@ -2394,8 +2582,9 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
+        if (!requireArgs(funcName, args, 2)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
@@ -2422,8 +2611,9 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
+        if (!requireArgs(funcName, args, 2)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* voidTy  = llvm::Type::getVoidTy(*context_);
@@ -2441,8 +2631,9 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* exprCtx : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                args.push_back(castValue(visit(exprCtx)));
         }
+        if (!requireArgs(funcName, args, 1)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
@@ -2460,7 +2651,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> tArgs;
         if (auto* argList = ctx->argList())
             for (auto* e : argList->expression())
-                tArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                tArgs.push_back(castValue(visit(e)));
+        if (!requireArgs(funcName, tArgs, 2)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* voidTy  = llvm::Type::getVoidTy(*context_);
@@ -2507,7 +2699,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> tArgs;
         if (auto* argList = ctx->argList())
             for (auto* e : argList->expression())
-                tArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                tArgs.push_back(castValue(visit(e)));
+        if (!requireArgs(funcName, tArgs, 1)) return {};
         auto* voidTy = llvm::Type::getVoidTy(*context_);
         auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
         auto* cond = builder_->CreateZExt(tArgs[0], i32Ty);
@@ -2537,7 +2730,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             std::vector<llvm::Value*> tArgs;
             if (auto* argList = ctx->argList())
                 for (auto* e : argList->expression())
-                    tArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                    tArgs.push_back(castValue(visit(e)));
+            if (!requireArgs(funcName, tArgs, 2)) return {};
             auto* voidTy = llvm::Type::getVoidTy(*context_);
             auto* i64Ty  = llvm::Type::getInt64Ty(*context_);
             auto* f64Ty  = llvm::Type::getDoubleTy(*context_);
@@ -2562,7 +2756,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> tArgs;
         if (auto* argList = ctx->argList())
             for (auto* e : argList->expression())
-                tArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                tArgs.push_back(castValue(visit(e)));
+        if (!requireArgs(funcName, tArgs, 2)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* voidTy  = llvm::Type::getVoidTy(*context_);
@@ -2582,7 +2777,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> tArgs;
         if (auto* argList = ctx->argList())
             for (auto* e : argList->expression())
-                tArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                tArgs.push_back(castValue(visit(e)));
+        if (!requireArgs(funcName, tArgs, 3)) return {};
         auto* voidTy = llvm::Type::getVoidTy(*context_);
         auto* f64Ty  = llvm::Type::getDoubleTy(*context_);
         auto callee = declareBuiltin("lux_assertNear", voidTy,
@@ -2603,7 +2799,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             std::vector<llvm::Value*> tArgs;
             if (auto* argList = ctx->argList())
                 for (auto* e : argList->expression())
-                    tArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                    tArgs.push_back(castValue(visit(e)));
+            if (!requireArgs(funcName, tArgs, 1)) return {};
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
             auto* voidTy  = llvm::Type::getVoidTy(*context_);
@@ -2620,7 +2817,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList())
             for (auto* e : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                args.push_back(castValue(visit(e)));
+        if (!requireArgs(funcName, args, 1)) return {};
         auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
         auto* voidTy = llvm::Type::getVoidTy(*context_);
         auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
@@ -2632,7 +2830,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList())
             for (auto* e : argList->expression())
-                args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                args.push_back(castValue(visit(e)));
+        if (!requireArgs(funcName, args, 2)) return {};
         auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
         auto* u64Ty  = llvm::Type::getInt64Ty(*context_);
         auto* voidTy = llvm::Type::getVoidTy(*context_);
@@ -2658,7 +2857,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::vector<llvm::Value*> wbArgs;
         if (auto* argList = ctx->argList())
             for (auto* e : argList->expression())
-                wbArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                wbArgs.push_back(castValue(visit(e)));
+        if (!requireArgs(funcName, wbArgs, 2)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* voidTy  = llvm::Type::getVoidTy(*context_);
@@ -2680,7 +2880,7 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         argExprs = argList->expression();
         for (auto* exprCtx : argExprs) {
             auto val = visit(exprCtx);
-            args.push_back(std::any_cast<llvm::Value*>(val));
+            args.push_back(castValue(val));
         }
     }
 
@@ -2716,6 +2916,13 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
                     }
                 }
             }
+
+            // Union field access: load directly from union alloca with a
+            // different type (no GEP).  The variable lookup above finds the
+            // union's own TypeInfo whose builtinSuffix is empty — drop it so
+            // the LLVM-type fallback determines the correct suffix.
+            if (argTypeInfo && argTypeInfo->kind == TypeKind::Union)
+                argTypeInfo = nullptr;
         }
 
         // String type: extract ptr and len, pass both to builtin
@@ -2744,9 +2951,17 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         bool isCharLit = (ai < argExprs.size()) &&
             dynamic_cast<LuxParser::CharLitExprContext*>(argExprs[ai]) != nullptr;
 
+        // Try AST-based type resolution for char method calls (e.g. letter.toLower())
+        bool isCharExpr = false;
+        if (!argTypeInfo && !isCharLit && argType->isIntegerTy(8) && ai < argExprs.size()) {
+            auto* exprTI = resolveExprTypeInfo(argExprs[ai]);
+            if (exprTI && exprTI->builtinSuffix == "char")
+                isCharExpr = true;
+        }
+
         if (argTypeInfo) {
             suffix = argTypeInfo->builtinSuffix;
-        } else if (isCharLit)                 { suffix = "char"; }
+        } else if (isCharLit || isCharExpr)   { suffix = "char"; }
         else if (argType->isIntegerTy(1))     { suffix = "bool"; }
         else if (argType->isIntegerTy(8))     { suffix = "i8"; }
         else if (argType->isIntegerTy(16))    { suffix = "i16"; }
@@ -2797,7 +3012,7 @@ std::any IRGen::visitReturnStmt(LuxParser::ReturnStmtContext* ctx) {
     }
 
     auto  val    = visit(ctx->expression());
-    auto* retVal = std::any_cast<llvm::Value*>(val);
+    auto* retVal = castValue(val);
 
     // Cast to the function's return type if needed
     auto* expectedTy = builder_->getCurrentFunctionReturnType();
@@ -2809,6 +3024,29 @@ std::any IRGen::visitReturnStmt(LuxParser::ReturnStmtContext* ctx) {
                 retVal = builder_->CreateFPTrunc(retVal, expectedTy, "ret_trunc");
             else
                 retVal = builder_->CreateFPExt(retVal, expectedTy, "ret_ext");
+        } else if (retVal->getType()->isStructTy() && expectedTy->isStructTy()) {
+            // Tuple/struct return: repack element-by-element with casts
+            auto* srcST = llvm::cast<llvm::StructType>(retVal->getType());
+            auto* dstST = llvm::cast<llvm::StructType>(expectedTy);
+            if (srcST->getNumElements() == dstST->getNumElements()) {
+                llvm::Value* agg = llvm::UndefValue::get(dstST);
+                for (unsigned i = 0; i < srcST->getNumElements(); i++) {
+                    auto* elem = builder_->CreateExtractValue(retVal, {i});
+                    auto* dstElemTy = dstST->getElementType(i);
+                    if (elem->getType() != dstElemTy) {
+                        if (elem->getType()->isIntegerTy() && dstElemTy->isIntegerTy())
+                            elem = builder_->CreateIntCast(elem, dstElemTy, true);
+                        else if (elem->getType()->isFloatingPointTy() && dstElemTy->isFloatingPointTy()) {
+                            if (elem->getType()->getPrimitiveSizeInBits() > dstElemTy->getPrimitiveSizeInBits())
+                                elem = builder_->CreateFPTrunc(elem, dstElemTy);
+                            else
+                                elem = builder_->CreateFPExt(elem, dstElemTy);
+                        }
+                    }
+                    agg = builder_->CreateInsertValue(agg, elem, {i});
+                }
+                retVal = agg;
+            }
         }
     }
 
@@ -2855,7 +3093,7 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
     }
 
     // ── Emit the if-condition ──────────────────────────────────────
-    auto* cond = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* cond = castValue(visit(ctx->expression()));
     if (!cond->getType()->isIntegerTy(1))
         cond = builder_->CreateICmpNE(cond,
             llvm::ConstantInt::get(cond->getType(), 0), "tobool");
@@ -2876,7 +3114,7 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
     for (size_t i = 0; i < elseIfs.size(); i++) {
         // Condition
         builder_->SetInsertPoint(condBlocks[i]);
-        auto* eifCond = std::any_cast<llvm::Value*>(
+        auto* eifCond = castValue(
             visit(elseIfs[i]->expression()));
         if (!eifCond->getType()->isIntegerTy(1))
             eifCond = builder_->CreateICmpNE(eifCond,
@@ -2918,7 +3156,7 @@ std::any IRGen::visitForClassicStmt(LuxParser::ForClassicStmtContext* ctx) {
     auto exprs = ctx->expression();
 
     // Init
-    auto* initVal = std::any_cast<llvm::Value*>(visit(exprs[0]));
+    auto* initVal = castValue(visit(exprs[0]));
     if (initVal->getType() != varType)
         initVal = builder_->CreateIntCast(initVal, varType, typeInfo->isSigned, "cast");
     auto* alloca = builder_->CreateAlloca(varType, nullptr, varName);
@@ -2937,7 +3175,7 @@ std::any IRGen::visitForClassicStmt(LuxParser::ForClassicStmtContext* ctx) {
 
     // Condition
     builder_->SetInsertPoint(condBB);
-    auto* cond = std::any_cast<llvm::Value*>(visit(exprs[1]));
+    auto* cond = castValue(visit(exprs[1]));
     if (!cond->getType()->isIntegerTy(1))
         cond = builder_->CreateICmpNE(cond,
             llvm::ConstantInt::get(cond->getType(), 0), "tobool");
@@ -2980,12 +3218,12 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
 
         if (isInclusive) {
             auto* rng = dynamic_cast<LuxParser::RangeInclExprContext*>(iterExpr);
-            startVal = std::any_cast<llvm::Value*>(visit(rng->expression(0)));
-            endVal   = std::any_cast<llvm::Value*>(visit(rng->expression(1)));
+            startVal = castValue(visit(rng->expression(0)));
+            endVal   = castValue(visit(rng->expression(1)));
         } else {
             auto* rng = dynamic_cast<LuxParser::RangeExprContext*>(iterExpr);
-            startVal = std::any_cast<llvm::Value*>(visit(rng->expression(0)));
-            endVal   = std::any_cast<llvm::Value*>(visit(rng->expression(1)));
+            startVal = castValue(visit(rng->expression(0)));
+            endVal   = castValue(visit(rng->expression(1)));
         }
 
         // Cast to target type
@@ -3053,6 +3291,10 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
             // Variadic param iteration: for TYPE x in variadicParam
             auto* ptrTy = llvm::PointerType::getUnqual(*context_);
             auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+            if (!vpIt->second.elementType) {
+                std::cerr << "lux: internal error: variadic param missing elementType\n";
+                return {};
+            }
             auto* elemTy = vpIt->second.elementType->toLLVMType(*context_, module_->getDataLayout());
 
             auto* dataPtr = builder_->CreateLoad(ptrTy, vpIt->second.dataPtr, "var_data");
@@ -3124,7 +3366,7 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
                         recvIt->second.typeInfo->kind == TypeKind::Extended) {
                         auto mName = mc->IDENTIFIER()->getText();
                         if (mName == "keys" || mName == "values") {
-                            auto* vecVal = std::any_cast<llvm::Value*>(visit(mc));
+                            auto* vecVal = castValue(visit(mc));
                             auto* vecTy  = getOrCreateVecStructType();
                             vecAlloca = builder_->CreateAlloca(vecTy, nullptr,
                                                                mName + "_tmp");
@@ -3201,7 +3443,7 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
             builder_->SetInsertPoint(endBB);
         } else {
         // Array iteration: for TYPE x in arr
-        auto* arrVal = std::any_cast<llvm::Value*>(visit(iterExpr));
+        auto* arrVal = castValue(visit(iterExpr));
 
         // Get array length from the source variable
         unsigned arrLen = 0;
@@ -3312,7 +3554,7 @@ std::any IRGen::visitLoopStmt(LuxParser::LoopStmtContext* ctx) {
 
 std::any IRGen::visitSwitchStmt(LuxParser::SwitchStmtContext* ctx) {
     // Evaluate the switch expression
-    auto* switchVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* switchVal = castValue(visit(ctx->expression()));
 
     auto* mergeBB = llvm::BasicBlock::Create(*context_, "switch.end", currentFunction_);
 
@@ -3333,7 +3575,7 @@ std::any IRGen::visitSwitchStmt(LuxParser::SwitchStmtContext* ctx) {
         // Each case can have multiple values: case 1, 2, 3 { ... }
         auto caseExprs = cc->expression();
         for (auto* caseExpr : caseExprs) {
-            auto* caseVal = std::any_cast<llvm::Value*>(visit(caseExpr));
+            auto* caseVal = castValue(visit(caseExpr));
             // Promote to match switch value width
             if (caseVal->getType() != switchVal->getType())
                 caseVal = builder_->CreateIntCast(caseVal, switchVal->getType(), true);
@@ -3373,7 +3615,7 @@ std::any IRGen::visitWhileStmt(LuxParser::WhileStmtContext* ctx) {
 
     // Condition
     builder_->SetInsertPoint(condBB);
-    auto* cond = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* cond = castValue(visit(ctx->expression()));
     if (!cond->getType()->isIntegerTy(1))
         cond = builder_->CreateICmpNE(cond,
             llvm::ConstantInt::get(cond->getType(), 0), "tobool");
@@ -3410,7 +3652,7 @@ std::any IRGen::visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx) {
 
     // Condition
     builder_->SetInsertPoint(condBB);
-    auto* cond = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* cond = castValue(visit(ctx->expression()));
     if (!cond->getType()->isIntegerTy(1))
         cond = builder_->CreateICmpNE(cond,
             llvm::ConstantInt::get(cond->getType(), 0), "tobool");
@@ -3425,6 +3667,27 @@ std::any IRGen::visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx) {
 std::any IRGen::visitIntLitExpr(LuxParser::IntLitExprContext* ctx) {
     auto text = ctx->INT_LIT()->getText();
     llvm::APInt ap(256, text, 10);
+    auto* ty = llvm::Type::getIntNTy(*context_, 256);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
+}
+
+std::any IRGen::visitHexLitExpr(LuxParser::HexLitExprContext* ctx) {
+    auto text = ctx->HEX_LIT()->getText().substr(2); // strip "0x"/"0X"
+    llvm::APInt ap(256, text, 16);
+    auto* ty = llvm::Type::getIntNTy(*context_, 256);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
+}
+
+std::any IRGen::visitOctLitExpr(LuxParser::OctLitExprContext* ctx) {
+    auto text = ctx->OCT_LIT()->getText().substr(2); // strip "0o"/"0O"
+    llvm::APInt ap(256, text, 8);
+    auto* ty = llvm::Type::getIntNTy(*context_, 256);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
+}
+
+std::any IRGen::visitBinLitExpr(LuxParser::BinLitExprContext* ctx) {
+    auto text = ctx->BIN_LIT()->getText().substr(2); // strip "0b"/"0B"
+    llvm::APInt ap(256, text, 2);
     auto* ty = llvm::Type::getIntNTy(*context_, 256);
     return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
 }
@@ -3653,6 +3916,25 @@ std::any IRGen::visitIdentExpr(LuxParser::IdentExprContext* ctx) {
         }
     }
 
+    // ── C float constants ───────────────────────────────────────────────
+    {
+        auto fit = cFloatConstants_.find(name);
+        if (fit != cFloatConstants_.end()) {
+            return static_cast<llvm::Value*>(
+                llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_),
+                                      fit->second));
+        }
+    }
+
+    // ── C string constants ──────────────────────────────────────────────
+    {
+        auto sit = cStringConstants_.find(name);
+        if (sit != cStringConstants_.end()) {
+            return static_cast<llvm::Value*>(
+                builder_->CreateGlobalStringPtr(sit->second, name));
+        }
+    }
+
     // ── C struct literal macros (e.g. RAYWHITE → Color{245,245,245,255}) ─
     {
         auto sit = cStructMacros_.find(name);
@@ -3707,7 +3989,7 @@ std::any IRGen::visitArrayLitExpr(LuxParser::ArrayLitExprContext* ctx) {
 
     std::vector<llvm::Value*> vals;
     for (auto* e : elems)
-        vals.push_back(std::any_cast<llvm::Value*>(visit(e)));
+        vals.push_back(castValue(visit(e)));
 
     auto* elemTy = vals[0]->getType();
     auto* arrTy  = llvm::ArrayType::get(elemTy, vals.size());
@@ -3738,12 +4020,12 @@ std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
 
         if (isInclusive) {
             auto* rng = dynamic_cast<LuxParser::RangeInclExprContext*>(iterExpr);
-            startVal = std::any_cast<llvm::Value*>(visit(rng->expression(0)));
-            endVal   = std::any_cast<llvm::Value*>(visit(rng->expression(1)));
+            startVal = castValue(visit(rng->expression(0)));
+            endVal   = castValue(visit(rng->expression(1)));
         } else {
             auto* rng = dynamic_cast<LuxParser::RangeExprContext*>(iterExpr);
-            startVal = std::any_cast<llvm::Value*>(visit(rng->expression(0)));
-            endVal   = std::any_cast<llvm::Value*>(visit(rng->expression(1)));
+            startVal = castValue(visit(rng->expression(0)));
+            endVal   = castValue(visit(rng->expression(1)));
         }
 
         if (startVal->getType() != varType)
@@ -3763,6 +4045,12 @@ std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
 
         int64_t s = startConst->getSExtValue();
         int64_t e = endConst->getSExtValue();
+        if ((!isInclusive && s >= e) || (isInclusive && s > e)) {
+            std::cerr << "lux: invalid range: start (" << s
+                      << ") >= end (" << e << ")\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
         uint64_t rangeLen = isInclusive ? (e - s + 1) : (e - s);
 
         // Allocate the loop variable
@@ -3776,7 +4064,7 @@ std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
             auto* valExpr = ctx->expression(0);
 
             // First evaluate to get the element type
-            auto* firstVal = std::any_cast<llvm::Value*>(visit(valExpr));
+            auto* firstVal = castValue(visit(valExpr));
             auto* elemTy = firstVal->getType();
             auto* arrTy = llvm::ArrayType::get(elemTy, rangeLen);
 
@@ -3821,7 +4109,7 @@ std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
 
             // Body
             builder_->SetInsertPoint(bodyBB);
-            auto* val = std::any_cast<llvm::Value*>(visit(valExpr));
+            auto* val = castValue(visit(valExpr));
             auto* idx = builder_->CreateLoad(i64Ty, idxAlloca, "lc.idx");
             auto* gep = builder_->CreateInBoundsGEP(
                 arrTy, arrAlloca,
@@ -3850,7 +4138,7 @@ std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
             auto* filterExpr = ctx->expression(2);
 
             // Pre-evaluate to get element type (use start value)
-            auto* firstVal = std::any_cast<llvm::Value*>(visit(valExpr));
+            auto* firstVal = castValue(visit(valExpr));
             auto* elemTy = firstVal->getType();
             auto* arrTy = llvm::ArrayType::get(elemTy, rangeLen);
 
@@ -3863,7 +4151,7 @@ std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
             builder_->CreateStore(llvm::ConstantInt::get(i64Ty, 0), writeIdx);
 
             // Check first element against filter
-            auto* filterVal0 = std::any_cast<llvm::Value*>(visit(filterExpr));
+            auto* filterVal0 = castValue(visit(filterExpr));
             auto* filterCond0BB = llvm::BasicBlock::Create(*context_, "lc.filt0.then", currentFunction_);
             auto* filterJoin0BB = llvm::BasicBlock::Create(*context_, "lc.filt0.join", currentFunction_);
             builder_->CreateCondBr(filterVal0, filterCond0BB, filterJoin0BB);
@@ -3910,8 +4198,8 @@ std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
 
             // Body — evaluate filter
             builder_->SetInsertPoint(bodyBB);
-            auto* val = std::any_cast<llvm::Value*>(visit(valExpr));
-            auto* filterVal = std::any_cast<llvm::Value*>(visit(filterExpr));
+            auto* val = castValue(visit(valExpr));
+            auto* filterVal = castValue(visit(filterExpr));
             builder_->CreateCondBr(filterVal, storeBB, skipBB);
 
             // Store — filter passed
@@ -3988,7 +4276,7 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
                         auto* arrTy = fieldTI->toLLVMType(
                             *context_, module_->getDataLayout());
                         auto* i64Ty = llvm::Type::getInt64Ty(*context_);
-                        auto* idx = std::any_cast<llvm::Value*>(
+                        auto* idx = castValue(
                             visit(indexExprs[0]));
                         if (idx->getType() != i64Ty)
                             idx = builder_->CreateIntCast(idx, i64Ty, true);
@@ -4020,8 +4308,12 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
         auto* i64Ty = llvm::Type::getInt64Ty(*context_);
         auto* dataPtr = builder_->CreateLoad(ptrTy, vit->second.dataPtr, "var_data");
+        if (!vit->second.elementType) {
+            std::cerr << "lux: internal error: variadic param missing elementType\n";
+            return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
         auto* elemTy = vit->second.elementType->toLLVMType(*context_, module_->getDataLayout());
-        auto* idx = std::any_cast<llvm::Value*>(visit(indexExprs[0]));
+        auto* idx = castValue(visit(indexExprs[0]));
         if (idx->getType() != i64Ty)
             idx = builder_->CreateIntCast(idx, i64Ty, true);
         auto* gep = builder_->CreateGEP(elemTy, dataPtr, idx, varName + "_elem");
@@ -4047,7 +4339,7 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
             auto* valLLTy = ti->valueType->toLLVMType(*context_, module_->getDataLayout());
             auto suffix = ti->builtinSuffix;
 
-            auto* keyVal = std::any_cast<llvm::Value*>(visit(indexExprs[0]));
+            auto* keyVal = castValue(visit(indexExprs[0]));
             if (keyVal->getType() != keyLLTy) {
                 if (keyVal->getType()->isIntegerTy() && keyLLTy->isIntegerTy())
                     keyVal = builder_->CreateIntCast(keyVal, keyLLTy, ti->keyType->isSigned);
@@ -4065,7 +4357,7 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
             *context_, module_->getDataLayout());
         auto suffix = getVecSuffix(ti->elementType);
 
-        auto* idx = std::any_cast<llvm::Value*>(visit(indexExprs[0]));
+        auto* idx = castValue(visit(indexExprs[0]));
         if (idx->getType() != usizeTy)
             idx = builder_->CreateIntCast(idx, usizeTy, false);
 
@@ -4089,7 +4381,7 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
         auto* ptrVal = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
 
         // GEP with the first index
-        auto* idx = std::any_cast<llvm::Value*>(visit(indexExprs[0]));
+        auto* idx = castValue(visit(indexExprs[0]));
         if (idx->getType() != i64Ty)
             idx = builder_->CreateIntCast(idx, i64Ty, true);
 
@@ -4103,7 +4395,7 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
     std::vector<llvm::Value*> gepIndices;
     gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
     for (auto* idxExpr : indexExprs) {
-        auto* idx = std::any_cast<llvm::Value*>(visit(idxExpr));
+        auto* idx = castValue(visit(idxExpr));
         if (idx->getType() != i64Ty)
             idx = builder_->CreateIntCast(idx, i64Ty, true);
         gepIndices.push_back(idx);
@@ -4142,7 +4434,7 @@ std::any IRGen::visitStructLitExpr(LuxParser::StructLitExprContext* ctx) {
                 if (f.name == fieldName) { fieldTI = f.typeInfo; break; }
             }
             if (fieldTI) {
-                auto* val = std::any_cast<llvm::Value*>(visit(exprs[0]));
+                auto* val = castValue(visit(exprs[0]));
                 auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
                 if (val->getType() != fieldLLTy) {
                     if (val->getType()->isIntegerTy() && fieldLLTy->isIntegerTy())
@@ -4186,7 +4478,7 @@ std::any IRGen::visitStructLitExpr(LuxParser::StructLitExprContext* ctx) {
             continue;
         }
 
-        auto* val = std::any_cast<llvm::Value*>(visit(exprs[i]));
+        auto* val = castValue(visit(exprs[i]));
         auto* fieldTI = ti->fields[fieldIdx].typeInfo;
         auto* fieldTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
 
@@ -4365,7 +4657,7 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
         std::vector<llvm::Value*> gepIndices;
         gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
         for (auto* idxExpr : indexExprs) {
-            auto* idx = std::any_cast<llvm::Value*>(visit(idxExpr));
+            auto* idx = castValue(visit(idxExpr));
             if (idx->getType() != i64Ty)
                 idx = builder_->CreateIntCast(idx, i64Ty, true);
             gepIndices.push_back(idx);
@@ -4416,7 +4708,7 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
         // Evaluate chained field access: get the struct value, then access this field
         // We need the address, not the value. Walk down to find the root and rebuild GEP chain.
         // For now, use the general fallback approach: alloca the value and GEP into it.
-        auto* baseVal = std::any_cast<llvm::Value*>(visit(baseExpr));
+        auto* baseVal = castValue(visit(baseExpr));
         if (baseVal->getType()->isStructTy()) {
             // Find the field in the intermediate struct
             auto* baseTI = resolveExprTypeInfo(baseExpr);
@@ -4447,6 +4739,38 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
         }
     }
 
+    // ── General fallback: any expression returning a struct (e.g. method call) ──
+    {
+        auto* baseVal = castValue(visit(baseExpr));
+        if (baseVal && baseVal->getType()->isStructTy()) {
+            auto* baseTI = resolveExprTypeInfo(baseExpr);
+            if (baseTI && (baseTI->kind == TypeKind::Struct || baseTI->kind == TypeKind::Union)) {
+                const TypeInfo* fieldTI = nullptr;
+                int fieldIdx = -1;
+                for (size_t f = 0; f < baseTI->fields.size(); f++) {
+                    if (baseTI->fields[f].name == fieldName) {
+                        fieldIdx = static_cast<int>(f);
+                        fieldTI = baseTI->fields[f].typeInfo;
+                        break;
+                    }
+                }
+                if (fieldIdx >= 0) {
+                    auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                    auto* tmp = builder_->CreateAlloca(baseVal->getType(), nullptr, "expr_tmp");
+                    builder_->CreateStore(baseVal, tmp);
+                    if (baseTI->kind == TypeKind::Union) {
+                        return static_cast<llvm::Value*>(
+                            builder_->CreateLoad(fieldLLTy, tmp, fieldName));
+                    }
+                    auto* gep = builder_->CreateStructGEP(baseVal->getType(), tmp,
+                                                          fieldIdx, fieldName + "_ptr");
+                    return static_cast<llvm::Value*>(
+                        builder_->CreateLoad(fieldLLTy, gep, fieldName));
+                }
+            }
+        }
+    }
+
     std::cerr << "lux: unsupported base expression for field access\n";
     return static_cast<llvm::Value*>(
         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -4456,7 +4780,7 @@ std::any IRGen::visitArrowAccessExpr(LuxParser::ArrowAccessExprContext* ctx) {
     auto fieldName = ctx->IDENTIFIER()->getText();
 
     // Evaluate base expression — should yield a pointer to struct
-    auto* ptrVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* ptrVal = castValue(visit(ctx->expression()));
 
     // Resolve the pointee struct TypeInfo from the expression tree
     auto* exprTI = resolveExprTypeInfo(ctx->expression());
@@ -4560,7 +4884,7 @@ std::any IRGen::visitStaticMethodCallExpr(
         auto* fnType = fn->getFunctionType();
         size_t paramIdx = 0;
         for (auto* argExpr : argList->expression()) {
-            auto* argVal = std::any_cast<llvm::Value*>(visit(argExpr));
+            auto* argVal = castValue(visit(argExpr));
             if (paramIdx < fnType->getNumParams()) {
                 auto* paramTy = fnType->getParamType(paramIdx);
                 if (argVal->getType() != paramTy) {
@@ -4596,19 +4920,89 @@ std::any IRGen::visitNullLitExpr(LuxParser::NullLitExprContext* /*ctx*/) {
 }
 
 std::any IRGen::visitAddrOfExpr(LuxParser::AddrOfExprContext* ctx) {
-    auto varName = ctx->IDENTIFIER()->getText();
-    auto it = locals_.find(varName);
-    if (it == locals_.end()) {
-        std::cerr << "lux: undefined variable '" << varName << "'\n";
-        return static_cast<llvm::Value*>(
-            llvm::UndefValue::get(llvm::PointerType::getUnqual(*context_)));
+    auto* innerExpr = ctx->expression();
+
+    // Case 1: &variable
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(innerExpr)) {
+        auto varName = ident->IDENTIFIER()->getText();
+        auto it = locals_.find(varName);
+        if (it == locals_.end()) {
+            std::cerr << "lux: undefined variable '" << varName << "'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::PointerType::getUnqual(*context_)));
+        }
+        return static_cast<llvm::Value*>(it->second.alloca);
     }
-    // The alloca IS the pointer to the variable
-    return static_cast<llvm::Value*>(it->second.alloca);
+
+    // Case 2: &arr[i] — address of array element
+    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(innerExpr)) {
+        std::vector<LuxParser::ExpressionContext*> indexExprs;
+        auto* current = static_cast<LuxParser::ExpressionContext*>(idx);
+        while (auto* idxCtx = dynamic_cast<LuxParser::IndexExprContext*>(current)) {
+            indexExprs.push_back(idxCtx->expression(1));
+            current = idxCtx->expression(0);
+        }
+        auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(current);
+        if (identBase) {
+            auto varName = identBase->IDENTIFIER()->getText();
+            auto it = locals_.find(varName);
+            if (it != locals_.end()) {
+                auto* alloca   = it->second.alloca;
+                auto* allocType = alloca->getAllocatedType();
+                auto* i64Ty    = llvm::Type::getInt64Ty(*context_);
+
+                std::reverse(indexExprs.begin(), indexExprs.end());
+
+                std::vector<llvm::Value*> gepIndices;
+                gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
+                for (auto* idxExpr : indexExprs) {
+                    auto* idxVal = castValue(visit(idxExpr));
+                    if (idxVal->getType() != i64Ty)
+                        idxVal = builder_->CreateIntCast(idxVal, i64Ty, true);
+                    gepIndices.push_back(idxVal);
+                }
+
+                auto* elemPtr = builder_->CreateGEP(allocType, alloca, gepIndices,
+                                                     "addr_of_elem");
+                return static_cast<llvm::Value*>(elemPtr);
+            }
+        }
+    }
+
+    // Case 3: &s.field — address of struct field
+    if (auto* field = dynamic_cast<LuxParser::FieldAccessExprContext*>(innerExpr)) {
+        auto fieldName = field->IDENTIFIER()->getText();
+        auto* base = field->expression();
+        auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(base);
+        if (ident) {
+            auto varName = ident->IDENTIFIER()->getText();
+            auto it = locals_.find(varName);
+            if (it != locals_.end() && it->second.typeInfo) {
+                auto* structTI = it->second.typeInfo;
+                int fieldIdx = -1;
+                for (size_t f = 0; f < structTI->fields.size(); f++) {
+                    if (structTI->fields[f].name == fieldName) {
+                        fieldIdx = static_cast<int>(f);
+                        break;
+                    }
+                }
+                if (fieldIdx >= 0) {
+                    auto* structTy = it->second.alloca->getAllocatedType();
+                    auto* gep = builder_->CreateStructGEP(structTy, it->second.alloca,
+                                                          fieldIdx, "addr_of_field");
+                    return static_cast<llvm::Value*>(gep);
+                }
+            }
+        }
+    }
+
+    std::cerr << "lux: unsupported expression for address-of operator\n";
+    return static_cast<llvm::Value*>(
+        llvm::UndefValue::get(llvm::PointerType::getUnqual(*context_)));
 }
 
 std::any IRGen::visitDerefExpr(LuxParser::DerefExprContext* ctx) {
-    auto* ptrVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* ptrVal = castValue(visit(ctx->expression()));
 
     // Find pointee type: first try AST-level resolution, then fall back to IR
     const TypeInfo* pointeeTI = nullptr;
@@ -4668,7 +5062,7 @@ std::any IRGen::visitDerefAssignStmt(LuxParser::DerefAssignStmtContext* ctx) {
         rhsExpr = ctx->expression(0);
     } else {
         // *(expr) = value;
-        ptrVal = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
+        ptrVal = castValue(visit(ctx->expression(0)));
 
         // Resolve pointer TypeInfo from the expression
         auto* exprTI = resolveExprTypeInfo(ctx->expression(0));
@@ -4680,7 +5074,7 @@ std::any IRGen::visitDerefAssignStmt(LuxParser::DerefAssignStmtContext* ctx) {
     }
 
     // Evaluate RHS
-    auto* val = std::any_cast<llvm::Value*>(visit(rhsExpr));
+    auto* val = castValue(visit(rhsExpr));
 
     // Cast if needed
     if (ptrTI && ptrTI->pointeeType) {
@@ -4724,10 +5118,11 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
             std::vector<llvm::Value*> args;
             if (auto* argList = ctx->argList()) {
                 for (auto* exprCtx : argList->expression())
-                    args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                    args.push_back(castValue(visit(exprCtx)));
             }
 
             if (calleeName == "toInt") {
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* strPtr = builder_->CreateExtractValue(args[0], 0, "toInt_ptr");
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "toInt_len");
                 auto callee = declareBuiltin("lux_toInt",
@@ -4736,6 +5131,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(result);
             }
             if (calleeName == "toFloat") {
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* strPtr = builder_->CreateExtractValue(args[0], 0, "toFloat_ptr");
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "toFloat_len");
                 auto callee = declareBuiltin("lux_toFloat",
@@ -4744,6 +5140,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(result);
             }
             if (calleeName == "toBool") {
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* strPtr = builder_->CreateExtractValue(args[0], 0, "toBool_ptr");
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "toBool_len");
                 auto callee = declareBuiltin("lux_toBool",
@@ -4752,6 +5149,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(result);
             }
             if (calleeName == "toString") {
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* arg     = args[0];
                 auto* argType = arg->getType();
 
@@ -4808,6 +5206,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
 
             // ── fromCStr(*char) -> string ──
             if (calleeName == "fromCStr") {
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* retStructTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
                 auto callee = declareBuiltin("lux_fromCStr", retStructTy, {ptrTy});
                 auto* retVal = builder_->CreateCall(callee, {args[0]}, "fromCStr");
@@ -4821,6 +5220,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
 
             // ── fromCStrLen(*char, usize) -> string ──
             if (calleeName == "fromCStrLen") {
+                if (!requireArgs(calleeName, args, 2)) return {};
                 auto* retStructTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
                 auto* lenArg = args[1];
                 if (lenArg->getType() != usizeTy)
@@ -4846,7 +5246,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
             std::vector<llvm::Value*> args;
             if (auto* argList = ctx->argList()) {
                 for (auto* exprCtx : argList->expression())
-                    args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                    args.push_back(castValue(visit(exprCtx)));
             }
 
             // First arg is the format string
@@ -4872,9 +5272,55 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 auto* zero = llvm::ConstantInt::get(i64Ty, 0);
 
                 for (size_t i = 0; i < numArgs; i++) {
+                    auto* arg = args[i + 1];
+                    auto* argTy = arg->getType();
+
+                    // Convert non-string args to string slices
+                    if (argTy != sliceTy) {
+                        llvm::Value* converted = nullptr;
+                        if (argTy->isIntegerTy(1)) {
+                            // bool → "true" / "false"
+                            auto* trueStr  = builder_->CreateGlobalString("true", ".str.true", 0, module_);
+                            auto* falseStr = builder_->CreateGlobalString("false", ".str.false", 0, module_);
+                            auto* trueLen  = llvm::ConstantInt::get(usizeTy, 4);
+                            auto* falseLen = llvm::ConstantInt::get(usizeTy, 5);
+                            auto* ptr = builder_->CreateSelect(arg, trueStr, falseStr);
+                            auto* len = builder_->CreateSelect(arg, trueLen, falseLen);
+                            converted = llvm::UndefValue::get(sliceTy);
+                            converted = builder_->CreateInsertValue(converted, ptr, 0);
+                            converted = builder_->CreateInsertValue(converted, len, 1);
+                        } else if (argTy->isIntegerTy()) {
+                            // int → lux_itoa / lux_utoa
+                            auto* ext = builder_->CreateIntCast(arg, i64Ty, true, "icast");
+                            auto fn = declareBuiltin("lux_itoa", sliceTy, {i64Ty});
+                            converted = builder_->CreateCall(fn, {ext}, "itoa");
+                        } else if (argTy->isFloatingPointTy()) {
+                            // float → lux_ftoa
+                            auto* dblTy = llvm::Type::getDoubleTy(*context_);
+                            auto* ext = argTy->isFloatTy()
+                                ? builder_->CreateFPExt(arg, dblTy, "fext")
+                                : arg;
+                            auto fn = declareBuiltin("lux_ftoa", sliceTy, {dblTy});
+                            converted = builder_->CreateCall(fn, {ext}, "ftoa");
+                        } else if (argTy->isIntegerTy(8)) {
+                            // char → 1-byte string
+                            auto* buf = builder_->CreateAlloca(
+                                llvm::Type::getInt8Ty(*context_), nullptr, "chbuf");
+                            builder_->CreateStore(arg, buf);
+                            converted = llvm::UndefValue::get(sliceTy);
+                            converted = builder_->CreateInsertValue(converted, buf, 0);
+                            converted = builder_->CreateInsertValue(converted,
+                                llvm::ConstantInt::get(usizeTy, 1), 1);
+                        } else {
+                            // Fallback: store as-is (will likely be wrong)
+                            converted = arg;
+                        }
+                        arg = converted;
+                    }
+
                     auto* idx = llvm::ConstantInt::get(i64Ty, i);
                     auto* gep = builder_->CreateGEP(arrTy, arrAlloca, {zero, idx});
-                    builder_->CreateStore(args[i + 1], gep);
+                    builder_->CreateStore(arg, gep);
                 }
 
                 argsPtr   = builder_->CreateGEP(arrTy, arrAlloca,
@@ -4904,7 +5350,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
             std::vector<llvm::Value*> args;
             if (auto* argList = ctx->argList()) {
                 for (auto* exprCtx : argList->expression())
-                    args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                    args.push_back(castValue(visit(exprCtx)));
             }
 
             if (args.empty()) {
@@ -5068,8 +5514,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_" + calleeName, strTy,
@@ -5083,8 +5530,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_promptInt", i64Ty,
@@ -5098,8 +5546,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_promptFloat", f64Ty,
@@ -5113,8 +5562,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_promptBool", i32Ty,
@@ -5151,8 +5601,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* arg = args[0];
                 if (arg->getType()->isIntegerTy())
                     arg = builder_->CreateSIToFP(arg, f64Ty, "math_cast");
@@ -5171,8 +5622,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 for (auto*& a : args) {
                     if (a->getType()->isIntegerTy())
                         a = builder_->CreateSIToFP(a, f64Ty, "math_cast");
@@ -5190,8 +5642,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 3)) return {};
                 for (auto*& a : args) {
                     if (a->getType()->isIntegerTy())
                         a = builder_->CreateSIToFP(a, f64Ty, "math_cast");
@@ -5209,8 +5662,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 5)) return {};
                 for (auto*& a : args) {
                     if (a->getType()->isIntegerTy())
                         a = builder_->CreateSIToFP(a, f64Ty, "math_cast");
@@ -5231,8 +5685,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* arg = args[0];
                 if (arg->getType()->isIntegerTy())
                     arg = builder_->CreateSIToFP(arg, f64Ty, "math_cast");
@@ -5252,8 +5707,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* arg = args[0];
                 auto* argType = arg->getType();
 
@@ -5300,8 +5756,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 auto* a = args[0];
                 auto* b = args[1];
                 auto* argType = a->getType();
@@ -5347,8 +5804,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 3)) return {};
                 auto* val = args[0];
                 auto* lo  = args[1];
                 auto* hi  = args[2];
@@ -5400,8 +5858,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -5419,8 +5878,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -5435,8 +5895,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -5454,8 +5915,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 // If the argument is a char (i8), skip string dispatch
                 // and let the std::ascii handler below handle it
                 if (!args.empty() && args[0]->getType()->isIntegerTy(8) &&
@@ -5476,8 +5938,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 3)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -5493,8 +5956,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* n = args[1];
@@ -5512,8 +5976,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 3)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* width = args[1];
@@ -5535,8 +6000,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 3)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* start = args[1];
@@ -5558,8 +6024,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* idx = args[1];
@@ -5577,8 +6044,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 3)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* start = args[1];
@@ -5600,8 +6068,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_parseInt", i64Ty,
@@ -5615,8 +6084,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* radix = args[1];
@@ -5634,8 +6104,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_parseFloat", f64Ty,
@@ -5649,8 +6120,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* code = args[0];
                 if (code->getType() != i32Ty)
                     code = builder_->CreateIntCast(code, i32Ty, true);
@@ -5665,8 +6137,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* size = args[0];
                 if (size->getType() != usizeTy)
                     size = builder_->CreateIntCast(size, usizeTy, false);
@@ -5680,8 +6153,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* size = args[0];
                 if (size->getType() != usizeTy)
                     size = builder_->CreateIntCast(size, usizeTy, false);
@@ -5695,8 +6169,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 auto* ptr  = args[0];
                 auto* size = args[1];
                 if (size->getType() != usizeTy)
@@ -5712,8 +6187,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 3)) return {};
                 auto* a = args[0];
                 auto* b = args[1];
                 auto* n = args[2];
@@ -5737,8 +6213,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 auto* lo = args[0];
                 auto* hi = args[1];
                 if (lo->getType() != i64Ty)
@@ -5770,8 +6247,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 auto* lo = args[0];
                 auto* hi = args[1];
                 if (lo->getType() != f64Ty)
@@ -5844,8 +6322,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 auto* since = args[0];
                 if (since->getType() != i64Ty)
                     since = builder_->CreateIntCast(since, i64Ty, false);
@@ -5859,8 +6338,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 auto* ms = args[0];
                 if (ms->getType() != i64Ty)
                     ms = builder_->CreateIntCast(ms, i64Ty, false);
@@ -5878,8 +6358,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 auto* strPtr = builder_->CreateExtractValue(args[0], 0, "str_ptr");
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "str_len");
                 auto* fmtPtr = builder_->CreateExtractValue(args[1], 0, "fmt_ptr");
@@ -5903,8 +6384,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_readFile", strTy,
@@ -5924,8 +6406,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> args;
                     if (auto* argList = ctx->argList()) {
                         for (auto* exprCtx : argList->expression())
-                            args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                            args.push_back(castValue(visit(exprCtx)));
                     }
+                    if (!requireArgs(calleeName, args, 1)) return {};
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
                     std::string cName = "lux_" + calleeName;
@@ -5943,8 +6426,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 2)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -5961,8 +6445,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_fileSize", i64Ty,
@@ -5988,8 +6473,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_env", strTy,
@@ -6003,8 +6489,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_execOutput", strTy,
@@ -6018,8 +6505,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_hasEnv", i32Ty,
@@ -6035,8 +6523,9 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList()) {
                     for (auto* exprCtx : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(exprCtx)));
+                        args.push_back(castValue(visit(exprCtx)));
                 }
+                if (!requireArgs(calleeName, args, 1)) return {};
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_exec", i32Ty,
@@ -6057,7 +6546,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, true);
@@ -6071,7 +6560,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* val = args[0];
                 if (val->getType() != i64Ty)
                     val = builder_->CreateIntCast(val, i64Ty, true);
@@ -6088,7 +6577,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
@@ -6102,7 +6591,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != f64Ty)
                     a = builder_->CreateFPExt(a, f64Ty);
@@ -6116,7 +6605,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* val = args[0];
                 if (val->getType() != f64Ty)
                     val = builder_->CreateFPExt(val, f64Ty);
@@ -6134,7 +6623,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
@@ -6148,7 +6637,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_atoi", i64Ty,
@@ -6162,7 +6651,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_atof", f64Ty,
@@ -6176,7 +6665,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_fromHex", i64Ty,
@@ -6190,7 +6679,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto callee = declareBuiltin("lux_charToInt", i32Ty, {i8Ty});
                 auto* ret = builder_->CreateCall(callee, {args[0]}, "charToInt");
                 return static_cast<llvm::Value*>(ret);
@@ -6201,7 +6690,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i32Ty)
                     a = builder_->CreateIntCast(a, i32Ty, true);
@@ -6215,7 +6704,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_hashString", i64Ty, {ptrTy, usizeTy});
@@ -6228,7 +6717,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, true);
@@ -6242,7 +6731,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 auto* b = args[1];
                 if (a->getType() != i64Ty)
@@ -6260,7 +6749,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
@@ -6277,7 +6766,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 auto* b = args[1];
                 if (a->getType() != i64Ty)
@@ -6296,7 +6785,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
@@ -6310,7 +6799,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, false);
@@ -6326,7 +6815,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 auto* b = args[1];
                 if (a->getType() != i64Ty)
@@ -6345,7 +6834,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 auto* b = args[1];
                 auto* c = args[2];
@@ -6370,7 +6859,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 auto* i8Ty = llvm::Type::getInt8Ty(*context_);
                 if (a->getType() != i8Ty)
@@ -6388,7 +6877,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 auto* i8Ty = llvm::Type::getInt8Ty(*context_);
                 if (a->getType() == i8Ty ||
@@ -6409,7 +6898,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 auto* i8Ty = llvm::Type::getInt8Ty(*context_);
                 if (a->getType() != i8Ty)
@@ -6424,7 +6913,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i32Ty)
                     a = builder_->CreateIntCast(a, i32Ty, true);
@@ -6439,7 +6928,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 if (args.size() == 2 && args[0]->getType() == strTy) {
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
@@ -6462,7 +6951,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> args;
                     if (auto* argList = ctx->argList())
                         for (auto* e : argList->expression())
-                            args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                            args.push_back(castValue(visit(e)));
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
                     auto callee = declareBuiltin("lux_" + calleeName, strTy,
@@ -6477,7 +6966,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_" + calleeName, i32Ty,
@@ -6500,7 +6989,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -6516,7 +7005,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* width = args[1];
@@ -6545,7 +7034,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> args;
                     if (auto* argList = ctx->argList())
                         for (auto* e : argList->expression())
-                            args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                            args.push_back(castValue(visit(e)));
                     auto* a = args[0];
                     auto* u64Ty = llvm::Type::getInt64Ty(*context_);
                     if (a->getType() != u64Ty)
@@ -6561,7 +7050,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = args[0];
                 if (a->getType() != i64Ty)
                     a = builder_->CreateIntCast(a, i64Ty, true);
@@ -6575,7 +7064,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* val = args[0];
                 if (val->getType() != f64Ty)
                     val = builder_->CreateSIToFP(val, f64Ty);
@@ -6594,7 +7083,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* val = args[0];
                 if (val->getType() != f64Ty)
                     val = builder_->CreateSIToFP(val, f64Ty);
@@ -6609,7 +7098,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -6626,7 +7115,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -6641,7 +7130,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -6656,7 +7145,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 extractStringArg(args[1], callArgs);
@@ -6672,7 +7161,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_regexIsValid", i32Ty,
@@ -6696,7 +7185,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> args;
                     if (auto* argList = ctx->argList())
                         for (auto* e : argList->expression())
-                            args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                            args.push_back(castValue(visit(e)));
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
                     auto callee = declareBuiltin(encIt->second, strTy,
@@ -6719,7 +7208,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> args;
                     if (auto* argList = ctx->argList())
                         for (auto* e : argList->expression())
-                            args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                            args.push_back(castValue(visit(e)));
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
                     auto callee = declareBuiltin(crIt->second, strTy,
@@ -6742,7 +7231,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> args;
                     if (auto* argList = ctx->argList())
                         for (auto* e : argList->expression())
-                            args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                            args.push_back(castValue(visit(e)));
                     std::vector<llvm::Value*> callArgs;
                     extractStringArg(args[0], callArgs);
                     auto callee = declareBuiltin(cpIt->second, strTy,
@@ -6757,7 +7246,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* lvl = args[1];
@@ -6775,7 +7264,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto callee = declareBuiltin("lux_netResolve", strTy,
@@ -6805,7 +7294,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 std::vector<llvm::Value*> callArgs;
                 extractStringArg(args[0], callArgs);
                 auto* i16Ty = llvm::Type::getInt16Ty(*context_);
@@ -6823,7 +7312,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
                 auto callee = declareBuiltin("lux_tcpAccept", i32Ty, {i32Ty});
                 auto* ret = builder_->CreateCall(callee, {fd}, "tcpAccept");
@@ -6835,7 +7324,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
                 std::vector<llvm::Value*> callArgs;
                 callArgs.push_back(fd);
@@ -6851,7 +7340,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
                 auto* maxLen = args[1];
                 if (maxLen->getType() != usizeTy)
@@ -6868,7 +7357,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
                 std::vector<llvm::Value*> callArgs;
                 callArgs.push_back(fd);
@@ -6938,7 +7427,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* code = builder_->CreateIntCast(args[0], i32Ty, true);
                 auto callee = declareBuiltin("lux_osStrerror", strTy, {i32Ty});
                 auto* ret = builder_->CreateCall(callee, {code}, "strerror");
@@ -6950,7 +7439,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = builder_->CreateIntCast(args[0], i32Ty, true);
                 auto* b = builder_->CreateIntCast(args[1], i32Ty, true);
                 auto callee = declareBuiltin("lux_osKill", i32Ty, {i32Ty, i32Ty});
@@ -6969,7 +7458,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> args;
                     if (auto* argList = ctx->argList())
                         for (auto* e : argList->expression())
-                            args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                            args.push_back(castValue(visit(e)));
                     auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
                     auto callee = declareBuiltin(osIt->second, i32Ty, {i32Ty});
                     auto* ret = builder_->CreateCall(callee, {fd}, calleeName);
@@ -6982,7 +7471,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* a = builder_->CreateIntCast(args[0], i32Ty, true);
                 auto* b = builder_->CreateIntCast(args[1], i32Ty, true);
                 auto callee = declareBuiltin("lux_osDup2", i32Ty, {i32Ty, i32Ty});
@@ -7005,7 +7494,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "readNBytes_out");
                 auto* n = args[0];
@@ -7022,7 +7511,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "split_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7040,7 +7529,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "splitN_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7062,7 +7551,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "joinVec_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
@@ -7079,7 +7568,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "lines_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7096,7 +7585,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "chars_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7113,7 +7602,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "fromChars_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
@@ -7127,7 +7616,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "toBytes_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7144,7 +7633,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "fromBytes_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
@@ -7158,7 +7647,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "listDir_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7175,7 +7664,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "readBytes_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7192,7 +7681,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "hashBytes_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
@@ -7206,7 +7695,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "crc32_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
@@ -7220,7 +7709,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "findAll_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7238,7 +7727,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "regexSplit_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7256,7 +7745,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "b64enc_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
@@ -7270,7 +7759,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "b64dec_out");
                 std::vector<llvm::Value*> callArgs = {outAlloca};
@@ -7295,7 +7784,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     std::vector<llvm::Value*> args;
                     if (auto* argList = ctx->argList())
                         for (auto* e : argList->expression())
-                            args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                            args.push_back(castValue(visit(e)));
                     auto* vecTy       = getOrCreateVecStructType();
                     auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, calleeName + "_arg");
                     builder_->CreateStore(args[0], vecArgAlloca);
@@ -7310,7 +7799,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy      = getOrCreateVecStructType();
                 auto* keyAlloca  = builder_->CreateAlloca(vecTy, nullptr, "hmac_key");
                 auto* dataAlloca = builder_->CreateAlloca(vecTy, nullptr, "hmac_data");
@@ -7329,7 +7818,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy    = getOrCreateVecStructType();
                 auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "randomBytes_out");
                 auto* n = args[0];
@@ -7346,7 +7835,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 std::vector<llvm::Value*> args;
                 if (auto* argList = ctx->argList())
                     for (auto* e : argList->expression())
-                        args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                        args.push_back(castValue(visit(e)));
                 auto* vecTy       = getOrCreateVecStructType();
                 auto* vecArgAlloca = builder_->CreateAlloca(vecTy, nullptr, "joinAll_arg");
                 builder_->CreateStore(args[0], vecArgAlloca);
@@ -7379,6 +7868,10 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
         if (vit != variadicFunctions_.end()) {
             auto& vfInfo = vit->second;
             size_t varIdx = vfInfo.variadicParamIdx;
+            if (!vfInfo.elementType) {
+                std::cerr << "lux: internal error: variadic function missing elementType\n";
+                return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
             auto* elemTy = vfInfo.elementType->toLLVMType(*context_, module_->getDataLayout());
 
             std::vector<llvm::Value*> args;
@@ -7386,7 +7879,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
 
             if (auto* argList = ctx->argList()) {
                 for (size_t i = 0; i < argList->expression().size(); i++) {
-                    auto* argVal = std::any_cast<llvm::Value*>(visit(argList->expression(i)));
+                    auto* argVal = castValue(visit(argList->expression(i)));
                     if (i < varIdx) {
                         // Normal param: cast if needed
                         if (argVal->getType() != fnType->getParamType(i)) {
@@ -7449,7 +7942,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
             std::vector<llvm::Value*> args;
             if (auto* argList = ctx->argList()) {
                 for (size_t i = 0; i < argList->expression().size(); i++) {
-                    auto* argVal = std::any_cast<llvm::Value*>(visit(argList->expression(i)));
+                    auto* argVal = castValue(visit(argList->expression(i)));
                     if (i < fixedParams) {
                         if (argVal->getType() != fnType->getParamType(i)) {
                             if (argVal->getType()->isIntegerTy() && fnType->getParamType(i)->isIntegerTy())
@@ -7467,6 +7960,13 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                                 argVal = builder_->CreateSExt(argVal, llvm::Type::getInt32Ty(*context_), "c_promote_i32");
                             else if (bw > 64)
                                 argVal = builder_->CreateTrunc(argVal, llvm::Type::getInt32Ty(*context_), "c_trunc_i32");
+                        } else if (argVal->getType()->isStructTy()) {
+                            // Lux string { ptr, i64 } → extract ptr for C variadics
+                            auto* st = llvm::cast<llvm::StructType>(argVal->getType());
+                            if (st->getNumElements() == 2 &&
+                                st->getElementType(0)->isPointerTy() &&
+                                st->getElementType(1)->isIntegerTy())
+                                argVal = builder_->CreateExtractValue(argVal, 0, "str_to_cptr");
                         }
                     }
                     args.push_back(argVal);
@@ -7493,7 +7993,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
 
         if (auto* argList = ctx->argList()) {
             for (size_t i = 0; i < argList->expression().size(); i++) {
-                auto* argVal = std::any_cast<llvm::Value*>(visit(argList->expression(i)));
+                auto* argVal = castValue(visit(argList->expression(i)));
 
                 // ABI struct coercion for C functions
                 if (abi && i < abi->paramInfos.size()) {
@@ -7550,6 +8050,33 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                                 argVal = builder_->CreateFPTrunc(argVal, expectedTy);
                             else
                                 argVal = builder_->CreateFPExt(argVal, expectedTy);
+                        } else if (argVal->getType()->isStructTy() && expectedTy->isStructTy()) {
+                            // Tuple/struct element-wise coercion (e.g. {i256, i256} → {i32, i32})
+                            auto* srcST = llvm::cast<llvm::StructType>(argVal->getType());
+                            auto* dstST = llvm::cast<llvm::StructType>(expectedTy);
+                            if (srcST->getNumElements() == dstST->getNumElements()) {
+                                llvm::Value* result = llvm::UndefValue::get(expectedTy);
+                                for (unsigned e = 0; e < srcST->getNumElements(); e++) {
+                                    auto* elem = builder_->CreateExtractValue(argVal, {e}, "tup_e");
+                                    auto* srcElemTy = srcST->getElementType(e);
+                                    auto* dstElemTy = dstST->getElementType(e);
+                                    if (srcElemTy != dstElemTy) {
+                                        if (srcElemTy->isIntegerTy() && dstElemTy->isIntegerTy())
+                                            elem = builder_->CreateIntCast(elem, dstElemTy, true, "tup_cast");
+                                        else if (srcElemTy->isFloatingPointTy() && dstElemTy->isFloatingPointTy()) {
+                                            if (srcElemTy->getPrimitiveSizeInBits() > dstElemTy->getPrimitiveSizeInBits())
+                                                elem = builder_->CreateFPTrunc(elem, dstElemTy, "tup_ftrunc");
+                                            else
+                                                elem = builder_->CreateFPExt(elem, dstElemTy, "tup_fext");
+                                        } else if (srcElemTy->isIntegerTy() && dstElemTy->isFloatingPointTy())
+                                            elem = builder_->CreateSIToFP(elem, dstElemTy, "tup_itof");
+                                        else if (srcElemTy->isFloatingPointTy() && dstElemTy->isIntegerTy())
+                                            elem = builder_->CreateFPToSI(elem, dstElemTy, "tup_ftoi");
+                                    }
+                                    result = builder_->CreateInsertValue(result, elem, {e}, "tup_ins");
+                                }
+                                argVal = result;
+                            }
                         }
                     }
                 }
@@ -7587,7 +8114,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
     }
 
     // Get the function pointer value
-    auto* fnPtr = std::any_cast<llvm::Value*>(visit(baseExpr));
+    auto* fnPtr = castValue(visit(baseExpr));
 
     // Build LLVM FunctionType from TypeInfo
     auto* retLLVM = fnTI->returnType->toLLVMType(*context_, module_->getDataLayout());
@@ -7601,7 +8128,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
     std::vector<llvm::Value*> args;
     if (auto* argList = ctx->argList()) {
         for (size_t i = 0; i < argList->expression().size(); i++) {
-            auto* argVal = std::any_cast<llvm::Value*>(visit(argList->expression(i)));
+            auto* argVal = castValue(visit(argList->expression(i)));
             // Cast if needed
             if (i < paramLLVM.size() && argVal->getType() != paramLLVM[i]) {
                 if (argVal->getType()->isIntegerTy() && paramLLVM[i]->isIntegerTy())
@@ -7624,78 +8151,22 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
 }
 
 std::any IRGen::visitNegExpr(LuxParser::NegExprContext* ctx) {
-    auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* val = castValue(visit(ctx->expression()));
     if (val->getType()->isFloatingPointTy())
         return static_cast<llvm::Value*>(builder_->CreateFNeg(val, "neg"));
     return static_cast<llvm::Value*>(builder_->CreateNeg(val, "neg"));
 }
 
 std::any IRGen::visitMulExpr(LuxParser::MulExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
 
     // Division by zero check for integer / and %
     if (!isFloat && (ctx->op->getType() == LuxLexer::SLASH ||
                      ctx->op->getType() == LuxLexer::PERCENT)) {
-        auto* zero    = llvm::ConstantInt::get(r->getType(), 0);
-        auto* isZero  = builder_->CreateICmpEQ(r, zero, "div_zero_chk");
-
-        auto* fn      = currentFunction_;
-        auto* throwBB = llvm::BasicBlock::Create(*context_, "div.throw", fn);
-        auto* okBB    = llvm::BasicBlock::Create(*context_, "div.ok",    fn);
-
-        builder_->CreateCondBr(isZero, throwBB, okBB);
-
-        // Emit throw for division by zero
-        builder_->SetInsertPoint(throwBB);
-        {
-            auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
-            auto* voidTy  = llvm::Type::getVoidTy(*context_);
-            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
-            auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
-            auto* errorTy = llvm::StructType::getTypeByName(*context_, "Error");
-            auto* strTy   = llvm::StructType::get(*context_, { ptrTy, usizeTy });
-
-            // Build message string
-            auto* msgGlobal = builder_->CreateGlobalString(
-                "division by zero", ".div_err_msg", 0, module_);
-            auto* msgLen = llvm::ConstantInt::get(usizeTy, 17);
-            llvm::Value* msgStr = llvm::UndefValue::get(strTy);
-            msgStr = builder_->CreateInsertValue(msgStr, msgGlobal, {0});
-            msgStr = builder_->CreateInsertValue(msgStr, msgLen,    {1});
-
-            // Build file string
-            std::string fileName = module_->getSourceFileName();
-            auto* fileGlobal = builder_->CreateGlobalString(
-                fileName, ".div_err_file", 0, module_);
-            auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
-            llvm::Value* fileStr = llvm::UndefValue::get(strTy);
-            fileStr = builder_->CreateInsertValue(fileStr, fileGlobal, {0});
-            fileStr = builder_->CreateInsertValue(fileStr, fileLen,    {1});
-
-            auto* opToken = ctx->op;
-            auto* line = llvm::ConstantInt::get(i32Ty, opToken->getLine());
-            auto* col  = llvm::ConstantInt::get(i32Ty,
-                             opToken->getCharPositionInLine());
-
-            // Build Error struct
-            llvm::Value* errVal = llvm::ConstantAggregateZero::get(errorTy);
-            errVal = builder_->CreateInsertValue(errVal, msgStr,  {0});
-            errVal = builder_->CreateInsertValue(errVal, fileStr, {1});
-            errVal = builder_->CreateInsertValue(errVal, line,    {2});
-            errVal = builder_->CreateInsertValue(errVal, col,     {3});
-
-            auto* errAlloca = builder_->CreateAlloca(errorTy, nullptr, "div_err");
-            builder_->CreateStore(errVal, errAlloca);
-
-            auto throwFn = declareBuiltin("lux_eh_throw", voidTy, {ptrTy});
-            builder_->CreateCall(throwFn, {errAlloca});
-            builder_->CreateUnreachable();
-        }
-
-        builder_->SetInsertPoint(okBB);
+        emitDivByZeroGuard(r, ctx->op);
     }
 
     switch (ctx->op->getType()) {
@@ -7717,8 +8188,8 @@ std::any IRGen::visitMulExpr(LuxParser::MulExprContext* ctx) {
 }
 
 std::any IRGen::visitAddSubExpr(LuxParser::AddSubExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
 
     bool lhsPtr = lhs->getType()->isPointerTy();
     bool rhsPtr = rhs->getType()->isPointerTy();
@@ -7785,166 +8256,251 @@ std::any IRGen::visitAddSubExpr(LuxParser::AddSubExprContext* ctx) {
 }
 
 std::any IRGen::visitLogicalNotExpr(LuxParser::LogicalNotExprContext* ctx) {
-    auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* val = castValue(visit(ctx->expression()));
     // Truncate to i1 if not already bool
-    if (!val->getType()->isIntegerTy(1))
-        val = builder_->CreateICmpNE(val,
-            llvm::ConstantInt::get(val->getType(), 0), "tobool");
+    if (!val->getType()->isIntegerTy(1)) {
+        llvm::Value* zero = val->getType()->isPointerTy()
+            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(val->getType())))
+            : static_cast<llvm::Value*>(llvm::ConstantInt::get(val->getType(), 0));
+        val = builder_->CreateICmpNE(val, zero, "tobool");
+    }
     return static_cast<llvm::Value*>(builder_->CreateNot(val, "not"));
 }
 
 std::any IRGen::visitLogicalAndExpr(LuxParser::LogicalAndExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
-    // Convert to i1 if needed
-    if (!lhs->getType()->isIntegerTy(1))
-        lhs = builder_->CreateICmpNE(lhs,
-            llvm::ConstantInt::get(lhs->getType(), 0), "tobool");
-    if (!rhs->getType()->isIntegerTy(1))
-        rhs = builder_->CreateICmpNE(rhs,
-            llvm::ConstantInt::get(rhs->getType(), 0), "tobool");
-    return static_cast<llvm::Value*>(builder_->CreateAnd(lhs, rhs, "and"));
+    auto* fn = currentFunction_;
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    if (!lhs->getType()->isIntegerTy(1)) {
+        llvm::Value* zero = lhs->getType()->isPointerTy()
+            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType())))
+            : static_cast<llvm::Value*>(llvm::ConstantInt::get(lhs->getType(), 0));
+        lhs = builder_->CreateICmpNE(lhs, zero, "tobool");
+    }
+
+    // Short-circuit: if lhs is false, skip rhs
+    auto* rhsBB   = llvm::BasicBlock::Create(*context_, "and.rhs",  fn);
+    auto* mergeBB = llvm::BasicBlock::Create(*context_, "and.merge", fn);
+    auto* lhsBB   = builder_->GetInsertBlock();
+    builder_->CreateCondBr(lhs, rhsBB, mergeBB);
+
+    builder_->SetInsertPoint(rhsBB);
+    auto* rhs = castValue(visit(ctx->expression(1)));
+    if (!rhs->getType()->isIntegerTy(1)) {
+        llvm::Value* zero = rhs->getType()->isPointerTy()
+            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(rhs->getType())))
+            : static_cast<llvm::Value*>(llvm::ConstantInt::get(rhs->getType(), 0));
+        rhs = builder_->CreateICmpNE(rhs, zero, "tobool");
+    }
+    auto* rhsEndBB = builder_->GetInsertBlock();
+    builder_->CreateBr(mergeBB);
+
+    builder_->SetInsertPoint(mergeBB);
+    auto* phi = builder_->CreatePHI(llvm::Type::getInt1Ty(*context_), 2, "and");
+    phi->addIncoming(llvm::ConstantInt::getFalse(*context_), lhsBB);
+    phi->addIncoming(rhs, rhsEndBB);
+    return static_cast<llvm::Value*>(phi);
 }
 
 std::any IRGen::visitLogicalOrExpr(LuxParser::LogicalOrExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
-    if (!lhs->getType()->isIntegerTy(1))
-        lhs = builder_->CreateICmpNE(lhs,
-            llvm::ConstantInt::get(lhs->getType(), 0), "tobool");
-    if (!rhs->getType()->isIntegerTy(1))
-        rhs = builder_->CreateICmpNE(rhs,
-            llvm::ConstantInt::get(rhs->getType(), 0), "tobool");
-    return static_cast<llvm::Value*>(builder_->CreateOr(lhs, rhs, "or"));
+    auto* fn = currentFunction_;
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    if (!lhs->getType()->isIntegerTy(1)) {
+        llvm::Value* zero = lhs->getType()->isPointerTy()
+            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType())))
+            : static_cast<llvm::Value*>(llvm::ConstantInt::get(lhs->getType(), 0));
+        lhs = builder_->CreateICmpNE(lhs, zero, "tobool");
+    }
+
+    // Short-circuit: if lhs is true, skip rhs
+    auto* rhsBB   = llvm::BasicBlock::Create(*context_, "or.rhs",  fn);
+    auto* mergeBB = llvm::BasicBlock::Create(*context_, "or.merge", fn);
+    auto* lhsBB   = builder_->GetInsertBlock();
+    builder_->CreateCondBr(lhs, mergeBB, rhsBB);
+
+    builder_->SetInsertPoint(rhsBB);
+    auto* rhs = castValue(visit(ctx->expression(1)));
+    if (!rhs->getType()->isIntegerTy(1)) {
+        llvm::Value* zero = rhs->getType()->isPointerTy()
+            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(rhs->getType())))
+            : static_cast<llvm::Value*>(llvm::ConstantInt::get(rhs->getType(), 0));
+        rhs = builder_->CreateICmpNE(rhs, zero, "tobool");
+    }
+    auto* rhsEndBB = builder_->GetInsertBlock();
+    builder_->CreateBr(mergeBB);
+
+    builder_->SetInsertPoint(mergeBB);
+    auto* phi = builder_->CreatePHI(llvm::Type::getInt1Ty(*context_), 2, "or");
+    phi->addIncoming(llvm::ConstantInt::getTrue(*context_), lhsBB);
+    phi->addIncoming(rhs, rhsEndBB);
+    return static_cast<llvm::Value*>(phi);
 }
 
 std::any IRGen::visitBitNotExpr(LuxParser::BitNotExprContext* ctx) {
-    auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* val = castValue(visit(ctx->expression()));
     return static_cast<llvm::Value*>(builder_->CreateNot(val, "bitnot"));
 }
 
-std::any IRGen::visitShiftExpr(LuxParser::ShiftExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+std::any IRGen::visitLshiftExpr(LuxParser::LshiftExprContext* ctx) {
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
+    return static_cast<llvm::Value*>(builder_->CreateShl(l, r, "shl"));
+}
 
-    switch (ctx->op->getType()) {
-    case LuxLexer::LSHIFT:
-        return static_cast<llvm::Value*>(builder_->CreateShl(l, r, "shl"));
-    case LuxLexer::RSHIFT:
-        return static_cast<llvm::Value*>(builder_->CreateAShr(l, r, "shr"));
-    default:
-        return static_cast<llvm::Value*>(llvm::UndefValue::get(l->getType()));
-    }
+std::any IRGen::visitRshiftExpr(LuxParser::RshiftExprContext* ctx) {
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
+    auto [l, r] = promoteArithmetic(lhs, rhs);
+    return static_cast<llvm::Value*>(builder_->CreateAShr(l, r, "shr"));
 }
 
 std::any IRGen::visitBitAndExpr(LuxParser::BitAndExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateAnd(l, r, "bitand"));
 }
 
 std::any IRGen::visitBitXorExpr(LuxParser::BitXorExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateXor(l, r, "bitxor"));
 }
 
 std::any IRGen::visitBitOrExpr(LuxParser::BitOrExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateOr(l, r, "bitor"));
 }
 
+// Helper: resolve an lvalue expression to its pointer and LLVM type.
+// Supports: bare variable (x), struct field (p.x), pointer dereference (*p).
+std::pair<llvm::Value*, llvm::Type*>
+IRGen::resolveIncrDecrTarget(LuxParser::ExpressionContext* expr) {
+    std::pair<llvm::Value*, llvm::Type*> undef = { nullptr, nullptr };
+
+    // Case 1: bare variable (x++ / ++x)
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto name = ident->IDENTIFIER()->getText();
+        auto it = locals_.find(name);
+        if (it == locals_.end()) {
+            std::cerr << "lux: undefined variable '" << name << "'\n";
+            return undef;
+        }
+        auto* alloca = it->second.alloca;
+        return { alloca, alloca->getAllocatedType() };
+    }
+
+    // Case 2: struct field access (p.x++ / ++p.x)
+    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+        auto fieldName = fa->IDENTIFIER()->getText();
+        auto* baseIdent = dynamic_cast<LuxParser::IdentExprContext*>(fa->expression());
+        if (!baseIdent) {
+            std::cerr << "lux: ++/-- on nested field access not supported\n";
+            return undef;
+        }
+        auto varName = baseIdent->IDENTIFIER()->getText();
+        auto it = locals_.find(varName);
+        if (it == locals_.end()) {
+            std::cerr << "lux: undefined variable '" << varName << "'\n";
+            return undef;
+        }
+        auto* alloca   = it->second.alloca;
+        auto* structTI = it->second.typeInfo;
+        if (!structTI || (structTI->kind != TypeKind::Struct &&
+                          structTI->kind != TypeKind::Union)) {
+            std::cerr << "lux: '" << varName << "' is not a struct or union\n";
+            return undef;
+        }
+        int fieldIdx = -1;
+        const TypeInfo* fieldTI = nullptr;
+        for (size_t f = 0; f < structTI->fields.size(); f++) {
+            if (structTI->fields[f].name == fieldName) {
+                fieldIdx = static_cast<int>(f);
+                fieldTI = structTI->fields[f].typeInfo;
+                break;
+            }
+        }
+        if (fieldIdx < 0) {
+            std::cerr << "lux: '" << structTI->name
+                      << "' has no field '" << fieldName << "'\n";
+            return undef;
+        }
+        auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        if (structTI->kind == TypeKind::Union) {
+            return { alloca, fieldLLTy };
+        }
+        auto* structTy = alloca->getAllocatedType();
+        auto* gep = builder_->CreateStructGEP(structTy, alloca,
+                                               fieldIdx, fieldName + "_ptr");
+        return { gep, fieldLLTy };
+    }
+
+    // Case 3: pointer dereference (*p++ / ++*p)
+    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr)) {
+        auto* ptrVal = castValue(visit(deref->expression()));
+        auto* recvTI = resolveExprTypeInfo(deref->expression());
+        if (!recvTI || recvTI->kind != TypeKind::Pointer || !recvTI->elementType) {
+            std::cerr << "lux: ++/-- dereference requires a pointer\n";
+            return undef;
+        }
+        auto* elemTy = recvTI->elementType->toLLVMType(*context_,
+                                                         module_->getDataLayout());
+        return { ptrVal, elemTy };
+    }
+
+    std::cerr << "lux: ++/-- requires a variable (lvalue)\n";
+    return undef;
+}
+
 std::any IRGen::visitPreIncrExpr(LuxParser::PreIncrExprContext* ctx) {
-    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression());
-    if (!identBase) {
-        std::cerr << "lux: ++/-- requires a variable\n";
+    auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
+    if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto name = identBase->IDENTIFIER()->getText();
-    auto it = locals_.find(name);
-    if (it == locals_.end()) {
-        std::cerr << "lux: undefined variable '" << name << "'\n";
-        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto* alloca = it->second.alloca;
-    auto* varTy = alloca->getAllocatedType();
-    auto* cur = builder_->CreateLoad(varTy, alloca, name);
-    auto* one = llvm::ConstantInt::get(varTy, 1);
+    auto* cur = builder_->CreateLoad(ty, ptr, "preinc_load");
+    auto* one = llvm::ConstantInt::get(ty, 1);
     auto* inc = builder_->CreateAdd(cur, one, "preinc");
-    builder_->CreateStore(inc, alloca);
+    builder_->CreateStore(inc, ptr);
     return static_cast<llvm::Value*>(inc);
 }
 
 std::any IRGen::visitPreDecrExpr(LuxParser::PreDecrExprContext* ctx) {
-    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression());
-    if (!identBase) {
-        std::cerr << "lux: ++/-- requires a variable\n";
+    auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
+    if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto name = identBase->IDENTIFIER()->getText();
-    auto it = locals_.find(name);
-    if (it == locals_.end()) {
-        std::cerr << "lux: undefined variable '" << name << "'\n";
-        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto* alloca = it->second.alloca;
-    auto* varTy = alloca->getAllocatedType();
-    auto* cur = builder_->CreateLoad(varTy, alloca, name);
-    auto* one = llvm::ConstantInt::get(varTy, 1);
+    auto* cur = builder_->CreateLoad(ty, ptr, "predec_load");
+    auto* one = llvm::ConstantInt::get(ty, 1);
     auto* dec = builder_->CreateSub(cur, one, "predec");
-    builder_->CreateStore(dec, alloca);
+    builder_->CreateStore(dec, ptr);
     return static_cast<llvm::Value*>(dec);
 }
 
 std::any IRGen::visitPostIncrExpr(LuxParser::PostIncrExprContext* ctx) {
-    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression());
-    if (!identBase) {
-        std::cerr << "lux: ++/-- requires a variable\n";
+    auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
+    if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto name = identBase->IDENTIFIER()->getText();
-    auto it = locals_.find(name);
-    if (it == locals_.end()) {
-        std::cerr << "lux: undefined variable '" << name << "'\n";
-        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto* alloca = it->second.alloca;
-    auto* varTy = alloca->getAllocatedType();
-    auto* old = builder_->CreateLoad(varTy, alloca, name);
-    auto* one = llvm::ConstantInt::get(varTy, 1);
+    auto* old = builder_->CreateLoad(ty, ptr, "postinc_load");
+    auto* one = llvm::ConstantInt::get(ty, 1);
     auto* inc = builder_->CreateAdd(old, one, "postinc");
-    builder_->CreateStore(inc, alloca);
+    builder_->CreateStore(inc, ptr);
     return static_cast<llvm::Value*>(old);
 }
 
 std::any IRGen::visitPostDecrExpr(LuxParser::PostDecrExprContext* ctx) {
-    auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression());
-    if (!identBase) {
-        std::cerr << "lux: ++/-- requires a variable\n";
+    auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
+    if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto name = identBase->IDENTIFIER()->getText();
-    auto it = locals_.find(name);
-    if (it == locals_.end()) {
-        std::cerr << "lux: undefined variable '" << name << "'\n";
-        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto* alloca = it->second.alloca;
-    auto* varTy = alloca->getAllocatedType();
-    auto* old = builder_->CreateLoad(varTy, alloca, name);
-    auto* one = llvm::ConstantInt::get(varTy, 1);
+    auto* old = builder_->CreateLoad(ty, ptr, "postdec_load");
+    auto* one = llvm::ConstantInt::get(ty, 1);
     auto* dec = builder_->CreateSub(old, one, "postdec");
-    builder_->CreateStore(dec, alloca);
+    builder_->CreateStore(dec, ptr);
     return static_cast<llvm::Value*>(old);
 }
 
 std::any IRGen::visitCastExpr(LuxParser::CastExprContext* ctx) {
-    auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* val = castValue(visit(ctx->expression()));
     auto* ti = resolveTypeInfo(ctx->typeSpec());
     auto* targetTy = ti->toLLVMType(*context_, module_->getDataLayout());
     auto* srcTy = val->getType();
@@ -8005,7 +8561,7 @@ std::any IRGen::visitSizeofExpr(LuxParser::SizeofExprContext* ctx) {
 
 std::any IRGen::visitTypeofExpr(LuxParser::TypeofExprContext* ctx) {
     // Resolve expression type at compile-time
-    auto* exprVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* exprVal = castValue(visit(ctx->expression()));
 
     // Try to find TypeInfo for the expression
     std::string typeName = "unknown";
@@ -8046,6 +8602,8 @@ std::any IRGen::visitTypeofExpr(LuxParser::TypeofExprContext* ctx) {
         else if (ty->isIntegerTy(16)) typeName = "int16";
         else if (ty->isIntegerTy(32)) typeName = "int32";
         else if (ty->isIntegerTy(64)) typeName = "int64";
+        else if (ty->isIntegerTy(128)) typeName = "int128";
+        else if (ty->isIntegerTy(256)) typeName = "int32";  // untyped literal
         else if (ty->isFloatTy())     typeName = "float32";
         else if (ty->isDoubleTy())    typeName = "float64";
         else if (ty->isStructTy())    typeName = "string";
@@ -8121,14 +8679,14 @@ std::any IRGen::visitTypeofExpr(LuxParser::TypeofExprContext* ctx) {
 }
 
 std::any IRGen::visitTernaryExpr(LuxParser::TernaryExprContext* ctx) {
-    auto* cond = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
+    auto* cond = castValue(visit(ctx->expression(0)));
     // Convert to i1 if not already bool
     if (!cond->getType()->isIntegerTy(1))
         cond = builder_->CreateICmpNE(cond,
             llvm::ConstantInt::get(cond->getType(), 0), "tobool");
 
-    auto* trueVal  = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
-    auto* falseVal = std::any_cast<llvm::Value*>(visit(ctx->expression(2)));
+    auto* trueVal  = castValue(visit(ctx->expression(1)));
+    auto* falseVal = castValue(visit(ctx->expression(2)));
 
     // Promote to common type
     auto [t, f] = promoteArithmetic(trueVal, falseVal);
@@ -8137,7 +8695,7 @@ std::any IRGen::visitTernaryExpr(LuxParser::TernaryExprContext* ctx) {
 
 std::any IRGen::visitIsExpr(LuxParser::IsExprContext* ctx) {
     // Static type check — resolved at compile time
-    auto* val = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* val = castValue(visit(ctx->expression()));
     auto* targetTI = resolveTypeInfo(ctx->typeSpec());
     auto* targetTy = targetTI->toLLVMType(*context_, module_->getDataLayout());
 
@@ -8148,7 +8706,7 @@ std::any IRGen::visitIsExpr(LuxParser::IsExprContext* ctx) {
 }
 
 std::any IRGen::visitNullCoalExpr(LuxParser::NullCoalExprContext* ctx) {
-    auto* ptrVal = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
+    auto* ptrVal = castValue(visit(ctx->expression(0)));
 
     // Check if pointer is null
     auto* isNull = builder_->CreateICmpEQ(
@@ -8164,14 +8722,14 @@ std::any IRGen::visitNullCoalExpr(LuxParser::NullCoalExprContext* ctx) {
 
     // Non-null path: dereference the pointer to get the value
     builder_->SetInsertPoint(thenBB);
-    auto* defaultVal = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* defaultVal = castValue(visit(ctx->expression(1)));
     auto* loadedVal = builder_->CreateLoad(defaultVal->getType(), ptrVal, "coal.load");
     builder_->CreateBr(mergeBB);
     auto* thenEnd = builder_->GetInsertBlock();
 
     // Null path: use the default value
     builder_->SetInsertPoint(elseBB);
-    auto* fallback = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* fallback = castValue(visit(ctx->expression(1)));
     builder_->CreateBr(mergeBB);
     auto* elseEnd = builder_->GetInsertBlock();
 
@@ -8186,8 +8744,8 @@ std::any IRGen::visitNullCoalExpr(LuxParser::NullCoalExprContext* ctx) {
 
 std::any IRGen::visitRangeExpr(LuxParser::RangeExprContext* ctx) {
     // Range creates a {start, end} struct
-    auto* startVal = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* endVal   = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* startVal = castValue(visit(ctx->expression(0)));
+    auto* endVal   = castValue(visit(ctx->expression(1)));
 
     auto* elemTy = startVal->getType();
     auto* rangeTy = llvm::StructType::get(*context_, {elemTy, elemTy});
@@ -8200,8 +8758,8 @@ std::any IRGen::visitRangeExpr(LuxParser::RangeExprContext* ctx) {
 
 std::any IRGen::visitRangeInclExpr(LuxParser::RangeInclExprContext* ctx) {
     // Inclusive range: same struct as range, semantics differ at use site (for loop)
-    auto* startVal = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* endVal   = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* startVal = castValue(visit(ctx->expression(0)));
+    auto* endVal   = castValue(visit(ctx->expression(1)));
 
     auto* elemTy = startVal->getType();
     auto* rangeTy = llvm::StructType::get(*context_, {elemTy, elemTy});
@@ -8221,9 +8779,155 @@ std::any IRGen::visitParenExpr(LuxParser::ParenExprContext* ctx) {
     return visit(ctx->expression());
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  Tuple expressions
+// ═══════════════════════════════════════════════════════════════════════
+
+std::any IRGen::visitTupleLitExpr(LuxParser::TupleLitExprContext* ctx) {
+    auto exprs = ctx->expression();
+
+    // Evaluate each element and collect LLVM values + types
+    std::vector<llvm::Value*> vals;
+    std::vector<llvm::Type*>  elemTypes;
+    for (auto* e : exprs) {
+        auto* v = castValue(visit(e));
+        vals.push_back(v);
+        elemTypes.push_back(v->getType());
+    }
+
+    // Build anonymous struct: { T0, T1, ... }
+    auto* tupleTy = llvm::StructType::get(*context_, elemTypes);
+    llvm::Value* agg = llvm::ConstantAggregateZero::get(tupleTy);
+    for (unsigned i = 0; i < vals.size(); i++)
+        agg = builder_->CreateInsertValue(agg, vals[i], {i});
+
+    return static_cast<llvm::Value*>(agg);
+}
+
+std::any IRGen::visitTupleIndexExpr(LuxParser::TupleIndexExprContext* ctx) {
+    unsigned idx = std::stoul(ctx->INT_LIT()->getText());
+
+    // Optimized path: base is local variable — use GEP+Load
+    if (auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(
+            ctx->expression())) {
+        auto varName = identBase->IDENTIFIER()->getText();
+        auto it = locals_.find(varName);
+        if (it != locals_.end() && it->second.typeInfo &&
+            it->second.typeInfo->kind == TypeKind::Tuple) {
+            auto* alloca  = it->second.alloca;
+            auto* tupleTI = it->second.typeInfo;
+            auto* elemTI  = tupleTI->tupleElements[idx];
+            auto* elemTy  = elemTI->toLLVMType(*context_,
+                                                module_->getDataLayout());
+            auto* tupleTy = alloca->getAllocatedType();
+            auto* gep = builder_->CreateStructGEP(tupleTy, alloca, idx,
+                                                   "tup_ptr");
+            return static_cast<llvm::Value*>(
+                builder_->CreateLoad(elemTy, gep, "tup_elem"));
+        }
+    }
+
+    // Generic path: evaluate base, extract from value
+    auto* tupleVal = castValue(visit(ctx->expression()));
+    return static_cast<llvm::Value*>(
+        builder_->CreateExtractValue(tupleVal, {idx}, "tup_elem"));
+}
+
+std::any IRGen::visitTupleArrowIndexExpr(
+        LuxParser::TupleArrowIndexExprContext* ctx) {
+    unsigned idx = std::stoul(ctx->INT_LIT()->getText());
+
+    auto* ptrVal = castValue(visit(ctx->expression()));
+    auto* exprTI = resolveExprTypeInfo(ctx->expression());
+
+    const TypeInfo* tupleTI = nullptr;
+    if (exprTI && exprTI->kind == TypeKind::Pointer)
+        tupleTI = exprTI->pointeeType;
+
+    if (!tupleTI || tupleTI->kind != TypeKind::Tuple) {
+        std::cerr << "lux: '->N' requires pointer to tuple\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* elemTI  = tupleTI->tupleElements[idx];
+    auto* elemTy  = elemTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* tupleTy = tupleTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* gep = builder_->CreateStructGEP(tupleTy, ptrVal, idx, "tup_arr_ptr");
+    return static_cast<llvm::Value*>(
+        builder_->CreateLoad(elemTy, gep, "tup_arr_elem"));
+}
+
+// Chained tuple dot access: e.g. nested.1.0  (FLOAT_LIT "1.0" → indices 1,0)
+std::any IRGen::visitChainedTupleIndexExpr(
+        LuxParser::ChainedTupleIndexExprContext* ctx) {
+    auto text = ctx->FLOAT_LIT()->getText();
+    auto dotPos = text.find('.');
+    unsigned idx1 = std::stoul(text.substr(0, dotPos));
+    unsigned idx2 = std::stoul(text.substr(dotPos + 1));
+
+    // Optimized path: base is local variable — use GEP+Load+ExtractValue
+    if (auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(
+            ctx->expression())) {
+        auto varName = identBase->IDENTIFIER()->getText();
+        auto it = locals_.find(varName);
+        if (it != locals_.end() && it->second.typeInfo &&
+            it->second.typeInfo->kind == TypeKind::Tuple &&
+            idx1 < it->second.typeInfo->tupleElements.size()) {
+            auto* alloca  = it->second.alloca;
+            auto* tupleTI = it->second.typeInfo;
+            auto* innerTI = tupleTI->tupleElements[idx1];
+            auto* innerTy = innerTI->toLLVMType(*context_,
+                                                 module_->getDataLayout());
+            auto* tupleTy = alloca->getAllocatedType();
+            auto* gep = builder_->CreateStructGEP(tupleTy, alloca, idx1,
+                                                   "tup_ptr");
+            auto* innerVal = builder_->CreateLoad(innerTy, gep, "tup_inner");
+            return static_cast<llvm::Value*>(
+                builder_->CreateExtractValue(innerVal, {idx2}, "tup_chain"));
+        }
+    }
+
+    // Generic path: evaluate base, extract twice
+    auto* tupleVal = castValue(visit(ctx->expression()));
+    auto* innerVal = builder_->CreateExtractValue(tupleVal, {idx1}, "tup_inner");
+    return static_cast<llvm::Value*>(
+        builder_->CreateExtractValue(innerVal, {idx2}, "tup_chain"));
+}
+
+// Chained tuple arrow access: e.g. ptr->1.0  (FLOAT_LIT "1.0" → indices 1,0)
+std::any IRGen::visitChainedTupleArrowIndexExpr(
+        LuxParser::ChainedTupleArrowIndexExprContext* ctx) {
+    auto text = ctx->FLOAT_LIT()->getText();
+    auto dotPos = text.find('.');
+    unsigned idx1 = std::stoul(text.substr(0, dotPos));
+    unsigned idx2 = std::stoul(text.substr(dotPos + 1));
+
+    auto* ptrVal = castValue(visit(ctx->expression()));
+    auto* exprTI = resolveExprTypeInfo(ctx->expression());
+
+    const TypeInfo* tupleTI = nullptr;
+    if (exprTI && exprTI->kind == TypeKind::Pointer)
+        tupleTI = exprTI->pointeeType;
+
+    if (!tupleTI || tupleTI->kind != TypeKind::Tuple) {
+        std::cerr << "lux: '->N.M' requires pointer to tuple\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* tupleTy = tupleTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* innerTI = tupleTI->tupleElements[idx1];
+    auto* innerTy = innerTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* gep = builder_->CreateStructGEP(tupleTy, ptrVal, idx1, "tup_arr_ptr");
+    auto* innerVal = builder_->CreateLoad(innerTy, gep, "tup_arr_inner");
+    return static_cast<llvm::Value*>(
+        builder_->CreateExtractValue(innerVal, {idx2}, "tup_arr_chain"));
+}
+
 std::any IRGen::visitRelExpr(LuxParser::RelExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
 
@@ -8250,8 +8954,39 @@ std::any IRGen::visitRelExpr(LuxParser::RelExprContext* ctx) {
 }
 
 std::any IRGen::visitEqExpr(LuxParser::EqExprContext* ctx) {
-    auto* lhs = std::any_cast<llvm::Value*>(visit(ctx->expression(0)));
-    auto* rhs = std::any_cast<llvm::Value*>(visit(ctx->expression(1)));
+    auto* lhs = castValue(visit(ctx->expression(0)));
+    auto* rhs = castValue(visit(ctx->expression(1)));
+
+    // String comparison: delegate to lux_compareTo(ptr,len,ptr,len)
+    if (lhs->getType()->isStructTy() && rhs->getType()->isStructTy()) {
+        auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
+
+        auto* lPtr = builder_->CreateExtractValue(lhs, 0, "lhs_ptr");
+        auto* lLen = builder_->CreateExtractValue(lhs, 1, "lhs_len");
+        auto* rPtr = builder_->CreateExtractValue(rhs, 0, "rhs_ptr");
+        auto* rLen = builder_->CreateExtractValue(rhs, 1, "rhs_len");
+
+        auto callee = declareBuiltin("lux_compareTo", i32Ty,
+                                     {ptrTy, usizeTy, ptrTy, usizeTy});
+        auto* cmpResult = builder_->CreateCall(callee,
+                                               {lPtr, lLen, rPtr, rLen}, "strcmp");
+
+        auto* zero = llvm::ConstantInt::get(i32Ty, 0);
+        switch (ctx->op->getType()) {
+        case LuxLexer::EQ:
+            return static_cast<llvm::Value*>(
+                builder_->CreateICmpEQ(cmpResult, zero, "streq"));
+        case LuxLexer::NEQ:
+            return static_cast<llvm::Value*>(
+                builder_->CreateICmpNE(cmpResult, zero, "strneq"));
+        default:
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt1Ty(*context_)));
+        }
+    }
+
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
 
@@ -8272,10 +9007,17 @@ std::any IRGen::visitEqExpr(LuxParser::EqExprContext* ctx) {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
+    // Guard: null context always returns int32 fallback
+    if (!ctx) {
+        std::cerr << "lux: internal error: null type context\n";
+        return typeRegistry_.lookup("int32");
+    }
+
     // Check for pointer type: *T
     if (isPointerType(ctx)) {
         auto* inner = ctx->typeSpec(0);
         auto* pointeeTI = resolveTypeInfo(inner);
+        if (!pointeeTI) return typeRegistry_.lookup("int32");
         auto ptrName = "*" + pointeeTI->name;
 
         // Check if pointer type already registered
@@ -8298,12 +9040,14 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
     if (auto* fnSpec = ctx->fnTypeSpec()) {
         auto specs = fnSpec->typeSpec();
         auto* retTI = resolveTypeInfo(specs.back());
+        if (!retTI) return typeRegistry_.lookup("int32");
 
         // Build a canonical name for the function type
         std::string fnName = "fn(";
         for (size_t i = 0; i + 1 < specs.size(); i++) {
             if (i > 0) fnName += ", ";
-            fnName += resolveTypeInfo(specs[i])->name;
+            auto* pTI = resolveTypeInfo(specs[i]);
+            fnName += pTI ? pTI->name : "<error>";
         }
         fnName += ") -> " + retTI->name;
 
@@ -8324,7 +9068,81 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
         return typeRegistry_.lookup(fnName);
     }
 
-    // Generic extended type: Vec<int32>, Map<string, int64>
+    // Built-in collection types: vec<T>, map<K,V>, set<T>
+    std::string nativeBaseName;
+    if (ctx->VEC())      nativeBaseName = "Vec";
+    else if (ctx->MAP()) nativeBaseName = "Map";
+    else if (ctx->SET()) nativeBaseName = "Set";
+
+    if (!nativeBaseName.empty()) {
+        auto typeParams = ctx->typeSpec();
+        if (typeParams.size() == 1) {
+            auto* elemTI = resolveTypeInfo(typeParams[0]);
+            if (!elemTI) return typeRegistry_.lookup("int32");
+            auto fullName = nativeBaseName + "<" + elemTI->name + ">";
+            if (auto* existing = typeRegistry_.lookup(fullName))
+                return existing;
+
+            TypeInfo ti;
+            ti.name = fullName;
+            ti.kind = TypeKind::Extended;
+            ti.bitWidth = 0;
+            ti.isSigned = false;
+            ti.builtinSuffix = elemTI->builtinSuffix;
+            ti.elementType = elemTI;
+            ti.extendedKind = nativeBaseName;
+            typeRegistry_.registerType(std::move(ti));
+            return typeRegistry_.lookup(fullName);
+        } else if (typeParams.size() == 2) {
+            auto* keyTI = resolveTypeInfo(typeParams[0]);
+            auto* valTI = resolveTypeInfo(typeParams[1]);
+            if (!keyTI || !valTI) return typeRegistry_.lookup("int32");
+            auto fullName = nativeBaseName + "<" + keyTI->name + ", " + valTI->name + ">";
+            if (auto* existing = typeRegistry_.lookup(fullName))
+                return existing;
+
+            TypeInfo ti;
+            ti.name = fullName;
+            ti.kind = TypeKind::Extended;
+            ti.bitWidth = 0;
+            ti.isSigned = false;
+            ti.builtinSuffix = keyTI->builtinSuffix + "_" + valTI->builtinSuffix;
+            ti.keyType = keyTI;
+            ti.valueType = valTI;
+            ti.extendedKind = nativeBaseName;
+            typeRegistry_.registerType(std::move(ti));
+            return typeRegistry_.lookup(fullName);
+        }
+        std::cerr << "lux: invalid type parameters for '" << nativeBaseName << "'\n";
+        return typeRegistry_.lookup("int32");
+    }
+
+    // Built-in tuple type: tuple<T1, T2, ...>
+    if (ctx->TUPLE()) {
+        auto typeParams = ctx->typeSpec();
+        std::string fullName = "tuple<";
+        std::vector<const TypeInfo*> elems;
+        for (size_t i = 0; i < typeParams.size(); i++) {
+            if (i > 0) fullName += ", ";
+            auto* elemTI = resolveTypeInfo(typeParams[i]);
+            fullName += elemTI ? elemTI->name : "<error>";
+            elems.push_back(elemTI);
+        }
+        fullName += ">";
+        if (auto* existing = typeRegistry_.lookup(fullName))
+            return existing;
+
+        TypeInfo ti;
+        ti.name = fullName;
+        ti.kind = TypeKind::Tuple;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        ti.tupleElements = std::move(elems);
+        typeRegistry_.registerType(std::move(ti));
+        return typeRegistry_.lookup(fullName);
+    }
+
+    // Generic extended type: Task<int32>, etc. (user-defined generics)
     if (ctx->LT()) {
         auto baseName = ctx->IDENTIFIER()->getText();
         auto typeParams = ctx->typeSpec();
@@ -8332,6 +9150,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
         if (typeParams.size() == 1) {
             // Single type param: Vec<T>
             auto* elemTI = resolveTypeInfo(typeParams[0]);
+            if (!elemTI) return typeRegistry_.lookup("int32");
             auto fullName = baseName + "<" + elemTI->name + ">";
             if (auto* existing = typeRegistry_.lookup(fullName))
                 return existing;
@@ -8350,6 +9169,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
             // Two type params: Map<K, V>
             auto* keyTI = resolveTypeInfo(typeParams[0]);
             auto* valTI = resolveTypeInfo(typeParams[1]);
+            if (!keyTI || !valTI) return typeRegistry_.lookup("int32");
             auto fullName = baseName + "<" + keyTI->name + ", " + valTI->name + ">";
             if (auto* existing = typeRegistry_.lookup(fullName))
                 return existing;
@@ -8366,7 +9186,8 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
             typeRegistry_.registerType(std::move(ti));
             return typeRegistry_.lookup(fullName);
         }
-        return nullptr;
+        std::cerr << "lux: invalid type parameters for '" << baseName << "'\n";
+        return typeRegistry_.lookup("int32");
     }
 
     // Unwrap array dimensions [][]...T to reach the base primitive type
@@ -8405,7 +9226,42 @@ bool IRGen::isPointerType(LuxParser::TypeSpecContext* ctx) {
 }
 
 const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
-    // Identifier: look up in locals, then C globals
+    // ── Literals ─────────────────────────────────────────────────────
+    if (dynamic_cast<LuxParser::IntLitExprContext*>(ctx) ||
+        dynamic_cast<LuxParser::HexLitExprContext*>(ctx) ||
+        dynamic_cast<LuxParser::OctLitExprContext*>(ctx) ||
+        dynamic_cast<LuxParser::BinLitExprContext*>(ctx))
+        return typeRegistry_.lookup("int32");
+
+    if (dynamic_cast<LuxParser::FloatLitExprContext*>(ctx))
+        return typeRegistry_.lookup("float64");
+
+    if (dynamic_cast<LuxParser::BoolLitExprContext*>(ctx))
+        return typeRegistry_.lookup("bool");
+
+    if (dynamic_cast<LuxParser::CharLitExprContext*>(ctx))
+        return typeRegistry_.lookup("char");
+
+    if (dynamic_cast<LuxParser::StrLitExprContext*>(ctx))
+        return typeRegistry_.lookup("string");
+
+    if (dynamic_cast<LuxParser::CStrLitExprContext*>(ctx)) {
+        auto ptrName = "*char";
+        if (auto* existing = typeRegistry_.lookup(ptrName))
+            return existing;
+        auto* charTI = typeRegistry_.lookup("char");
+        TypeInfo ti;
+        ti.name = ptrName;
+        ti.kind = TypeKind::Pointer;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        ti.builtinSuffix = "ptr";
+        ti.pointeeType = charTI;
+        typeRegistry_.registerType(std::move(ti));
+        return typeRegistry_.lookup(ptrName);
+    }
+
+    // ── Identifier ───────────────────────────────────────────────────
     if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(ctx)) {
         auto name = ident->IDENTIFIER()->getText();
         auto it = locals_.find(name);
@@ -8415,7 +9271,7 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         return nullptr;
     }
 
-    // Dot access: resolve base struct/union, find field type
+    // ── Dot access: resolve base struct/union, find field type ───────
     if (auto* dot = dynamic_cast<LuxParser::FieldAccessExprContext*>(ctx)) {
         auto* baseTI = resolveExprTypeInfo(dot->expression());
         if (!baseTI || (baseTI->kind != TypeKind::Struct && baseTI->kind != TypeKind::Union)) return nullptr;
@@ -8426,7 +9282,7 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         return nullptr;
     }
 
-    // Arrow access: resolve base pointer, dereference, find field type
+    // ── Arrow access: resolve base pointer, dereference, find field ──
     if (auto* arrow = dynamic_cast<LuxParser::ArrowAccessExprContext*>(ctx)) {
         auto* baseTI = resolveExprTypeInfo(arrow->expression());
         if (!baseTI || baseTI->kind != TypeKind::Pointer) return nullptr;
@@ -8439,28 +9295,388 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         return nullptr;
     }
 
-    // Additive: ptr + int → pointer type preserved
+    // ── Address-of: &expr → pointer type ──────────────────────────────
+    if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(ctx)) {
+        auto* innerTI = resolveExprTypeInfo(addr->expression());
+        if (!innerTI) return nullptr;
+        auto ptrName = "*" + innerTI->name;
+        if (auto* existing = typeRegistry_.lookup(ptrName))
+            return existing;
+        TypeInfo ti;
+        ti.name = ptrName;
+        ti.kind = TypeKind::Pointer;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        ti.builtinSuffix = "ptr";
+        ti.pointeeType = innerTI;
+        typeRegistry_.registerType(std::move(ti));
+        return typeRegistry_.lookup(ptrName);
+    }
+
+    // ── Dereference: *expr → pointee type ────────────────────────────
+    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(ctx)) {
+        auto* baseTI = resolveExprTypeInfo(deref->expression());
+        if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType)
+            return baseTI->pointeeType;
+        return nullptr;
+    }
+
+    // ── Negation: -expr → same type ─────────────────────────────────
+    if (auto* neg = dynamic_cast<LuxParser::NegExprContext*>(ctx))
+        return resolveExprTypeInfo(neg->expression());
+
+    // ── Logical NOT: !expr → bool ───────────────────────────────────
+    if (dynamic_cast<LuxParser::LogicalNotExprContext*>(ctx))
+        return typeRegistry_.lookup("bool");
+
+    // ── Bitwise NOT: ~expr → same type ──────────────────────────────
+    if (auto* bnot = dynamic_cast<LuxParser::BitNotExprContext*>(ctx))
+        return resolveExprTypeInfo(bnot->expression());
+
+    // ── Relational / Equality → bool ────────────────────────────────
+    if (dynamic_cast<LuxParser::RelExprContext*>(ctx) ||
+        dynamic_cast<LuxParser::EqExprContext*>(ctx) ||
+        dynamic_cast<LuxParser::LogicalAndExprContext*>(ctx) ||
+        dynamic_cast<LuxParser::LogicalOrExprContext*>(ctx))
+        return typeRegistry_.lookup("bool");
+
+    // ── Arithmetic: wider of two operands ───────────────────────────
+    if (auto* mul = dynamic_cast<LuxParser::MulExprContext*>(ctx)) {
+        auto* lhs = resolveExprTypeInfo(mul->expression(0));
+        auto* rhs = resolveExprTypeInfo(mul->expression(1));
+        if (lhs && rhs && lhs->kind == rhs->kind)
+            return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
+        return lhs ? lhs : rhs;
+    }
+
+    // ── Additive: ptr + int → pointer, else wider ───────────────────
     if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(ctx)) {
         auto* lhsTI = resolveExprTypeInfo(add->expression(0));
         if (lhsTI && lhsTI->kind == TypeKind::Pointer) return lhsTI;
         auto* rhsTI = resolveExprTypeInfo(add->expression(1));
         if (rhsTI && rhsTI->kind == TypeKind::Pointer) return rhsTI;
-        return lhsTI;
+        if (lhsTI && rhsTI && lhsTI->kind == rhsTI->kind)
+            return lhsTI->bitWidth >= rhsTI->bitWidth ? lhsTI : rhsTI;
+        return lhsTI ? lhsTI : rhsTI;
     }
 
-    // Cast: resolve target type
-    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(ctx)) {
+    // ── Shift: type of left operand ─────────────────────────────────
+    if (auto* lsh = dynamic_cast<LuxParser::LshiftExprContext*>(ctx))
+        return resolveExprTypeInfo(lsh->expression(0));
+    if (auto* rsh = dynamic_cast<LuxParser::RshiftExprContext*>(ctx))
+        return resolveExprTypeInfo(rsh->expression(0));
+
+    // ── Bitwise AND/XOR/OR: wider of two ────────────────────────────
+    if (auto* ba = dynamic_cast<LuxParser::BitAndExprContext*>(ctx)) {
+        auto* lhs = resolveExprTypeInfo(ba->expression(0));
+        auto* rhs = resolveExprTypeInfo(ba->expression(1));
+        if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
+        return lhs ? lhs : rhs;
+    }
+    if (auto* bx = dynamic_cast<LuxParser::BitXorExprContext*>(ctx)) {
+        auto* lhs = resolveExprTypeInfo(bx->expression(0));
+        auto* rhs = resolveExprTypeInfo(bx->expression(1));
+        if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
+        return lhs ? lhs : rhs;
+    }
+    if (auto* bo = dynamic_cast<LuxParser::BitOrExprContext*>(ctx)) {
+        auto* lhs = resolveExprTypeInfo(bo->expression(0));
+        auto* rhs = resolveExprTypeInfo(bo->expression(1));
+        if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
+        return lhs ? lhs : rhs;
+    }
+
+    // ── Ternary: type of true branch ────────────────────────────────
+    if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(ctx))
+        return resolveExprTypeInfo(tern->expression(1));
+
+    // ── Cast: resolve target type ───────────────────────────────────
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(ctx))
         return resolveTypeInfo(cast->typeSpec());
-    }
 
-    // Paren: unwrap
-    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(ctx)) {
+    // ── Paren: unwrap ───────────────────────────────────────────────
+    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(ctx))
         return resolveExprTypeInfo(paren->expression());
+
+    // ── Struct literal: Type { fields } ─────────────────────────────
+    if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(ctx)) {
+        auto ids = sl->IDENTIFIER();
+        if (!ids.empty()) return typeRegistry_.lookup(ids[0]->getText());
+        return nullptr;
     }
 
-    // Index: array[i] → element type (which is the variable's typeInfo)
+    // ── Array literal: [expr, ...] → element type ───────────────────
+    if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(ctx)) {
+        auto elems = arr->expression();
+        if (!elems.empty()) return resolveExprTypeInfo(elems[0]);
+        return nullptr;
+    }
+
+    // ── Tuple literal: (expr, expr, ...) ────────────────────────────
+    if (auto* tl = dynamic_cast<LuxParser::TupleLitExprContext*>(ctx)) {
+        auto exprs = tl->expression();
+        std::string fullName = "tuple<";
+        std::vector<const TypeInfo*> elems;
+        for (size_t i = 0; i < exprs.size(); i++) {
+            if (i > 0) fullName += ", ";
+            auto* elemTI = resolveExprTypeInfo(exprs[i]);
+            if (!elemTI) elemTI = typeRegistry_.lookup("int32");
+            fullName += elemTI->name;
+            elems.push_back(elemTI);
+        }
+        fullName += ">";
+        if (auto* existing = typeRegistry_.lookup(fullName))
+            return existing;
+        TypeInfo ti;
+        ti.name = fullName;
+        ti.kind = TypeKind::Tuple;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        ti.tupleElements = std::move(elems);
+        typeRegistry_.registerType(std::move(ti));
+        return typeRegistry_.lookup(fullName);
+    }
+
+    // ── Tuple index: expr.N → element type ──────────────────────────
+    if (auto* ti = dynamic_cast<LuxParser::TupleIndexExprContext*>(ctx)) {
+        auto* baseTI = resolveExprTypeInfo(ti->expression());
+        if (!baseTI || baseTI->kind != TypeKind::Tuple) return nullptr;
+        unsigned idx = std::stoul(ti->INT_LIT()->getText());
+        if (idx < baseTI->tupleElements.size())
+            return baseTI->tupleElements[idx];
+        return nullptr;
+    }
+
+    // ── Chained tuple index: expr.N.M → inner element type ─────────
+    if (auto* cti = dynamic_cast<LuxParser::ChainedTupleIndexExprContext*>(ctx)) {
+        auto* baseTI = resolveExprTypeInfo(cti->expression());
+        if (!baseTI || baseTI->kind != TypeKind::Tuple) return nullptr;
+        auto text = cti->FLOAT_LIT()->getText();
+        auto dotPos = text.find('.');
+        unsigned idx1 = std::stoul(text.substr(0, dotPos));
+        unsigned idx2 = std::stoul(text.substr(dotPos + 1));
+        if (idx1 >= baseTI->tupleElements.size()) return nullptr;
+        auto* innerTI = baseTI->tupleElements[idx1];
+        if (!innerTI || innerTI->kind != TypeKind::Tuple) return nullptr;
+        if (idx2 >= innerTI->tupleElements.size()) return nullptr;
+        return innerTI->tupleElements[idx2];
+    }
+
+    // ── Tuple arrow index: expr->N → element type ───────────────────
+    if (auto* tai = dynamic_cast<LuxParser::TupleArrowIndexExprContext*>(ctx)) {
+        auto* baseTI = resolveExprTypeInfo(tai->expression());
+        if (!baseTI || baseTI->kind != TypeKind::Pointer) return nullptr;
+        auto* tupleTI = baseTI->pointeeType;
+        if (!tupleTI || tupleTI->kind != TypeKind::Tuple) return nullptr;
+        unsigned idx = std::stoul(tai->INT_LIT()->getText());
+        if (idx < tupleTI->tupleElements.size())
+            return tupleTI->tupleElements[idx];
+        return nullptr;
+    }
+
+    // ── Chained tuple arrow index: expr->N.M → inner element type ──
+    if (auto* ctai = dynamic_cast<LuxParser::ChainedTupleArrowIndexExprContext*>(ctx)) {
+        auto* baseTI = resolveExprTypeInfo(ctai->expression());
+        if (!baseTI || baseTI->kind != TypeKind::Pointer) return nullptr;
+        auto* tupleTI = baseTI->pointeeType;
+        if (!tupleTI || tupleTI->kind != TypeKind::Tuple) return nullptr;
+        auto text = ctai->FLOAT_LIT()->getText();
+        auto dotPos = text.find('.');
+        unsigned idx1 = std::stoul(text.substr(0, dotPos));
+        unsigned idx2 = std::stoul(text.substr(dotPos + 1));
+        if (idx1 >= tupleTI->tupleElements.size()) return nullptr;
+        auto* innerTI = tupleTI->tupleElements[idx1];
+        if (!innerTI || innerTI->kind != TypeKind::Tuple) return nullptr;
+        if (idx2 >= innerTI->tupleElements.size()) return nullptr;
+        return innerTI->tupleElements[idx2];
+    }
+
+    // ── Function call: return type from function signature ──────────
+    if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(ctx)) {
+        auto* callee = call->expression();
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(callee)) {
+            auto fname = ident->IDENTIFIER()->getText();
+
+            // Check C FFI bindings first (has accurate TypeInfo with pointers)
+            if (cBindings_) {
+                if (auto* cfunc = cBindings_->findFunction(fname))
+                    if (cfunc->returnType)
+                        return cfunc->returnType;
+            }
+
+            // Resolve mangled name for user functions
+            auto emitName = resolveCallTarget(fname);
+
+            // Check cached function return TypeInfo (handles tuples etc.)
+            auto retIt = fnReturnTypes_.find(emitName);
+            if (retIt != fnReturnTypes_.end())
+                return retIt->second;
+
+            // Look up user function in the LLVM module
+            if (auto* fn = module_->getFunction(emitName)) {
+                auto* retTy = fn->getReturnType();
+                // Map LLVM return type back to TypeInfo
+                if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
+                if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
+                if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
+                if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
+                if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
+                if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
+                if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
+                if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
+                if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
+                if (retTy->isPointerTy())    return typeRegistry_.lookup("*void");
+                if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
+                    if (st->hasName())
+                        return typeRegistry_.lookup(st->getName().str());
+            }
+        }
+        return nullptr;
+    }
+
+    // ── Static method call: Struct::method(args) ────────────────────
+    if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(ctx)) {
+        auto ids = smc->IDENTIFIER();
+        auto structName = ids[0]->getText();
+        auto methodName = ids[1]->getText();
+        auto smIt = staticStructMethods_.find(structName);
+        if (smIt != staticStructMethods_.end()) {
+            auto mIt = smIt->second.find(methodName);
+            if (mIt != smIt->second.end()) {
+                auto* fn = mIt->second;
+                auto* retTy = fn->getReturnType();
+                if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
+                if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
+                if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
+                if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
+                if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
+                if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
+                if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
+                if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
+                if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
+                if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
+                    if (st->hasName())
+                        return typeRegistry_.lookup(st->getName().str());
+            }
+        }
+        return nullptr;
+    }
+
+    // ── Method call: lookup in method registry ──────────────────────
+    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(ctx)) {
+        auto* recvTI = resolveExprTypeInfo(mc->expression());
+        if (!recvTI) return nullptr;
+        auto methodName = mc->IDENTIFIER()->getText();
+        auto* desc = methodRegistry_.lookup(recvTI->kind, methodName);
+        if (desc) {
+            if (desc->returnType == "_self") return recvTI;
+            if (desc->returnType == "_elem") return recvTI->elementType;
+            if (desc->returnType == "_key")  return recvTI->keyType;
+            if (desc->returnType == "_val")  return recvTI->valueType;
+            if (desc->returnType == "_vec_key" && recvTI->keyType) {
+                auto fullName = "Vec<" + recvTI->keyType->name + ">";
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+            }
+            if (desc->returnType == "_vec_val" && recvTI->valueType) {
+                auto fullName = "Vec<" + recvTI->valueType->name + ">";
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+            }
+            return typeRegistry_.lookup(desc->returnType);
+        }
+
+        // Extended type method lookup via ExtendedTypeRegistry
+        if (recvTI->kind == TypeKind::Extended) {
+            auto* extDesc = extTypeRegistry_.lookup(recvTI->extendedKind);
+            if (extDesc) {
+                for (auto& m : extDesc->methods) {
+                    if (m.name != methodName) continue;
+                    if (m.returnType == "_self") return recvTI;
+                    if (m.returnType == "_elem") return recvTI->elementType;
+                    if (m.returnType == "_key")  return recvTI->keyType;
+                    if (m.returnType == "_val")  return recvTI->valueType;
+                    if (m.returnType == "_vec_key" && recvTI->keyType) {
+                        auto fn = "Vec<" + recvTI->keyType->name + ">";
+                        return typeRegistry_.lookup(fn);
+                    }
+                    if (m.returnType == "_vec_val" && recvTI->valueType) {
+                        auto fn = "Vec<" + recvTI->valueType->name + ">";
+                        return typeRegistry_.lookup(fn);
+                    }
+                    return typeRegistry_.lookup(m.returnType);
+                }
+            }
+        }
+
+        // User-defined struct/union instance method lookup
+        if (recvTI->kind == TypeKind::Struct || recvTI->kind == TypeKind::Union) {
+            auto smIt = structMethods_.find(recvTI->name);
+            if (smIt != structMethods_.end()) {
+                auto mIt = smIt->second.find(methodName);
+                if (mIt != smIt->second.end()) {
+                    auto* fn = mIt->second;
+                    auto* retTy = fn->getReturnType();
+                    if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
+                    if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
+                    if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
+                    if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
+                    if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
+                    if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
+                    if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
+                    if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
+                    if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
+                    if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
+                        if (st->hasName())
+                            return typeRegistry_.lookup(st->getName().str());
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    // ── Arrow method call: ptr->method() ────────────────────────────
+    if (auto* amc = dynamic_cast<LuxParser::ArrowMethodCallExprContext*>(ctx)) {
+        auto* baseExpr = amc->expression();
+        std::string methodName = amc->IDENTIFIER()->getText();
+
+        auto* recvTI = resolveExprTypeInfo(baseExpr);
+        if (!recvTI) return nullptr;
+
+        // Dereference pointer to get pointee type
+        if (recvTI->kind == TypeKind::Pointer && recvTI->pointeeType)
+            recvTI = recvTI->pointeeType;
+
+        // Lookup in struct methods
+        if (recvTI->kind == TypeKind::Struct || recvTI->kind == TypeKind::Union) {
+            auto smIt = structMethods_.find(recvTI->name);
+            if (smIt != structMethods_.end()) {
+                auto mIt = smIt->second.find(methodName);
+                if (mIt != smIt->second.end()) {
+                    auto* fn = mIt->second;
+                    auto* retTy = fn->getReturnType();
+                    if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
+                    if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
+                    if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
+                    if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
+                    if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
+                    if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
+                    if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
+                    if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
+                    if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
+                    if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
+                        if (st->hasName())
+                            return typeRegistry_.lookup(st->getName().str());
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    // ── Index: array[i] → element type ──────────────────────────────
     if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(ctx)) {
-        // Walk down to the root variable
         auto* current = static_cast<LuxParser::ExpressionContext*>(idx);
         while (auto* idxCtx = dynamic_cast<LuxParser::IndexExprContext*>(current))
             current = idxCtx->expression(0);
@@ -8468,10 +9684,28 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         if (ident) {
             auto it = locals_.find(ident->IDENTIFIER()->getText());
             if (it != locals_.end())
-                return it->second.typeInfo;  // element type of the array
+                return it->second.typeInfo;
         }
         return nullptr;
     }
+
+    // ── Pre/Post increment/decrement: same type ─────────────────────
+    if (auto* pi = dynamic_cast<LuxParser::PreIncrExprContext*>(ctx))
+        return resolveExprTypeInfo(pi->expression());
+    if (auto* pd = dynamic_cast<LuxParser::PreDecrExprContext*>(ctx))
+        return resolveExprTypeInfo(pd->expression());
+    if (auto* pi = dynamic_cast<LuxParser::PostIncrExprContext*>(ctx))
+        return resolveExprTypeInfo(pi->expression());
+    if (auto* pd = dynamic_cast<LuxParser::PostDecrExprContext*>(ctx))
+        return resolveExprTypeInfo(pd->expression());
+
+    // ── Sizeof → int64 ──────────────────────────────────────────────
+    if (dynamic_cast<LuxParser::SizeofExprContext*>(ctx))
+        return typeRegistry_.lookup("int64");
+
+    // ── Typeof → string ─────────────────────────────────────────────
+    if (dynamic_cast<LuxParser::TypeofExprContext*>(ctx))
+        return typeRegistry_.lookup("string");
 
     return nullptr;
 }
@@ -8479,8 +9713,11 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
 unsigned IRGen::countArrayDims(LuxParser::TypeSpecContext* ctx) {
     unsigned dims = 0;
     while (!ctx->typeSpec().empty()) {
-        // Only count [] array dimensions, not * pointer prefixes
+        // Only count [] array dimensions, not other compound types
         if (ctx->STAR())
+            break;
+        if (ctx->TUPLE() || ctx->VEC() || ctx->MAP() || ctx->SET() ||
+            ctx->LT() || ctx->fnTypeSpec())
             break;
         dims++;
         ctx = ctx->typeSpec(0);
@@ -8573,7 +9810,18 @@ llvm::StructType* IRGen::getOrCreateSetStructType() {
 }
 
 std::string IRGen::getVecSuffix(const TypeInfo* elemTI) {
+    if (!elemTI) return "i32";
     return elemTI->builtinSuffix;
+}
+
+// ── Safe any_cast helper ────────────────────────────────────────────────────
+// Returns nullptr (instead of throwing std::bad_any_cast) when the
+// visit result is empty or holds a different type.
+llvm::Value* IRGen::castValue(std::any result) {
+    if (!result.has_value()) return nullptr;
+    if (auto* ptr = std::any_cast<llvm::Value*>(&result))
+        return *ptr;
+    return nullptr;
 }
 
 // ── Defer infrastructure ────────────────────────────────────────────────────
@@ -8586,6 +9834,74 @@ std::any IRGen::visitDeferStmt(LuxParser::DeferStmtContext* ctx) {
         ds.exprCtx = ctx->exprStmt();
     deferStack_.push_back(ds);
     return {};
+}
+
+// ── Argument count check for builtins ──────────────────────────────────
+bool IRGen::requireArgs(const std::string& funcName,
+                        const std::vector<llvm::Value*>& args,
+                        size_t expected) {
+    if (args.size() >= expected) return true;
+    std::cerr << "lux: internal error: '" << funcName << "' requires "
+              << expected << " argument(s), got " << args.size() << "\n";
+    return false;
+}
+
+// ── Division-by-zero runtime guard ─────────────────────────────────────
+// Emits a conditional branch: if divisor == 0, throw "division by zero".
+// After this call, the insert point is at the "safe" basic block.
+void IRGen::emitDivByZeroGuard(llvm::Value* divisor, antlr4::Token* opToken) {
+    auto* zero    = llvm::ConstantInt::get(divisor->getType(), 0);
+    auto* isZero  = builder_->CreateICmpEQ(divisor, zero, "div_zero_chk");
+
+    auto* fn      = currentFunction_;
+    auto* throwBB = llvm::BasicBlock::Create(*context_, "div.throw", fn);
+    auto* okBB    = llvm::BasicBlock::Create(*context_, "div.ok",    fn);
+
+    builder_->CreateCondBr(isZero, throwBB, okBB);
+
+    builder_->SetInsertPoint(throwBB);
+    {
+        auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+        auto* voidTy  = llvm::Type::getVoidTy(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
+        auto* errorTy = llvm::StructType::getTypeByName(*context_, "Error");
+        auto* strTy   = llvm::StructType::get(*context_, { ptrTy, usizeTy });
+
+        auto* msgGlobal = builder_->CreateGlobalString(
+            "division by zero", ".div_err_msg", 0, module_);
+        auto* msgLen = llvm::ConstantInt::get(usizeTy, 17);
+        llvm::Value* msgStr = llvm::UndefValue::get(strTy);
+        msgStr = builder_->CreateInsertValue(msgStr, msgGlobal, {0});
+        msgStr = builder_->CreateInsertValue(msgStr, msgLen,    {1});
+
+        std::string fileName = module_->getSourceFileName();
+        auto* fileGlobal = builder_->CreateGlobalString(
+            fileName, ".div_err_file", 0, module_);
+        auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
+        llvm::Value* fileStr = llvm::UndefValue::get(strTy);
+        fileStr = builder_->CreateInsertValue(fileStr, fileGlobal, {0});
+        fileStr = builder_->CreateInsertValue(fileStr, fileLen,    {1});
+
+        auto* line = llvm::ConstantInt::get(i32Ty, opToken->getLine());
+        auto* col  = llvm::ConstantInt::get(i32Ty,
+                         opToken->getCharPositionInLine());
+
+        llvm::Value* errVal = llvm::ConstantAggregateZero::get(errorTy);
+        errVal = builder_->CreateInsertValue(errVal, msgStr,  {0});
+        errVal = builder_->CreateInsertValue(errVal, fileStr, {1});
+        errVal = builder_->CreateInsertValue(errVal, line,    {2});
+        errVal = builder_->CreateInsertValue(errVal, col,     {3});
+
+        auto* errAlloca = builder_->CreateAlloca(errorTy, nullptr, "div_err");
+        builder_->CreateStore(errVal, errAlloca);
+
+        auto throwFn = declareBuiltin("lux_eh_throw", voidTy, {ptrTy});
+        builder_->CreateCall(throwFn, {errAlloca});
+        builder_->CreateUnreachable();
+    }
+
+    builder_->SetInsertPoint(okBB);
 }
 
 void IRGen::emitDeferredCleanups() {
@@ -8651,6 +9967,14 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         }
     }
 
+    // Fallback: resolve type for non-identifier expressions (chained calls, etc.)
+    if (!receiverTI)
+        receiverTI = resolveExprTypeInfo(baseExpr);
+
+    // Auto-dereference: ptr.method() → pointee.method()
+    if (receiverTI && receiverTI->kind == TypeKind::Pointer && receiverTI->pointeeType)
+        receiverTI = receiverTI->pointeeType;
+
     // ── Variadic parameter method dispatch ───────────────────────────
     if (!receiverVarName.empty()) {
         auto vit = variadicParams_.find(receiverVarName);
@@ -8692,7 +10016,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         std::vector<llvm::Value*> args;
         if (auto* argList = ctx->argList()) {
             for (auto* argExpr : argList->expression()) {
-                args.push_back(std::any_cast<llvm::Value*>(visit(argExpr)));
+                args.push_back(castValue(visit(argExpr)));
             }
         }
 
@@ -8716,7 +10040,11 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                          ? receiverTI->elementType->builtinSuffix
                          : receiverTI->builtinSuffix;
         }
-        auto cFuncName = extDesc->cPrefix + "_" + methodName + "_" + suffix;
+        // Map Lux method names to C runtime function names
+        auto cMethodName = methodName;
+        if (receiverTI->extendedKind == "Map" && cMethodName == "insert")
+            cMethodName = "set";
+        auto cFuncName = extDesc->cPrefix + "_" + cMethodName + "_" + suffix;
 
         // Get the alloca pointer for the receiver variable
         llvm::Value* recvPtr = nullptr;
@@ -8781,6 +10109,8 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
             retTy = keyLLTy;
         else if (desc->returnType == "_val")
             retTy = valLLTy;
+        else if (desc->returnType == "_vec_key" || desc->returnType == "_vec_val")
+            retTy = getOrCreateVecStructType();
         else if (desc->returnType == "bool")
             retTy = llvm::Type::getInt1Ty(*context_);
         else if (desc->returnType == "usize")
@@ -8881,10 +10211,21 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 // First arg: pointer to the struct instance (&self)
                 auto it = locals_.find(receiverVarName);
                 if (it != locals_.end()) {
-                    callArgs.push_back(it->second.alloca);
+                    // If receiver is already a pointer to struct (e.g. self inside extend),
+                    // load the pointer value; otherwise pass the alloca as &struct.
+                    if (it->second.typeInfo &&
+                        it->second.typeInfo->kind == TypeKind::Pointer &&
+                        it->second.typeInfo->pointeeType &&
+                        it->second.typeInfo->pointeeType->kind == TypeKind::Struct) {
+                        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                        callArgs.push_back(
+                            builder_->CreateLoad(ptrTy, it->second.alloca, "self_load"));
+                    } else {
+                        callArgs.push_back(it->second.alloca);
+                    }
                 } else {
                     // Fallback: evaluate and take address
-                    auto* receiverVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+                    auto* receiverVal = castValue(visit(ctx->expression()));
                     callArgs.push_back(receiverVal);
                 }
 
@@ -8893,7 +10234,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                     auto* fnType = fn->getFunctionType();
                     size_t paramIdx = 1; // skip &self
                     for (auto* argExpr : argList->expression()) {
-                        auto* argVal = std::any_cast<llvm::Value*>(visit(argExpr));
+                        auto* argVal = castValue(visit(argExpr));
                         if (paramIdx < fnType->getNumParams()) {
                             auto* paramTy = fnType->getParamType(paramIdx);
                             if (argVal->getType() != paramTy) {
@@ -8942,7 +10283,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
             std::vector<llvm::Value*> mArgs;
             if (auto* argList = ctx->argList())
                 for (auto* e : argList->expression())
-                    mArgs.push_back(std::any_cast<llvm::Value*>(visit(e)));
+                    mArgs.push_back(castValue(visit(e)));
 
             // Helper: rebuild string struct from C return value { ptr, len }
             auto buildStr = [&](llvm::Value* ret) -> llvm::Value* {
@@ -9087,17 +10428,164 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 auto* r = builder_->CreateCall(callee, callArgs, methodName);
                 return static_cast<llvm::Value*>(buildStr(r));
             }
+            if (methodName == "trimChar") {
+                auto* ch = mArgs[0];
+                auto callee = declareBuiltin("lux_trimChar", strTy, {ptrTy, usizeTy, i8Ty});
+                auto* r = builder_->CreateCall(callee, {strPtr, strLen, ch}, "trimChar");
+                return static_cast<llvm::Value*>(buildStr(r));
+            }
+            if (methodName == "capitalize") {
+                auto callee = declareBuiltin("lux_capitalize", strTy, {ptrTy, usizeTy});
+                auto* r = builder_->CreateCall(callee, {strPtr, strLen}, "capitalize");
+                return static_cast<llvm::Value*>(buildStr(r));
+            }
+            if (methodName == "removePrefix" || methodName == "removeSuffix") {
+                std::string fname = (methodName == "removePrefix")
+                    ? "lux_removePrefix" : "lux_removeSuffix";
+                std::vector<llvm::Value*> callArgs = {strPtr, strLen};
+                extractStr(mArgs[0], callArgs);
+                auto callee = declareBuiltin(fname, strTy,
+                    {ptrTy, usizeTy, ptrTy, usizeTy});
+                auto* r = builder_->CreateCall(callee, callArgs, methodName);
+                return static_cast<llvm::Value*>(buildStr(r));
+            }
+            if (methodName == "insert") {
+                auto* pos = mArgs[0];
+                if (pos->getType() != usizeTy)
+                    pos = builder_->CreateIntCast(pos, usizeTy, false);
+                std::vector<llvm::Value*> callArgs = {strPtr, strLen, pos};
+                extractStr(mArgs[1], callArgs);
+                auto callee = declareBuiltin("lux_strInsert", strTy,
+                    {ptrTy, usizeTy, usizeTy, ptrTy, usizeTy});
+                auto* r = builder_->CreateCall(callee, callArgs, "insert");
+                return static_cast<llvm::Value*>(buildStr(r));
+            }
+            if (methodName == "remove") {
+                auto* start = mArgs[0];
+                auto* count = mArgs[1];
+                if (start->getType() != usizeTy)
+                    start = builder_->CreateIntCast(start, usizeTy, false);
+                if (count->getType() != usizeTy)
+                    count = builder_->CreateIntCast(count, usizeTy, false);
+                auto callee = declareBuiltin("lux_strRemove", strTy,
+                    {ptrTy, usizeTy, usizeTy, usizeTy});
+                auto* r = builder_->CreateCall(callee, {strPtr, strLen, start, count}, "remove");
+                return static_cast<llvm::Value*>(buildStr(r));
+            }
+            if (methodName == "concat") {
+                std::vector<llvm::Value*> callArgs = {strPtr, strLen};
+                extractStr(mArgs[0], callArgs);
+                auto callee = declareBuiltin("lux_concat", strTy,
+                    {ptrTy, usizeTy, ptrTy, usizeTy});
+                auto* r = builder_->CreateCall(callee, callArgs, "concat");
+                return static_cast<llvm::Value*>(buildStr(r));
+            }
+            if (methodName == "compareTo") {
+                std::vector<llvm::Value*> callArgs = {strPtr, strLen};
+                extractStr(mArgs[0], callArgs);
+                auto callee = declareBuiltin("lux_compareTo", i32Ty,
+                    {ptrTy, usizeTy, ptrTy, usizeTy});
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(callee, callArgs, "compareTo"));
+            }
+            if (methodName == "equalsIgnoreCase") {
+                std::vector<llvm::Value*> callArgs = {strPtr, strLen};
+                extractStr(mArgs[0], callArgs);
+                auto callee = declareBuiltin("lux_equalsIgnoreCase", i32Ty,
+                    {ptrTy, usizeTy, ptrTy, usizeTy});
+                auto* r = builder_->CreateCall(callee, callArgs, "eqIgnCase");
+                return static_cast<llvm::Value*>(
+                    builder_->CreateICmpNE(r, llvm::ConstantInt::get(i32Ty, 0)));
+            }
+            // String classification methods → bool
+            if (methodName == "isNumeric" || methodName == "isAlpha" ||
+                methodName == "isAlphaNum" || methodName == "isUpper" ||
+                methodName == "isLower" || methodName == "isBlank") {
+                static const std::unordered_map<std::string, std::string> clsFns = {
+                    {"isNumeric",  "lux_strIsNumeric"},
+                    {"isAlpha",    "lux_strIsAlpha"},
+                    {"isAlphaNum", "lux_strIsAlphaNum"},
+                    {"isUpper",    "lux_strIsUpper"},
+                    {"isLower",    "lux_strIsLower"},
+                    {"isBlank",    "lux_strIsBlank"},
+                };
+                auto callee = declareBuiltin(clsFns.at(methodName), i32Ty,
+                    {ptrTy, usizeTy});
+                auto* r = builder_->CreateCall(callee, {strPtr, strLen}, methodName);
+                return static_cast<llvm::Value*>(
+                    builder_->CreateICmpNE(r, llvm::ConstantInt::get(i32Ty, 0)));
+            }
+            if (methodName == "toInt") {
+                auto callee = declareBuiltin("lux_parseInt", i64Ty, {ptrTy, usizeTy});
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(callee, {strPtr, strLen}, "toInt"));
+            }
+            if (methodName == "toFloat") {
+                auto* dblTy = llvm::Type::getDoubleTy(*context_);
+                auto callee = declareBuiltin("lux_parseFloat", dblTy, {ptrTy, usizeTy});
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(callee, {strPtr, strLen}, "toFloat"));
+            }
+            if (methodName == "toBool") {
+                auto callee = declareBuiltin("lux_strToBool", i32Ty, {ptrTy, usizeTy});
+                auto* r = builder_->CreateCall(callee, {strPtr, strLen}, "toBool");
+                return static_cast<llvm::Value*>(
+                    builder_->CreateICmpNE(r, llvm::ConstantInt::get(i32Ty, 0)));
+            }
+            if (methodName == "hash") {
+                auto* u64Ty = llvm::Type::getInt64Ty(*context_);
+                auto callee = declareBuiltin("lux_hashString", u64Ty, {ptrTy, usizeTy});
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(callee, {strPtr, strLen}, "hash"));
+            }
+            // split, join, chars, bytes, lines, words return arrays/vecs
+            // These use out-param Vec pattern
+            if (methodName == "split") {
+                auto* vecTy   = getOrCreateVecStructType();
+                auto* voidTy  = llvm::Type::getVoidTy(*context_);
+                auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr, "split_out");
+                std::vector<llvm::Value*> callArgs = {outAlloca, strPtr, strLen};
+                extractStr(mArgs[0], callArgs);
+                auto callee = declareBuiltin("lux_split", voidTy,
+                    {ptrTy, ptrTy, usizeTy, ptrTy, usizeTy});
+                builder_->CreateCall(callee, callArgs);
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(vecTy, outAlloca, "split_val"));
+            }
+            if (methodName == "join") {
+                // join(separator) — the receiver is a Vec<string> stored somewhere,
+                // but here it's a plain string. This is receiver.join(sep) which
+                // doesn't make sense on a plain string. Skip for now.
+            }
+            if (methodName == "chars" || methodName == "bytes" ||
+                methodName == "lines" || methodName == "words") {
+                auto* vecTy   = getOrCreateVecStructType();
+                auto* voidTy  = llvm::Type::getVoidTy(*context_);
+                auto* outAlloca = builder_->CreateAlloca(vecTy, nullptr,
+                    methodName + "_out");
+                static const std::unordered_map<std::string, std::string> vecFns = {
+                    {"chars", "lux_chars"},
+                    {"bytes", "lux_toBytes"},
+                    {"lines", "lux_lines"},
+                    {"words", "lux_words"},
+                };
+                auto callee = declareBuiltin(vecFns.at(methodName), voidTy,
+                    {ptrTy, ptrTy, usizeTy});
+                builder_->CreateCall(callee, {outAlloca, strPtr, strLen});
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(vecTy, outAlloca, methodName + "_val"));
+            }
         }
     }
 
     // Evaluate receiver
-    auto* receiverVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* receiverVal = castValue(visit(ctx->expression()));
 
     // Collect arguments
     std::vector<llvm::Value*> args;
     if (auto* argList = ctx->argList()) {
         for (auto* argExpr : argList->expression()) {
-            args.push_back(std::any_cast<llvm::Value*>(visit(argExpr)));
+            args.push_back(castValue(visit(argExpr)));
         }
     }
 
@@ -9422,10 +10910,1301 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
             }
+            // ── reverse: reverse the array in-place, returns void ────────
+            if (methodName == "reverse") {
+                auto* loAlloca = builder_->CreateAlloca(i64Ty, nullptr, "rev_lo");
+                auto* hiAlloca = builder_->CreateAlloca(i64Ty, nullptr, "rev_hi");
+                builder_->CreateStore(llvm::ConstantInt::get(i64Ty, 0), loAlloca);
+                builder_->CreateStore(llvm::ConstantInt::get(i64Ty, arrLen - 1), hiAlloca);
+
+                auto* condBB = llvm::BasicBlock::Create(*context_, "rev.cond", currentFunction_);
+                auto* bodyBB = llvm::BasicBlock::Create(*context_, "rev.body", currentFunction_);
+                auto* endBB  = llvm::BasicBlock::Create(*context_, "rev.end", currentFunction_);
+                builder_->CreateBr(condBB);
+
+                builder_->SetInsertPoint(condBB);
+                auto* lo = builder_->CreateLoad(i64Ty, loAlloca, "lo");
+                auto* hi = builder_->CreateLoad(i64Ty, hiAlloca, "hi");
+                builder_->CreateCondBr(builder_->CreateICmpULT(lo, hi), bodyBB, endBB);
+
+                builder_->SetInsertPoint(bodyBB);
+                auto* loV = builder_->CreateLoad(i64Ty, loAlloca, "lo");
+                auto* hiV = builder_->CreateLoad(i64Ty, hiAlloca, "hi");
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                auto* gepA = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, loV}, "rev_a");
+                auto* gepB = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, hiV}, "rev_b");
+                auto* a = builder_->CreateLoad(elemTy, gepA, "a");
+                auto* b = builder_->CreateLoad(elemTy, gepB, "b");
+                builder_->CreateStore(b, gepA);
+                builder_->CreateStore(a, gepB);
+                builder_->CreateStore(
+                    builder_->CreateAdd(loV, llvm::ConstantInt::get(i64Ty, 1)), loAlloca);
+                builder_->CreateStore(
+                    builder_->CreateSub(hiV, llvm::ConstantInt::get(i64Ty, 1)), hiAlloca);
+                builder_->CreateBr(condBB);
+
+                builder_->SetInsertPoint(endBB);
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+            }
+            // ── copy: return a new array (load all elements) ─────────────
+            if (methodName == "copy") {
+                auto* newAlloca = builder_->CreateAlloca(arrTy, nullptr, "copy");
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    auto* idx  = llvm::ConstantInt::get(i64Ty, i);
+                    auto* srcGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx}, "src");
+                    auto* dstGep = builder_->CreateInBoundsGEP(arrTy, newAlloca, {zero, idx}, "dst");
+                    builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(arrTy, newAlloca, "copy_val"));
+            }
+            // ── slice(start, end): returns a new fixed array (compile-time) ──
+            // Note: for runtime slicing, we'd need dynamic arrays. For fixed arrays,
+            //  we return a full-size copy with only the slice elements meaningful.
+            //  Since Lux fixed arrays have compile-time sizes, slice returns a copy.
+            if (methodName == "slice") {
+                // For fixed arrays, we can only do a partial load.
+                // Return a full array copy with elements outside the slice zeroed.
+                if (args.size() < 2) {
+                    std::cerr << "lux: slice() requires start and end arguments\n";
+                    return static_cast<llvm::Value*>(llvm::UndefValue::get(arrTy));
+                }
+                // We'll implement a simple element-by-element copy from start to end
+                auto* startIdx = args[0];
+                auto* endIdx   = args[1];
+                if (startIdx->getType() != i64Ty)
+                    startIdx = builder_->CreateIntCast(startIdx, i64Ty, true);
+                if (endIdx->getType() != i64Ty)
+                    endIdx = builder_->CreateIntCast(endIdx, i64Ty, true);
+
+                auto* newAlloca = builder_->CreateAlloca(arrTy, nullptr, "slice");
+                // Zero-initialize
+                auto* elemSz = llvm::ConstantInt::get(i64Ty,
+                    module_->getDataLayout().getTypeAllocSize(elemTy));
+                auto* totalSz = llvm::ConstantInt::get(i64Ty,
+                    module_->getDataLayout().getTypeAllocSize(arrTy));
+                builder_->CreateMemSet(newAlloca, builder_->getInt8(0), totalSz,
+                    llvm::MaybeAlign(module_->getDataLayout().getABITypeAlign(arrTy)));
+
+                // Copy elements from start..end
+                auto* idxAlloca = builder_->CreateAlloca(i64Ty, nullptr, "sl_idx");
+                auto* dstIdxAlloca = builder_->CreateAlloca(i64Ty, nullptr, "sl_dst");
+                builder_->CreateStore(startIdx, idxAlloca);
+                builder_->CreateStore(llvm::ConstantInt::get(i64Ty, 0), dstIdxAlloca);
+                auto* condBB = llvm::BasicBlock::Create(*context_, "sl.cond", currentFunction_);
+                auto* bodyBB = llvm::BasicBlock::Create(*context_, "sl.body", currentFunction_);
+                auto* endBB  = llvm::BasicBlock::Create(*context_, "sl.end", currentFunction_);
+                builder_->CreateBr(condBB);
+
+                builder_->SetInsertPoint(condBB);
+                auto* curIdx = builder_->CreateLoad(i64Ty, idxAlloca, "sl_cur");
+                builder_->CreateCondBr(builder_->CreateICmpULT(curIdx, endIdx), bodyBB, endBB);
+
+                builder_->SetInsertPoint(bodyBB);
+                auto* srcI = builder_->CreateLoad(i64Ty, idxAlloca, "src_i");
+                auto* dstI = builder_->CreateLoad(i64Ty, dstIdxAlloca, "dst_i");
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                auto* srcGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, srcI}, "sl_src");
+                auto* dstGep = builder_->CreateInBoundsGEP(arrTy, newAlloca, {zero, dstI}, "sl_dst");
+                builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
+                builder_->CreateStore(
+                    builder_->CreateAdd(srcI, llvm::ConstantInt::get(i64Ty, 1)), idxAlloca);
+                builder_->CreateStore(
+                    builder_->CreateAdd(dstI, llvm::ConstantInt::get(i64Ty, 1)), dstIdxAlloca);
+                builder_->CreateBr(condBB);
+
+                builder_->SetInsertPoint(endBB);
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(arrTy, newAlloca, "slice_val"));
+            }
+            // ── sum: accumulate all elements (numeric only) ──────────────
+            if (methodName == "sum") {
+                auto* accAlloca = builder_->CreateAlloca(elemTy, nullptr, "sum_acc");
+                if (elemTy->isIntegerTy())
+                    builder_->CreateStore(llvm::ConstantInt::get(elemTy, 0), accAlloca);
+                else
+                    builder_->CreateStore(llvm::ConstantFP::get(elemTy, 0.0), accAlloca);
+
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
+                    auto* acc = builder_->CreateLoad(elemTy, accAlloca, "acc");
+                    llvm::Value* newAcc;
+                    if (elemTy->isIntegerTy())
+                        newAcc = builder_->CreateAdd(acc, elem, "sum");
+                    else
+                        newAcc = builder_->CreateFAdd(acc, elem, "sum");
+                    builder_->CreateStore(newAcc, accAlloca);
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(elemTy, accAlloca, "sum_val"));
+            }
+            // ── product: multiply all elements (numeric only) ────────────
+            if (methodName == "product") {
+                auto* accAlloca = builder_->CreateAlloca(elemTy, nullptr, "prod_acc");
+                if (elemTy->isIntegerTy())
+                    builder_->CreateStore(llvm::ConstantInt::get(elemTy, 1), accAlloca);
+                else
+                    builder_->CreateStore(llvm::ConstantFP::get(elemTy, 1.0), accAlloca);
+
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
+                    auto* acc = builder_->CreateLoad(elemTy, accAlloca, "acc");
+                    llvm::Value* newAcc;
+                    if (elemTy->isIntegerTy())
+                        newAcc = builder_->CreateMul(acc, elem, "prod");
+                    else
+                        newAcc = builder_->CreateFMul(acc, elem, "prod");
+                    builder_->CreateStore(newAcc, accAlloca);
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(elemTy, accAlloca, "product_val"));
+            }
+            // ── min / max: scan for min or max element ───────────────────
+            if (methodName == "min" || methodName == "max") {
+                auto* bestAlloca = builder_->CreateAlloca(elemTy, nullptr, "best");
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                auto* firstGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca,
+                    {zero, zero}, "first_ptr");
+                builder_->CreateStore(builder_->CreateLoad(elemTy, firstGep, "first"), bestAlloca);
+
+                for (uint64_t i = 1; i < arrLen; i++) {
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
+                    auto* best = builder_->CreateLoad(elemTy, bestAlloca, "best");
+                    llvm::Value* cmp;
+                    if (methodName == "min") {
+                        if (elemTy->isIntegerTy())
+                            cmp = builder_->CreateICmpSLT(elem, best, "lt");
+                        else
+                            cmp = builder_->CreateFCmpOLT(elem, best, "lt");
+                    } else {
+                        if (elemTy->isIntegerTy())
+                            cmp = builder_->CreateICmpSGT(elem, best, "gt");
+                        else
+                            cmp = builder_->CreateFCmpOGT(elem, best, "gt");
+                    }
+                    auto* sel = builder_->CreateSelect(cmp, elem, best, "sel");
+                    builder_->CreateStore(sel, bestAlloca);
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(elemTy, bestAlloca, methodName + "_val"));
+            }
+            // ── minIndex / maxIndex: return index of min/max element ─────
+            if (methodName == "minIndex" || methodName == "maxIndex") {
+                auto* bestAlloca = builder_->CreateAlloca(elemTy, nullptr, "best");
+                auto* bestIdxAlloca = builder_->CreateAlloca(i64Ty, nullptr, "bestIdx");
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                auto* firstGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca,
+                    {zero, zero}, "first_ptr");
+                builder_->CreateStore(builder_->CreateLoad(elemTy, firstGep, "first"), bestAlloca);
+                builder_->CreateStore(llvm::ConstantInt::get(i64Ty, 0), bestIdxAlloca);
+
+                for (uint64_t i = 1; i < arrLen; i++) {
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
+                    auto* best = builder_->CreateLoad(elemTy, bestAlloca, "best");
+                    llvm::Value* cmp;
+                    if (methodName == "minIndex") {
+                        if (elemTy->isIntegerTy())
+                            cmp = builder_->CreateICmpSLT(elem, best, "lt");
+                        else
+                            cmp = builder_->CreateFCmpOLT(elem, best, "lt");
+                    } else {
+                        if (elemTy->isIntegerTy())
+                            cmp = builder_->CreateICmpSGT(elem, best, "gt");
+                        else
+                            cmp = builder_->CreateFCmpOGT(elem, best, "gt");
+                    }
+                    auto* sel = builder_->CreateSelect(cmp, elem, best, "selV");
+                    auto* selI = builder_->CreateSelect(cmp, idx,
+                        builder_->CreateLoad(i64Ty, bestIdxAlloca, "bi"), "selI");
+                    builder_->CreateStore(sel, bestAlloca);
+                    builder_->CreateStore(selI, bestIdxAlloca);
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(i64Ty, bestIdxAlloca, methodName + "_val"));
+            }
+            // ── average: sum / len as float64 ────────────────────────────
+            if (methodName == "average") {
+                auto* f64Ty = llvm::Type::getDoubleTy(*context_);
+                auto* accAlloca = builder_->CreateAlloca(f64Ty, nullptr, "avg_acc");
+                builder_->CreateStore(llvm::ConstantFP::get(f64Ty, 0.0), accAlloca);
+
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
+                    llvm::Value* fElem;
+                    if (elemTy->isIntegerTy())
+                        fElem = builder_->CreateSIToFP(elem, f64Ty, "toF");
+                    else
+                        fElem = builder_->CreateFPCast(elem, f64Ty, "toF");
+                    auto* acc = builder_->CreateLoad(f64Ty, accAlloca, "acc");
+                    builder_->CreateStore(builder_->CreateFAdd(acc, fElem, "sum"), accAlloca);
+                }
+                auto* sum = builder_->CreateLoad(f64Ty, accAlloca, "sum");
+                auto* lenF = llvm::ConstantFP::get(f64Ty, (double)arrLen);
+                return static_cast<llvm::Value*>(
+                    builder_->CreateFDiv(sum, lenF, "average"));
+            }
+            // ── isSorted: check if elements are in ascending order ───────
+            if (methodName == "isSorted") {
+                auto* boolTy = llvm::Type::getInt1Ty(*context_);
+                if (arrLen <= 1) {
+                    return static_cast<llvm::Value*>(
+                        llvm::ConstantInt::get(boolTy, 1));
+                }
+                auto* resultAlloca = builder_->CreateAlloca(boolTy, nullptr, "sorted");
+                builder_->CreateStore(llvm::ConstantInt::get(boolTy, 1), resultAlloca);
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+
+                for (uint64_t i = 0; i + 1 < arrLen; i++) {
+                    auto* idxA = llvm::ConstantInt::get(i64Ty, i);
+                    auto* idxB = llvm::ConstantInt::get(i64Ty, i + 1);
+                    auto* gepA = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idxA});
+                    auto* gepB = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idxB});
+                    auto* a = builder_->CreateLoad(elemTy, gepA, "a");
+                    auto* b = builder_->CreateLoad(elemTy, gepB, "b");
+                    llvm::Value* gt;
+                    if (elemTy->isIntegerTy())
+                        gt = builder_->CreateICmpSGT(a, b, "gt");
+                    else
+                        gt = builder_->CreateFCmpOGT(a, b, "gt");
+                    // If a > b, set result to false
+                    auto* cur = builder_->CreateLoad(boolTy, resultAlloca, "cur");
+                    auto* notGt = builder_->CreateNot(gt, "notGt");
+                    builder_->CreateStore(builder_->CreateAnd(cur, notGt, "and"), resultAlloca);
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(boolTy, resultAlloca, "isSorted"));
+            }
+            // ── sort / sortDesc: bubble sort in-place ────────────────────
+            if (methodName == "sort" || methodName == "sortDesc") {
+                bool desc = (methodName == "sortDesc");
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                // Simple bubble sort for fixed-size arrays
+                auto* outerAlloca = builder_->CreateAlloca(i64Ty, nullptr, "outer");
+                builder_->CreateStore(llvm::ConstantInt::get(i64Ty, 0), outerAlloca);
+
+                auto* outerCond = llvm::BasicBlock::Create(*context_, "sort.ocond", currentFunction_);
+                auto* outerBody = llvm::BasicBlock::Create(*context_, "sort.obody", currentFunction_);
+                auto* outerEnd  = llvm::BasicBlock::Create(*context_, "sort.oend", currentFunction_);
+                builder_->CreateBr(outerCond);
+
+                builder_->SetInsertPoint(outerCond);
+                auto* outerI = builder_->CreateLoad(i64Ty, outerAlloca, "oi");
+                builder_->CreateCondBr(
+                    builder_->CreateICmpULT(outerI,
+                        llvm::ConstantInt::get(i64Ty, arrLen > 0 ? arrLen - 1 : 0)),
+                    outerBody, outerEnd);
+
+                builder_->SetInsertPoint(outerBody);
+                auto* innerAlloca = builder_->CreateAlloca(i64Ty, nullptr, "inner");
+                builder_->CreateStore(llvm::ConstantInt::get(i64Ty, 0), innerAlloca);
+
+                auto* innerCond = llvm::BasicBlock::Create(*context_, "sort.icond", currentFunction_);
+                auto* innerBody = llvm::BasicBlock::Create(*context_, "sort.ibody", currentFunction_);
+                auto* swapBB    = llvm::BasicBlock::Create(*context_, "sort.swap", currentFunction_);
+                auto* innerNext = llvm::BasicBlock::Create(*context_, "sort.inext", currentFunction_);
+                auto* innerEnd  = llvm::BasicBlock::Create(*context_, "sort.iend", currentFunction_);
+                builder_->CreateBr(innerCond);
+
+                builder_->SetInsertPoint(innerCond);
+                auto* innerI = builder_->CreateLoad(i64Ty, innerAlloca, "ii");
+                auto* outer  = builder_->CreateLoad(i64Ty, outerAlloca, "oi");
+                auto* limit  = builder_->CreateSub(
+                    llvm::ConstantInt::get(i64Ty, arrLen > 0 ? arrLen - 1 : 0), outer, "lim");
+                builder_->CreateCondBr(
+                    builder_->CreateICmpULT(innerI, limit), innerBody, innerEnd);
+
+                builder_->SetInsertPoint(innerBody);
+                auto* j   = builder_->CreateLoad(i64Ty, innerAlloca, "j");
+                auto* j1  = builder_->CreateAdd(j, llvm::ConstantInt::get(i64Ty, 1), "j1");
+                auto* gepJ  = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, j}, "gj");
+                auto* gepJ1 = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, j1}, "gj1");
+                auto* vJ  = builder_->CreateLoad(elemTy, gepJ, "vj");
+                auto* vJ1 = builder_->CreateLoad(elemTy, gepJ1, "vj1");
+
+                llvm::Value* shouldSwap;
+                if (!desc) {
+                    if (elemTy->isIntegerTy())
+                        shouldSwap = builder_->CreateICmpSGT(vJ, vJ1, "gt");
+                    else
+                        shouldSwap = builder_->CreateFCmpOGT(vJ, vJ1, "gt");
+                } else {
+                    if (elemTy->isIntegerTy())
+                        shouldSwap = builder_->CreateICmpSLT(vJ, vJ1, "lt");
+                    else
+                        shouldSwap = builder_->CreateFCmpOLT(vJ, vJ1, "lt");
+                }
+                builder_->CreateCondBr(shouldSwap, swapBB, innerNext);
+
+                builder_->SetInsertPoint(swapBB);
+                auto* sj  = builder_->CreateLoad(i64Ty, innerAlloca, "sj");
+                auto* sj1 = builder_->CreateAdd(sj, llvm::ConstantInt::get(i64Ty, 1), "sj1");
+                auto* gA  = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, sj}, "gA");
+                auto* gB  = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, sj1}, "gB");
+                auto* tmpA = builder_->CreateLoad(elemTy, gA, "tmpA");
+                auto* tmpB = builder_->CreateLoad(elemTy, gB, "tmpB");
+                builder_->CreateStore(tmpB, gA);
+                builder_->CreateStore(tmpA, gB);
+                builder_->CreateBr(innerNext);
+
+                builder_->SetInsertPoint(innerNext);
+                auto* nextInner = builder_->CreateAdd(
+                    builder_->CreateLoad(i64Ty, innerAlloca, "ii"),
+                    llvm::ConstantInt::get(i64Ty, 1), "nextI");
+                builder_->CreateStore(nextInner, innerAlloca);
+                builder_->CreateBr(innerCond);
+
+                builder_->SetInsertPoint(innerEnd);
+                auto* nextOuter = builder_->CreateAdd(
+                    builder_->CreateLoad(i64Ty, outerAlloca, "oi"),
+                    llvm::ConstantInt::get(i64Ty, 1), "nextO");
+                builder_->CreateStore(nextOuter, outerAlloca);
+                builder_->CreateBr(outerCond);
+
+                builder_->SetInsertPoint(outerEnd);
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+            }
+            // ── equals: compare two arrays element-by-element ────────────
+            if (methodName == "equals") {
+                auto* boolTy = llvm::Type::getInt1Ty(*context_);
+                if (args.empty()) {
+                    return static_cast<llvm::Value*>(
+                        llvm::ConstantInt::get(boolTy, 0));
+                }
+                // The argument is another array value (loaded)
+                auto* other = args[0];
+                auto* otherAlloca = builder_->CreateAlloca(arrTy, nullptr, "eq_other");
+                builder_->CreateStore(other, otherAlloca);
+
+                auto* resultAlloca = builder_->CreateAlloca(boolTy, nullptr, "eq_res");
+                builder_->CreateStore(llvm::ConstantInt::get(boolTy, 1), resultAlloca);
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gepA = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* gepB = builder_->CreateInBoundsGEP(arrTy, otherAlloca, {zero, idx});
+                    auto* a = builder_->CreateLoad(elemTy, gepA, "a");
+                    auto* b = builder_->CreateLoad(elemTy, gepB, "b");
+                    llvm::Value* eq;
+                    if (elemTy->isIntegerTy())
+                        eq = builder_->CreateICmpEQ(a, b, "eq");
+                    else if (elemTy->isFloatingPointTy())
+                        eq = builder_->CreateFCmpOEQ(a, b, "eq");
+                    else
+                        eq = builder_->CreateICmpEQ(a, b, "eq");
+                    auto* cur = builder_->CreateLoad(boolTy, resultAlloca, "cur");
+                    builder_->CreateStore(builder_->CreateAnd(cur, eq, "and"), resultAlloca);
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(boolTy, resultAlloca, "equals"));
+            }
+            // ── toString: format as "[a, b, c, ...]" ─────────────────────
+            if (methodName == "toString") {
+                auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                auto* strTy  = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+                auto* i32T   = llvm::Type::getInt32Ty(*context_);
+
+                auto mallocCallee = declareBuiltin("malloc", ptrTy, {usizeTy});
+                auto* bufSize = llvm::ConstantInt::get(usizeTy, arrLen * 24 + 4);
+                std::vector<llvm::Value*> mallocArgs = {bufSize};
+                auto* buf = builder_->CreateCall(mallocCallee, mallocArgs, "buf");
+
+                auto snprintfCallee = module_->getOrInsertFunction("snprintf",
+                    llvm::FunctionType::get(i32T, {ptrTy, usizeTy, ptrTy}, true));
+
+                auto* openBracket = builder_->CreateGlobalStringPtr("[", "open");
+                auto* offsetAlloca = builder_->CreateAlloca(usizeTy, nullptr, "off");
+                builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), offsetAlloca);
+
+                std::vector<llvm::Value*> snArgs = {buf, bufSize, openBracket};
+                auto* wrote = builder_->CreateCall(snprintfCallee, snArgs, "wrote");
+                builder_->CreateStore(
+                    builder_->CreateIntCast(wrote, usizeTy, false), offsetAlloca);
+
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                std::string fmtElem;
+                if (elemTy->isIntegerTy())
+                    fmtElem = "%lld";
+                else
+                    fmtElem = "%.6g";
+
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    std::string fmt = (i > 0) ? (", " + fmtElem) : fmtElem;
+                    auto* fmtStr = builder_->CreateGlobalStringPtr(fmt, "fmt");
+                    auto* off = builder_->CreateLoad(usizeTy, offsetAlloca, "off");
+                    auto* ptr = builder_->CreateInBoundsGEP(
+                        llvm::Type::getInt8Ty(*context_), buf, off, "cur");
+                    auto* rem = builder_->CreateSub(bufSize, off, "rem");
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
+                    llvm::Value* printVal = elem;
+                    if (elemTy->isFloatTy())
+                        printVal = builder_->CreateFPExt(elem,
+                            llvm::Type::getDoubleTy(*context_), "toD");
+                    std::vector<llvm::Value*> fmtArgs = {ptr, rem, fmtStr, printVal};
+                    auto* w = builder_->CreateCall(snprintfCallee, fmtArgs, "w");
+                    auto* newOff = builder_->CreateAdd(off,
+                        builder_->CreateIntCast(w, usizeTy, false), "newOff");
+                    builder_->CreateStore(newOff, offsetAlloca);
+                }
+
+                auto* closeFmt = builder_->CreateGlobalStringPtr("]", "close");
+                auto* off = builder_->CreateLoad(usizeTy, offsetAlloca, "off");
+                auto* ptr = builder_->CreateInBoundsGEP(
+                    llvm::Type::getInt8Ty(*context_), buf, off, "cur");
+                auto* rem = builder_->CreateSub(bufSize, off, "rem");
+                std::vector<llvm::Value*> closeArgs = {ptr, rem, closeFmt};
+                auto* w = builder_->CreateCall(snprintfCallee, closeArgs, "w");
+                auto* finalOff = builder_->CreateAdd(off,
+                    builder_->CreateIntCast(w, usizeTy, false), "finalOff");
+
+                llvm::Value* s = llvm::UndefValue::get(strTy);
+                s = builder_->CreateInsertValue(s, buf, 0);
+                s = builder_->CreateInsertValue(s, finalOff, 1);
+                return static_cast<llvm::Value*>(s);
+            }
+            // ── join(separator): join elements as string ─────────────────
+            if (methodName == "join") {
+                auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                auto* strTy   = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+                auto* i32T    = llvm::Type::getInt32Ty(*context_);
+
+                llvm::Value* sepPtr = nullptr;
+                llvm::Value* sepLen = nullptr;
+                if (!args.empty()) {
+                    sepPtr = builder_->CreateExtractValue(args[0], 0, "sep_ptr");
+                    sepLen = builder_->CreateExtractValue(args[0], 1, "sep_len");
+                } else {
+                    sepPtr = builder_->CreateGlobalStringPtr("", "empty");
+                    sepLen = llvm::ConstantInt::get(usizeTy, 0);
+                }
+
+                auto mallocCallee = declareBuiltin("malloc", ptrTy, {usizeTy});
+                auto* bufSize = llvm::ConstantInt::get(usizeTy, arrLen * 24 + arrLen * 16 + 4);
+                std::vector<llvm::Value*> mallocArgs = {bufSize};
+                auto* buf = builder_->CreateCall(mallocCallee, mallocArgs, "joinbuf");
+
+                auto snprintfCallee = module_->getOrInsertFunction("snprintf",
+                    llvm::FunctionType::get(i32T, {ptrTy, usizeTy, ptrTy}, true));
+                auto memcpyCallee = declareBuiltin("memcpy", ptrTy,
+                    {ptrTy, ptrTy, usizeTy});
+
+                auto* offsetAlloca = builder_->CreateAlloca(usizeTy, nullptr, "joff");
+                builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), offsetAlloca);
+
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                std::string fmtElem;
+                if (elemTy->isIntegerTy())
+                    fmtElem = "%lld";
+                else if (elemTy->isFloatingPointTy())
+                    fmtElem = "%.6g";
+                else
+                    fmtElem = "%s";
+
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    if (i > 0) {
+                        auto* curOff = builder_->CreateLoad(usizeTy, offsetAlloca, "co");
+                        auto* dst = builder_->CreateInBoundsGEP(
+                            llvm::Type::getInt8Ty(*context_), buf, curOff, "dst");
+                        std::vector<llvm::Value*> cpyArgs = {dst, sepPtr, sepLen};
+                        builder_->CreateCall(memcpyCallee, cpyArgs);
+                        builder_->CreateStore(
+                            builder_->CreateAdd(curOff, sepLen, "no"), offsetAlloca);
+                    }
+                    auto* fmtStr = builder_->CreateGlobalStringPtr(fmtElem, "jfmt");
+                    auto* off = builder_->CreateLoad(usizeTy, offsetAlloca, "off");
+                    auto* cur = builder_->CreateInBoundsGEP(
+                        llvm::Type::getInt8Ty(*context_), buf, off, "cur");
+                    auto* rem = builder_->CreateSub(bufSize, off, "rem");
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
+                    llvm::Value* printVal = elem;
+                    if (elemTy->isFloatTy())
+                        printVal = builder_->CreateFPExt(elem,
+                            llvm::Type::getDoubleTy(*context_), "toD");
+                    std::vector<llvm::Value*> fmtArgs = {cur, rem, fmtStr, printVal};
+                    auto* w = builder_->CreateCall(snprintfCallee, fmtArgs, "w");
+                    auto* newOff = builder_->CreateAdd(off,
+                        builder_->CreateIntCast(w, usizeTy, false), "newOff");
+                    builder_->CreateStore(newOff, offsetAlloca);
+                }
+
+                auto* finalLen = builder_->CreateLoad(usizeTy, offsetAlloca, "finalLen");
+                llvm::Value* s = llvm::UndefValue::get(strTy);
+                s = builder_->CreateInsertValue(s, buf, 0);
+                s = builder_->CreateInsertValue(s, finalLen, 1);
+                return static_cast<llvm::Value*>(s);
+            }
+            // ── rotate(n): rotate array elements left by n positions ─────
+            if (methodName == "rotate") {
+                if (args.empty() || arrLen <= 1) {
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+                }
+                auto* n = args[0];
+                if (n->getType() != i64Ty)
+                    n = builder_->CreateIntCast(n, i64Ty, true);
+                // Normalize: n = n % arrLen
+                auto* lenConst = llvm::ConstantInt::get(i64Ty, arrLen);
+                n = builder_->CreateURem(n, lenConst, "normN");
+
+                // Use temp buffer: copy all to temp, then write back rotated
+                auto* tmpAlloca = builder_->CreateAlloca(arrTy, nullptr, "rot_tmp");
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                // Copy original to temp
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* srcGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    auto* dstGep = builder_->CreateInBoundsGEP(arrTy, tmpAlloca, {zero, idx});
+                    builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
+                }
+                // Write back rotated: arr[i] = tmp[(i + n) % len]
+                for (uint64_t i = 0; i < arrLen; i++) {
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* srcIdx = builder_->CreateURem(
+                        builder_->CreateAdd(idx, n), lenConst, "ri");
+                    auto* srcGep = builder_->CreateInBoundsGEP(arrTy, tmpAlloca, {zero, srcIdx});
+                    auto* dstGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                    builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
+                }
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+            }
         }
     }
 
-    // Fallback: return undef of the expected return type
+    // ── Primitive type method codegen ─────────────────────────────────
+    {
+        auto tag = desc->emitTag;
+        auto* recvTy = receiverVal->getType();
+        auto* i1Ty   = llvm::Type::getInt1Ty(*context_);
+        auto* i8Ty   = llvm::Type::getInt8Ty(*context_);
+        auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
+        auto* i64Ty  = llvm::Type::getInt64Ty(*context_);
+        auto* f32Ty  = llvm::Type::getFloatTy(*context_);
+        auto* f64Ty  = llvm::Type::getDoubleTy(*context_);
+        auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto* strTy  = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+        bool  isSigned = receiverTI ? receiverTI->isSigned : false;
+
+        // Helper: cast arg to receiver type
+        auto castArg = [&](llvm::Value* v) -> llvm::Value* {
+            if (v->getType() == recvTy) return v;
+            if (recvTy->isIntegerTy() && v->getType()->isIntegerTy())
+                return builder_->CreateIntCast(v, recvTy, isSigned);
+            if (recvTy->isFloatingPointTy() && v->getType()->isFloatingPointTy())
+                return builder_->CreateFPCast(v, recvTy);
+            return v;
+        };
+
+        // Helper: get LLVM intrinsic function
+        auto getIntrinsic = [&](llvm::Intrinsic::ID id,
+                                llvm::ArrayRef<llvm::Type*> tys = {}) -> llvm::Function* {
+            return llvm::Intrinsic::getOrInsertDeclaration(module_, id, tys);
+        };
+
+        // ── Integer methods ──────────────────────────────────────────────
+
+        if (tag == "int.abs") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::abs, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, builder_->getFalse()}, "abs"));
+        }
+        if (tag == "int.max") {
+            auto id = isSigned ? llvm::Intrinsic::smax : llvm::Intrinsic::umax;
+            auto* fn = getIntrinsic(id, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, castArg(args[0])}, "max"));
+        }
+        if (tag == "int.min") {
+            auto id = isSigned ? llvm::Intrinsic::smin : llvm::Intrinsic::umin;
+            auto* fn = getIntrinsic(id, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, castArg(args[0])}, "min"));
+        }
+        if (tag == "int.clamp") {
+            auto minId = isSigned ? llvm::Intrinsic::smin : llvm::Intrinsic::umin;
+            auto maxId = isSigned ? llvm::Intrinsic::smax : llvm::Intrinsic::umax;
+            auto* fnMax = getIntrinsic(maxId, {recvTy});
+            auto* fnMin = getIntrinsic(minId, {recvTy});
+            auto* lo = castArg(args[0]);
+            auto* hi = castArg(args[1]);
+            auto* clamped = builder_->CreateCall(fnMax, {receiverVal, lo}, "clamp.lo");
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fnMin, {clamped, hi}, "clamp"));
+        }
+        if (tag == "int.pow") {
+            // Integer power via loop: result = 1; while(exp > 0) { if(exp&1) result *= base; base *= base; exp >>= 1; }
+            auto* exp = args[0];
+            if (exp->getType() != i32Ty)
+                exp = builder_->CreateIntCast(exp, i32Ty, false);
+
+            auto* entryBB = builder_->GetInsertBlock();
+            auto* condBB  = llvm::BasicBlock::Create(*context_, "pow.cond", currentFunction_);
+            auto* bodyBB  = llvm::BasicBlock::Create(*context_, "pow.body", currentFunction_);
+            auto* mulBB   = llvm::BasicBlock::Create(*context_, "pow.mul", currentFunction_);
+            auto* nextBB  = llvm::BasicBlock::Create(*context_, "pow.next", currentFunction_);
+            auto* endBB   = llvm::BasicBlock::Create(*context_, "pow.end", currentFunction_);
+
+            auto* resAlloca  = builder_->CreateAlloca(recvTy, nullptr, "pow.res");
+            auto* baseAlloca = builder_->CreateAlloca(recvTy, nullptr, "pow.base");
+            auto* expAlloca  = builder_->CreateAlloca(i32Ty, nullptr, "pow.exp");
+            builder_->CreateStore(llvm::ConstantInt::get(recvTy, 1), resAlloca);
+            builder_->CreateStore(receiverVal, baseAlloca);
+            builder_->CreateStore(exp, expAlloca);
+            builder_->CreateBr(condBB);
+
+            builder_->SetInsertPoint(condBB);
+            auto* curExp = builder_->CreateLoad(i32Ty, expAlloca, "exp");
+            auto* cond = builder_->CreateICmpUGT(curExp, llvm::ConstantInt::get(i32Ty, 0), "pow.cmp");
+            builder_->CreateCondBr(cond, bodyBB, endBB);
+
+            builder_->SetInsertPoint(bodyBB);
+            auto* e = builder_->CreateLoad(i32Ty, expAlloca, "exp");
+            auto* odd = builder_->CreateAnd(e, llvm::ConstantInt::get(i32Ty, 1), "odd");
+            auto* isOdd = builder_->CreateICmpNE(odd, llvm::ConstantInt::get(i32Ty, 0), "isodd");
+            builder_->CreateCondBr(isOdd, mulBB, nextBB);
+
+            builder_->SetInsertPoint(mulBB);
+            auto* r = builder_->CreateLoad(recvTy, resAlloca, "r");
+            auto* b = builder_->CreateLoad(recvTy, baseAlloca, "b");
+            builder_->CreateStore(builder_->CreateMul(r, b, "pow.mul"), resAlloca);
+            builder_->CreateBr(nextBB);
+
+            builder_->SetInsertPoint(nextBB);
+            auto* base2 = builder_->CreateLoad(recvTy, baseAlloca, "b");
+            builder_->CreateStore(builder_->CreateMul(base2, base2, "pow.sq"), baseAlloca);
+            auto* exp2 = builder_->CreateLoad(i32Ty, expAlloca, "e");
+            builder_->CreateStore(builder_->CreateLShr(exp2, 1, "pow.shr"), expAlloca);
+            builder_->CreateBr(condBB);
+
+            builder_->SetInsertPoint(endBB);
+            return static_cast<llvm::Value*>(
+                builder_->CreateLoad(recvTy, resAlloca, "pow"));
+        }
+        if (tag == "int.wrappingAdd") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateAdd(receiverVal, castArg(args[0]), "wadd"));
+        }
+        if (tag == "int.wrappingSub") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateSub(receiverVal, castArg(args[0]), "wsub"));
+        }
+        if (tag == "int.wrappingMul") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateMul(receiverVal, castArg(args[0]), "wmul"));
+        }
+        if (tag == "int.saturatingAdd") {
+            auto id = isSigned ? llvm::Intrinsic::sadd_sat : llvm::Intrinsic::uadd_sat;
+            auto* fn = getIntrinsic(id, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, castArg(args[0])}, "satadd"));
+        }
+        if (tag == "int.saturatingSub") {
+            auto id = isSigned ? llvm::Intrinsic::ssub_sat : llvm::Intrinsic::usub_sat;
+            auto* fn = getIntrinsic(id, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, castArg(args[0])}, "satsub"));
+        }
+        if (tag == "int.leadingZeros") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::ctlz, {recvTy});
+            auto* lz = builder_->CreateCall(fn, {receiverVal, builder_->getFalse()}, "ctlz");
+            return static_cast<llvm::Value*>(
+                builder_->CreateIntCast(lz, i32Ty, false, "lz"));
+        }
+        if (tag == "int.trailingZeros") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::cttz, {recvTy});
+            auto* tz = builder_->CreateCall(fn, {receiverVal, builder_->getFalse()}, "cttz");
+            return static_cast<llvm::Value*>(
+                builder_->CreateIntCast(tz, i32Ty, false, "tz"));
+        }
+        if (tag == "int.countOnes") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::ctpop, {recvTy});
+            auto* pop = builder_->CreateCall(fn, {receiverVal}, "ctpop");
+            return static_cast<llvm::Value*>(
+                builder_->CreateIntCast(pop, i32Ty, false, "ones"));
+        }
+        if (tag == "int.rotateLeft") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::fshl, {recvTy});
+            auto* amt = args[0];
+            if (amt->getType() != recvTy)
+                amt = builder_->CreateIntCast(amt, recvTy, false);
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, receiverVal, amt}, "rotl"));
+        }
+        if (tag == "int.rotateRight") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::fshr, {recvTy});
+            auto* amt = args[0];
+            if (amt->getType() != recvTy)
+                amt = builder_->CreateIntCast(amt, recvTy, false);
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, receiverVal, amt}, "rotr"));
+        }
+        if (tag == "int.byteSwap") {
+            unsigned bw = recvTy->getIntegerBitWidth();
+            if (bw >= 16) {
+                auto* fn = getIntrinsic(llvm::Intrinsic::bswap, {recvTy});
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(fn, {receiverVal}, "bswap"));
+            }
+            return static_cast<llvm::Value*>(receiverVal);
+        }
+        if (tag == "int.toBigEndian") {
+            // On little-endian, byte swap; on big-endian, noop
+            unsigned bw = recvTy->getIntegerBitWidth();
+            if (bw >= 16 && module_->getDataLayout().isLittleEndian()) {
+                auto* fn = getIntrinsic(llvm::Intrinsic::bswap, {recvTy});
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(fn, {receiverVal}, "to_be"));
+            }
+            return static_cast<llvm::Value*>(receiverVal);
+        }
+        if (tag == "int.toLittleEndian") {
+            unsigned bw = recvTy->getIntegerBitWidth();
+            if (bw >= 16 && !module_->getDataLayout().isLittleEndian()) {
+                auto* fn = getIntrinsic(llvm::Intrinsic::bswap, {recvTy});
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(fn, {receiverVal}, "to_le"));
+            }
+            return static_cast<llvm::Value*>(receiverVal);
+        }
+        if (tag == "int.isPowerOfTwo") {
+            // (x != 0) && ((x & (x - 1)) == 0)
+            auto* zero = llvm::ConstantInt::get(recvTy, 0);
+            auto* one  = llvm::ConstantInt::get(recvTy, 1);
+            auto* notZero = builder_->CreateICmpNE(receiverVal, zero, "nz");
+            auto* xm1 = builder_->CreateSub(receiverVal, one, "xm1");
+            auto* andV = builder_->CreateAnd(receiverVal, xm1, "and");
+            auto* isZero = builder_->CreateICmpEQ(andV, zero, "iz");
+            return static_cast<llvm::Value*>(
+                builder_->CreateAnd(notZero, isZero, "ispow2"));
+        }
+        if (tag == "int.nextPowerOfTwo") {
+            // Compute next power of two: if already pow2, return self
+            // Algorithm: v--; v |= v>>1; v |= v>>2; v |= v>>4; ... v++;
+            unsigned bw = recvTy->getIntegerBitWidth();
+            auto* one  = llvm::ConstantInt::get(recvTy, 1);
+            auto* v = builder_->CreateSub(receiverVal, one, "np2.dec");
+            for (unsigned s = 1; s < bw; s <<= 1) {
+                auto* shifted = builder_->CreateLShr(v, llvm::ConstantInt::get(recvTy, s));
+                v = builder_->CreateOr(v, shifted);
+            }
+            return static_cast<llvm::Value*>(
+                builder_->CreateAdd(v, one, "np2"));
+        }
+        if (tag == "int.log2") {
+            // floor(log2(x)) = bitwidth - 1 - ctlz(x)
+            unsigned bw = recvTy->getIntegerBitWidth();
+            auto* fn = getIntrinsic(llvm::Intrinsic::ctlz, {recvTy});
+            auto* lz = builder_->CreateCall(fn, {receiverVal, builder_->getTrue()}, "ctlz");
+            auto* bwV = llvm::ConstantInt::get(recvTy, bw - 1);
+            auto* log = builder_->CreateSub(bwV, lz, "log2");
+            return static_cast<llvm::Value*>(
+                builder_->CreateIntCast(log, i32Ty, false, "log2.i32"));
+        }
+        if (tag == "int.sign") {
+            // -1 if x < 0, 0 if x == 0, 1 if x > 0
+            auto* zero = llvm::ConstantInt::get(recvTy, 0);
+            auto* isNeg = builder_->CreateICmpSLT(receiverVal, zero, "neg");
+            auto* isPos = builder_->CreateICmpSGT(receiverVal, zero, "pos");
+            auto* posV  = builder_->CreateSelect(isPos, llvm::ConstantInt::get(i32Ty, 1),
+                                                 llvm::ConstantInt::get(i32Ty, 0), "pos.sel");
+            return static_cast<llvm::Value*>(
+                builder_->CreateSelect(isNeg, llvm::ConstantInt::getSigned(i32Ty, -1),
+                                       posV, "sign"));
+        }
+        if (tag == "int.toFloat") {
+            if (isSigned)
+                return static_cast<llvm::Value*>(
+                    builder_->CreateSIToFP(receiverVal, f64Ty, "tofloat"));
+            else
+                return static_cast<llvm::Value*>(
+                    builder_->CreateUIToFP(receiverVal, f64Ty, "tofloat"));
+        }
+        if (tag == "int.toChar") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateIntCast(receiverVal, i8Ty, false, "tochar"));
+        }
+        if (tag == "int.toString") {
+            // Call lux_itoa / lux_utoa depending on signedness
+            llvm::Value* val = receiverVal;
+            std::string fname;
+            llvm::Type* paramTy;
+            if (isSigned) {
+                fname = "lux_itoa";
+                paramTy = i64Ty;
+                val = builder_->CreateSExt(val, i64Ty, "ext");
+            } else {
+                fname = "lux_utoa";
+                paramTy = llvm::Type::getInt64Ty(*context_);
+                val = builder_->CreateZExt(val, paramTy, "ext");
+            }
+            auto callee = declareBuiltin(fname, strTy, {paramTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(callee, {val}, "tostr"));
+        }
+        if (tag == "int.toStringRadix") {
+            llvm::Value* val = receiverVal;
+            if (val->getType() != i64Ty)
+                val = builder_->CreateSExt(val, i64Ty, "ext");
+            auto* radix = args[0];
+            if (radix->getType() != i32Ty)
+                radix = builder_->CreateIntCast(radix, i32Ty, false);
+            auto callee = declareBuiltin("lux_itoaRadix", strTy, {i64Ty, i32Ty});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(callee, {val, radix}, "tostr_radix"));
+        }
+
+        // ── Float methods ────────────────────────────────────────────────
+
+        if (tag == "float.abs") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::fabs, receiverVal, nullptr, "fabs"));
+        }
+        if (tag == "float.ceil") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::ceil, receiverVal, nullptr, "ceil"));
+        }
+        if (tag == "float.floor") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::floor, receiverVal, nullptr, "floor"));
+        }
+        if (tag == "float.round") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::round, receiverVal, nullptr, "round"));
+        }
+        if (tag == "float.trunc") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::trunc, receiverVal, nullptr, "trunc"));
+        }
+        if (tag == "float.fract") {
+            // x - floor(x)
+            auto* fl = builder_->CreateUnaryIntrinsic(llvm::Intrinsic::floor, receiverVal, nullptr, "fl");
+            return static_cast<llvm::Value*>(
+                builder_->CreateFSub(receiverVal, fl, "fract"));
+        }
+        if (tag == "float.sqrt") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::sqrt, receiverVal, nullptr, "sqrt"));
+        }
+        if (tag == "float.cbrt") {
+            // cbrt(x) = pow(x, 1/3) — use C library for precision
+            std::string fname = recvTy->isFloatTy() ? "cbrtf" : "cbrt";
+            auto callee = declareBuiltin(fname, recvTy, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(callee, {receiverVal}, "cbrt"));
+        }
+        if (tag == "float.pow") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::pow, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, castArg(args[0])}, "pow"));
+        }
+        if (tag == "float.exp") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::exp, receiverVal, nullptr, "exp"));
+        }
+        if (tag == "float.exp2") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::exp2, receiverVal, nullptr, "exp2"));
+        }
+        if (tag == "float.ln") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::log, receiverVal, nullptr, "ln"));
+        }
+        if (tag == "float.log2") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::log2, receiverVal, nullptr, "log2"));
+        }
+        if (tag == "float.log10") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::log10, receiverVal, nullptr, "log10"));
+        }
+        if (tag == "float.sin") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::sin, receiverVal, nullptr, "sin"));
+        }
+        if (tag == "float.cos") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::cos, receiverVal, nullptr, "cos"));
+        }
+        if (tag == "float.tan") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::tan, receiverVal, nullptr, "tan"));
+        }
+        if (tag == "float.asin") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::asin, receiverVal, nullptr, "asin"));
+        }
+        if (tag == "float.acos") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::acos, receiverVal, nullptr, "acos"));
+        }
+        if (tag == "float.atan") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::atan, receiverVal, nullptr, "atan"));
+        }
+        if (tag == "float.atan2") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::atan2, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, castArg(args[0])}, "atan2"));
+        }
+        if (tag == "float.sinh") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::sinh, receiverVal, nullptr, "sinh"));
+        }
+        if (tag == "float.cosh") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::cosh, receiverVal, nullptr, "cosh"));
+        }
+        if (tag == "float.tanh") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::tanh, receiverVal, nullptr, "tanh"));
+        }
+        if (tag == "float.hypot") {
+            // hypot not an LLVM intrinsic — call C library
+            std::string fname = recvTy->isFloatTy() ? "hypotf" : "hypot";
+            auto callee = declareBuiltin(fname, recvTy, {recvTy, recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(callee, {receiverVal, castArg(args[0])}, "hypot"));
+        }
+        if (tag == "float.min") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateBinaryIntrinsic(llvm::Intrinsic::minnum,
+                    receiverVal, castArg(args[0]), nullptr, "fmin"));
+        }
+        if (tag == "float.max") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateBinaryIntrinsic(llvm::Intrinsic::maxnum,
+                    receiverVal, castArg(args[0]), nullptr, "fmax"));
+        }
+        if (tag == "float.clamp") {
+            auto* lo = castArg(args[0]);
+            auto* hi = castArg(args[1]);
+            auto* clamped = builder_->CreateBinaryIntrinsic(
+                llvm::Intrinsic::maxnum, receiverVal, lo, nullptr, "clamp.lo");
+            return static_cast<llvm::Value*>(
+                builder_->CreateBinaryIntrinsic(
+                    llvm::Intrinsic::minnum, clamped, hi, nullptr, "clamp"));
+        }
+        if (tag == "float.lerp") {
+            // lerp(a, b, t) = a + t * (b - a)   where receiver=a, args[0]=b, args[1]=t
+            auto* b = castArg(args[0]);
+            auto* t = castArg(args[1]);
+            auto* diff = builder_->CreateFSub(b, receiverVal, "lerp.diff");
+            auto* prod = builder_->CreateFMul(t, diff, "lerp.mul");
+            return static_cast<llvm::Value*>(
+                builder_->CreateFAdd(receiverVal, prod, "lerp"));
+        }
+        if (tag == "float.sign") {
+            auto* zero = llvm::ConstantFP::get(recvTy, 0.0);
+            auto* pos  = llvm::ConstantFP::get(recvTy, 1.0);
+            auto* neg  = llvm::ConstantFP::get(recvTy, -1.0);
+            auto* isNeg = builder_->CreateFCmpOLT(receiverVal, zero, "neg");
+            auto* isPos = builder_->CreateFCmpOGT(receiverVal, zero, "pos");
+            auto* sel1 = builder_->CreateSelect(isPos, pos, zero, "sign.pos");
+            return static_cast<llvm::Value*>(
+                builder_->CreateSelect(isNeg, neg, sel1, "sign"));
+        }
+        if (tag == "float.copySign") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::copysign, {recvTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, {receiverVal, castArg(args[0])}, "copysign"));
+        }
+        if (tag == "float.isNaN") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateFCmpUNO(receiverVal, receiverVal, "isnan"));
+        }
+        if (tag == "float.isInf") {
+            auto* fn = getIntrinsic(llvm::Intrinsic::fabs, {recvTy});
+            auto* absV = builder_->CreateCall(fn, {receiverVal}, "abs");
+            auto* inf = llvm::ConstantFP::getInfinity(recvTy);
+            return static_cast<llvm::Value*>(
+                builder_->CreateFCmpOEQ(absV, inf, "isinf"));
+        }
+        if (tag == "float.isFinite") {
+            // !isNaN && !isInf
+            auto* fn = getIntrinsic(llvm::Intrinsic::fabs, {recvTy});
+            auto* absV = builder_->CreateCall(fn, {receiverVal}, "abs");
+            auto* inf = llvm::ConstantFP::getInfinity(recvTy);
+            auto* notInf = builder_->CreateFCmpONE(absV, inf, "notinf");
+            auto* notNaN = builder_->CreateFCmpORD(receiverVal, receiverVal, "notnan");
+            return static_cast<llvm::Value*>(
+                builder_->CreateAnd(notInf, notNaN, "isfinite"));
+        }
+        if (tag == "float.isNormal") {
+            // isFinite && abs(x) >= FLT_MIN/DBL_MIN
+            auto* fn = getIntrinsic(llvm::Intrinsic::fabs, {recvTy});
+            auto* absV = builder_->CreateCall(fn, {receiverVal}, "abs");
+            double minNormal = recvTy->isFloatTy() ? 1.17549435e-38 : 2.2250738585072014e-308;
+            auto* minV = llvm::ConstantFP::get(recvTy, minNormal);
+            auto* inf = llvm::ConstantFP::getInfinity(recvTy);
+            auto* geMin = builder_->CreateFCmpOGE(absV, minV, "ge_min");
+            auto* ltInf = builder_->CreateFCmpOLT(absV, inf, "lt_inf");
+            return static_cast<llvm::Value*>(
+                builder_->CreateAnd(geMin, ltInf, "isnormal"));
+        }
+        if (tag == "float.isNegative") {
+            auto* zero = llvm::ConstantFP::get(recvTy, 0.0);
+            return static_cast<llvm::Value*>(
+                builder_->CreateFCmpOLT(receiverVal, zero, "isneg"));
+        }
+        if (tag == "float.toRadians") {
+            auto* factor = llvm::ConstantFP::get(recvTy, 3.14159265358979323846 / 180.0);
+            return static_cast<llvm::Value*>(
+                builder_->CreateFMul(receiverVal, factor, "torad"));
+        }
+        if (tag == "float.toDegrees") {
+            auto* factor = llvm::ConstantFP::get(recvTy, 180.0 / 3.14159265358979323846);
+            return static_cast<llvm::Value*>(
+                builder_->CreateFMul(receiverVal, factor, "todeg"));
+        }
+        if (tag == "float.toInt") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateFPToSI(receiverVal, i64Ty, "toint"));
+        }
+        if (tag == "float.toBits") {
+            auto* destTy = recvTy->isFloatTy() ? i32Ty : i64Ty;
+            return static_cast<llvm::Value*>(
+                builder_->CreateBitCast(receiverVal, destTy, "tobits"));
+        }
+        if (tag == "float.toString") {
+            llvm::Value* val = receiverVal;
+            if (val->getType()->isFloatTy())
+                val = builder_->CreateFPExt(val, f64Ty, "ext");
+            auto callee = declareBuiltin("lux_ftoa", strTy, {f64Ty});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(callee, {val}, "ftostr"));
+        }
+        if (tag == "float.toStringPrecision") {
+            llvm::Value* val = receiverVal;
+            if (val->getType()->isFloatTy())
+                val = builder_->CreateFPExt(val, f64Ty, "ext");
+            auto* prec = args[0];
+            if (prec->getType() != i32Ty)
+                prec = builder_->CreateIntCast(prec, i32Ty, false);
+            auto callee = declareBuiltin("lux_ftoaPrecision", strTy, {f64Ty, i32Ty});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(callee, {val, prec}, "ftostr_p"));
+        }
+
+        // ── Char methods ─────────────────────────────────────────────────
+
+        if (tag == "char.isAlpha") {
+            // (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+            auto* geA = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'A'));
+            auto* leZ = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'Z'));
+            auto* upper = builder_->CreateAnd(geA, leZ, "upper");
+            auto* gea = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'a'));
+            auto* lez = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'z'));
+            auto* lower = builder_->CreateAnd(gea, lez, "lower");
+            return static_cast<llvm::Value*>(
+                builder_->CreateOr(upper, lower, "isalpha"));
+        }
+        if (tag == "char.isDigit") {
+            auto* ge0 = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, '0'));
+            auto* le9 = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, '9'));
+            return static_cast<llvm::Value*>(
+                builder_->CreateAnd(ge0, le9, "isdigit"));
+        }
+        if (tag == "char.isHexDigit") {
+            auto* ge0 = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, '0'));
+            auto* le9 = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, '9'));
+            auto* dig = builder_->CreateAnd(ge0, le9);
+            auto* geA = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'A'));
+            auto* leF = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'F'));
+            auto* hexU = builder_->CreateAnd(geA, leF);
+            auto* gea = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'a'));
+            auto* lef = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'f'));
+            auto* hexL = builder_->CreateAnd(gea, lef);
+            auto* hex = builder_->CreateOr(hexU, hexL);
+            return static_cast<llvm::Value*>(
+                builder_->CreateOr(dig, hex, "ishex"));
+        }
+        if (tag == "char.isAlphaNum") {
+            auto* geA = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'A'));
+            auto* leZ = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'Z'));
+            auto* upper = builder_->CreateAnd(geA, leZ);
+            auto* gea = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'a'));
+            auto* lez = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'z'));
+            auto* lower = builder_->CreateAnd(gea, lez);
+            auto* ge0 = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, '0'));
+            auto* le9 = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, '9'));
+            auto* digit = builder_->CreateAnd(ge0, le9);
+            auto* alpha = builder_->CreateOr(upper, lower);
+            return static_cast<llvm::Value*>(
+                builder_->CreateOr(alpha, digit, "isalnum"));
+        }
+        if (tag == "char.isUpper") {
+            auto* ge = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'A'));
+            auto* le = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'Z'));
+            return static_cast<llvm::Value*>(
+                builder_->CreateAnd(ge, le, "isupper"));
+        }
+        if (tag == "char.isLower") {
+            auto* ge = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'a'));
+            auto* le = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'z'));
+            return static_cast<llvm::Value*>(
+                builder_->CreateAnd(ge, le, "islower"));
+        }
+        if (tag == "char.isSpace") {
+            // space, tab, newline, carriage return, form feed, vertical tab
+            auto* isSP = builder_->CreateICmpEQ(receiverVal, llvm::ConstantInt::get(i8Ty, ' '));
+            auto* isTB = builder_->CreateICmpEQ(receiverVal, llvm::ConstantInt::get(i8Ty, '\t'));
+            auto* isNL = builder_->CreateICmpEQ(receiverVal, llvm::ConstantInt::get(i8Ty, '\n'));
+            auto* isCR = builder_->CreateICmpEQ(receiverVal, llvm::ConstantInt::get(i8Ty, '\r'));
+            auto* isFF = builder_->CreateICmpEQ(receiverVal, llvm::ConstantInt::get(i8Ty, '\f'));
+            auto* isVT = builder_->CreateICmpEQ(receiverVal, llvm::ConstantInt::get(i8Ty, '\v'));
+            auto* r1 = builder_->CreateOr(isSP, isTB);
+            auto* r2 = builder_->CreateOr(isNL, isCR);
+            auto* r3 = builder_->CreateOr(isFF, isVT);
+            auto* r4 = builder_->CreateOr(r1, r2);
+            return static_cast<llvm::Value*>(
+                builder_->CreateOr(r4, r3, "isspace"));
+        }
+        if (tag == "char.isPrintable") {
+            // 0x20 <= c <= 0x7E
+            auto* ge = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 0x20));
+            auto* le = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 0x7E));
+            return static_cast<llvm::Value*>(
+                builder_->CreateAnd(ge, le, "isprint"));
+        }
+        if (tag == "char.isControl") {
+            // c < 0x20 || c == 0x7F
+            auto* lt = builder_->CreateICmpULT(receiverVal, llvm::ConstantInt::get(i8Ty, 0x20));
+            auto* isDel = builder_->CreateICmpEQ(receiverVal, llvm::ConstantInt::get(i8Ty, 0x7F));
+            return static_cast<llvm::Value*>(
+                builder_->CreateOr(lt, isDel, "isctrl"));
+        }
+        if (tag == "char.isPunct") {
+            // isPrintable && !isAlphaNum && !isSpace (c == ' ')
+            auto* ge20 = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 0x20));
+            auto* le7E = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 0x7E));
+            auto* printable = builder_->CreateAnd(ge20, le7E);
+
+            auto* geA = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'A'));
+            auto* leZ = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'Z'));
+            auto* upper = builder_->CreateAnd(geA, leZ);
+            auto* gea = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'a'));
+            auto* lez = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'z'));
+            auto* lower = builder_->CreateAnd(gea, lez);
+            auto* ge0 = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, '0'));
+            auto* le9 = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, '9'));
+            auto* digit = builder_->CreateAnd(ge0, le9);
+            auto* alpha = builder_->CreateOr(upper, lower);
+            auto* alnum = builder_->CreateOr(alpha, digit);
+            auto* isSP = builder_->CreateICmpEQ(receiverVal, llvm::ConstantInt::get(i8Ty, ' '));
+
+            auto* notAlnum = builder_->CreateNot(alnum);
+            auto* notSpace = builder_->CreateNot(isSP);
+            auto* r = builder_->CreateAnd(printable, notAlnum);
+            return static_cast<llvm::Value*>(
+                builder_->CreateAnd(r, notSpace, "ispunct"));
+        }
+        if (tag == "char.isAscii") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateICmpULT(receiverVal, llvm::ConstantInt::get(i8Ty, 128), "isascii"));
+        }
+        if (tag == "char.toUpper") {
+            auto* ge = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'a'));
+            auto* le = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'z'));
+            auto* isLow = builder_->CreateAnd(ge, le, "islower");
+            auto* upper = builder_->CreateSub(receiverVal, llvm::ConstantInt::get(i8Ty, 32), "upper");
+            return static_cast<llvm::Value*>(
+                builder_->CreateSelect(isLow, upper, receiverVal, "toupper"));
+        }
+        if (tag == "char.toLower") {
+            auto* ge = builder_->CreateICmpUGE(receiverVal, llvm::ConstantInt::get(i8Ty, 'A'));
+            auto* le = builder_->CreateICmpULE(receiverVal, llvm::ConstantInt::get(i8Ty, 'Z'));
+            auto* isUp = builder_->CreateAnd(ge, le, "isupper");
+            auto* lower = builder_->CreateAdd(receiverVal, llvm::ConstantInt::get(i8Ty, 32), "lower");
+            return static_cast<llvm::Value*>(
+                builder_->CreateSelect(isUp, lower, receiverVal, "tolower"));
+        }
+        if (tag == "char.toInt") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateZExt(receiverVal, i32Ty, "toint"));
+        }
+        if (tag == "char.digitToInt") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateSub(
+                    builder_->CreateZExt(receiverVal, i32Ty, "ext"),
+                    llvm::ConstantInt::get(i32Ty, '0'), "digval"));
+        }
+        if (tag == "char.toString") {
+            // Allocate 1-byte string on heap, return {ptr, 1}
+            auto* one = llvm::ConstantInt::get(usizeTy, 1);
+            auto callee = declareBuiltin("malloc", ptrTy, {usizeTy});
+            auto* buf = builder_->CreateCall(callee, {one}, "char_buf");
+            builder_->CreateStore(receiverVal, buf);
+            llvm::Value* s = llvm::UndefValue::get(strTy);
+            s = builder_->CreateInsertValue(s, buf, 0);
+            s = builder_->CreateInsertValue(s, one, 1);
+            return static_cast<llvm::Value*>(s);
+        }
+        if (tag == "char.repeat") {
+            // Allocate n bytes, memset with char, return {ptr, n}
+            auto* n = args[0];
+            if (n->getType() != usizeTy)
+                n = builder_->CreateIntCast(n, usizeTy, false);
+            auto mallocCallee = declareBuiltin("malloc", ptrTy, {usizeTy});
+            auto* buf = builder_->CreateCall(mallocCallee, {n}, "rep_buf");
+            auto memsetCallee = declareBuiltin("memset", ptrTy, {ptrTy, i32Ty, usizeTy});
+            auto* charI32 = builder_->CreateZExt(receiverVal, i32Ty, "ch32");
+            builder_->CreateCall(memsetCallee, {buf, charI32, n});
+            llvm::Value* s = llvm::UndefValue::get(strTy);
+            s = builder_->CreateInsertValue(s, buf, 0);
+            s = builder_->CreateInsertValue(s, n, 1);
+            return static_cast<llvm::Value*>(s);
+        }
+
+        // ── Bool methods ─────────────────────────────────────────────────
+
+        if (tag == "bool.toggle") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateNot(receiverVal, "toggle"));
+        }
+        if (tag == "bool.toInt") {
+            return static_cast<llvm::Value*>(
+                builder_->CreateZExt(receiverVal, i32Ty, "toint"));
+        }
+        if (tag == "bool.toString") {
+            // Select between "true" and "false" string constants
+            auto* trueStr  = builder_->CreateGlobalString("true", ".str.true", 0, module_);
+            auto* falseStr = builder_->CreateGlobalString("false", ".str.false", 0, module_);
+            auto* trueLen  = llvm::ConstantInt::get(usizeTy, 4);
+            auto* falseLen = llvm::ConstantInt::get(usizeTy, 5);
+            auto* ptr = builder_->CreateSelect(receiverVal, trueStr, falseStr, "bstr_ptr");
+            auto* len = builder_->CreateSelect(receiverVal, trueLen, falseLen, "bstr_len");
+            llvm::Value* s = llvm::UndefValue::get(strTy);
+            s = builder_->CreateInsertValue(s, ptr, 0);
+            s = builder_->CreateInsertValue(s, len, 1);
+            return static_cast<llvm::Value*>(s);
+        }
+    }
+
+    // Fallback: return undef of the expected return type (should not reach here
+    // if all methods are implemented, but kept for safety)
     const TypeInfo* retTI = nullptr;
     if (desc->returnType == "_self")
         retTI = receiverTI;
@@ -9438,11 +12217,102 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         ? retTI->toLLVMType(*context_, module_->getDataLayout())
         : llvm::Type::getVoidTy(*context_);
 
+    std::cerr << "lux: unimplemented method codegen for '" << desc->emitTag << "'\n";
+
     if (retTy->isVoidTy())
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
 
     return static_cast<llvm::Value*>(llvm::UndefValue::get(retTy));
+}
+
+// ── Arrow method call: expr->method(args) ───────────────────────────
+// Resolves as pointer dereference + method call.
+// self->doubled() is equivalent to (*self).doubled()
+std::any
+IRGen::visitArrowMethodCallExpr(LuxParser::ArrowMethodCallExprContext* ctx) {
+    auto methodName = ctx->IDENTIFIER()->getText();
+    auto* baseExpr = ctx->expression();
+
+    // Resolve receiver type info — the base must be a pointer to struct
+    const TypeInfo* receiverTI = nullptr;
+    std::string receiverVarName;
+
+    if (auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(baseExpr)) {
+        receiverVarName = identBase->IDENTIFIER()->getText();
+        auto it = locals_.find(receiverVarName);
+        if (it != locals_.end())
+            receiverTI = it->second.typeInfo;
+    }
+    if (!receiverTI)
+        receiverTI = resolveExprTypeInfo(baseExpr);
+
+    // Must be a pointer — dereference to get pointee type
+    if (!receiverTI || receiverTI->kind != TypeKind::Pointer || !receiverTI->pointeeType) {
+        std::cerr << "lux: '->' requires a pointer type for method call\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* structTI = receiverTI->pointeeType;
+    if (structTI->kind != TypeKind::Struct) {
+        std::cerr << "lux: '->' method call requires pointer to struct\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    // Look up struct method
+    auto smIt = structMethods_.find(structTI->name);
+    if (smIt == structMethods_.end() || smIt->second.find(methodName) == smIt->second.end()) {
+        std::cerr << "lux: struct '" << structTI->name
+                  << "' has no method '" << methodName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* fn = smIt->second.at(methodName);
+
+    // Build call args: first arg is the pointer (self)
+    std::vector<llvm::Value*> callArgs;
+
+    auto it = locals_.find(receiverVarName);
+    if (it != locals_.end()) {
+        // receiver is a pointer var — load the pointer value
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        callArgs.push_back(
+            builder_->CreateLoad(ptrTy, it->second.alloca, "self_load"));
+    } else {
+        callArgs.push_back(castValue(visit(baseExpr)));
+    }
+
+    // Remaining args
+    if (auto* argList = ctx->argList()) {
+        auto* fnType = fn->getFunctionType();
+        size_t paramIdx = 1;
+        for (auto* argExpr : argList->expression()) {
+            auto* argVal = castValue(visit(argExpr));
+            if (paramIdx < fnType->getNumParams()) {
+                auto* paramTy = fnType->getParamType(paramIdx);
+                if (argVal->getType() != paramTy) {
+                    if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                        argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                    else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                        argVal = builder_->CreateFPCast(argVal, paramTy);
+                }
+            }
+            callArgs.push_back(argVal);
+            paramIdx++;
+        }
+    }
+
+    auto* retTy = fn->getReturnType();
+    if (retTy->isVoidTy()) {
+        builder_->CreateCall(fn, callArgs);
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+    return static_cast<llvm::Value*>(
+        builder_->CreateCall(fn, callArgs, "arrow_method"));
 }
 
 // ── spawn expression ────────────────────────────────────────────────────
@@ -9481,11 +12351,12 @@ std::any IRGen::visitSpawnExpr(LuxParser::SpawnExprContext* ctx) {
     std::vector<llvm::Value*> args;
     if (auto* argList = fnCall->argList()) {
         for (auto* e : argList->expression())
-            args.push_back(std::any_cast<llvm::Value*>(visit(e)));
+            args.push_back(castValue(visit(e)));
     }
 
-    // Look up the target function
-    auto* targetFn = module_->getFunction(targetName);
+    // Look up the target function (apply name mangling)
+    auto resolvedName = resolveCallTarget(targetName);
+    auto* targetFn = module_->getFunction(resolvedName);
     if (!targetFn) {
         std::cerr << "lux: spawn target function '" << targetName << "' not found\n";
         return static_cast<llvm::Value*>(
@@ -9614,7 +12485,7 @@ std::any IRGen::visitSpawnExpr(LuxParser::SpawnExprContext* ctx) {
 // ── await expression ────────────────────────────────────────────────────
 // await task → T (extracts result from Task<T>)
 std::any IRGen::visitAwaitExpr(LuxParser::AwaitExprContext* ctx) {
-    auto* taskVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* taskVal = castValue(visit(ctx->expression()));
 
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
 
@@ -9667,7 +12538,7 @@ std::any IRGen::visitAwaitExpr(LuxParser::AwaitExprContext* ctx) {
 // ── lock statement ──────────────────────────────────────────────────────
 // lock(mtx) { ... } → lock, execute block, unlock (even on early return)
 std::any IRGen::visitLockStmt(LuxParser::LockStmtContext* ctx) {
-    auto* mtxVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* mtxVal = castValue(visit(ctx->expression()));
 
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
 
@@ -9812,7 +12683,7 @@ std::any IRGen::visitThrowStmt(LuxParser::ThrowStmtContext* ctx) {
     std::string fileName = module_->getSourceFileName();
 
     // Evaluate the expression (expected to be Error struct literal)
-    auto* errorVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* errorVal = castValue(visit(ctx->expression()));
 
     // Error struct layout: { {ptr,usize} message, {ptr,usize} file, i32 line, i32 column }
     //                        field 0               field 1           field 2    field 3
@@ -9896,7 +12767,7 @@ std::any IRGen::visitTryExpr(LuxParser::TryExprContext* ctx) {
     auto popFn  = declareBuiltin("lux_eh_pop",  voidTy, {});
     auto freeFn = declareBuiltin("lux_eh_free", voidTy, {ptrTy});
 
-    auto* exprVal = std::any_cast<llvm::Value*>(visit(ctx->expression()));
+    auto* exprVal = castValue(visit(ctx->expression()));
     auto* exprTy  = exprVal->getType();
 
     builder_->CreateCall(popFn, {});

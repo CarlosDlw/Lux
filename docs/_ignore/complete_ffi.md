@@ -44,9 +44,9 @@ C compiler would produce.
 | `struct S` | `%S = type { ... }` | `struct S { ... }` | **Yes** (same layout) |
 | `enum E` | `i32` | `enum E` | **Yes** |
 | `fn(A)->R` | `ptr` | `R(*)(A)` | **Yes** (opaque pointer) |
-| `Vec<T>` | `{ ptr, usize, usize }` | — | **No** (TM-only) |
-| `Map<K,V>` | 8-field struct | — | **No** (TM-only) |
-| `Set<T>` | 6-field struct | — | **No** (TM-only) |
+| `vec<T>` | `{ ptr, usize, usize }` | — | **No** (Lux-only) |
+| `map<K,V>` | 8-field struct | — | **No** (Lux-only) |
+| `set<T>` | 6-field struct | — | **No** (Lux-only) |
 | `int1` | `i1` | — | **No** (C has no 1-bit int) |
 | `uint1` | `i1` | — | **No** (C has no 1-bit uint) |
 | `intinf` | `i256` | — | **No** (TM-only) |

@@ -22,6 +22,7 @@ enum class TypeKind {
     Pointer, // pointer to another type
     Function, // function type: fn(params) -> ret
     Extended, // extended types from stdlib (Vec<T>, Map<K,V>, etc.)
+    Tuple,    // tuple type: tuple<T1, T2, ...>
 };
 
 struct TypeInfo;
@@ -50,6 +51,7 @@ struct TypeInfo {
     std::string extendedKind;                // extended type base name: "Vec", "Map", etc.
     unsigned arraySize = 0;                  // >0 for fixed-size arrays: [N]T
     std::vector<unsigned> arraySizes;        // multi-dim array sizes for type aliases: [3][3]T → {3,3}
+    std::vector<const TypeInfo*> tupleElements; // non-empty only for Tuple
 
     llvm::Type* toLLVMType(llvm::LLVMContext& ctx,
                            const llvm::DataLayout& dl) const;

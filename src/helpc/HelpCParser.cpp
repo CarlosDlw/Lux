@@ -358,6 +358,7 @@ static bool tryEvalStructLiteralMacro(const std::vector<std::string>& tokens,
 
 // ── Visitor data ────────────────────────────────────────────────────────────
 
+namespace {
 struct VisitorData {
     HelpCHeaderInfo* info;
     std::unordered_set<std::string> seen;
@@ -585,6 +586,8 @@ static CXChildVisitResult visitor(CXCursor cursor, CXCursor /*parent*/,
 
     return CXChildVisit_Continue;
 }
+
+} // anonymous namespace
 
 // ── Constructor ─────────────────────────────────────────────────────────────
 

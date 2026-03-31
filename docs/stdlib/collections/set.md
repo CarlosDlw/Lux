@@ -1,17 +1,14 @@
-# Set\<T\>
+# set\<T\>
 
 An open-addressing hash set for storing unique values.
 
-## Import
+## Declaration
+
+`vec`, `map`, and `set` are native keywords — no import required.
 
 ```tm
-use std::collections::Set;
-```
-
-## Construction
-
-```tm
-Set<int32> ids = [];
+set<int32> ids = [];
+set<string> tags = [\"alpha\", \"beta\"];
 ```
 
 ## Methods
@@ -36,7 +33,7 @@ Set<int32> ids = [];
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `values()` | `Set<T>` | Copy of the set |
+| `values()` | `set<T>` | Copy of the set |
 
 ### Cleanup
 
@@ -47,9 +44,7 @@ Set<int32> ids = [];
 ## Example
 
 ```tm
-use std::log::println;
-
-Set<string> tags = [];
+set<string> tags = [];
 
 tags.add("rust");
 tags.add("cpp");
@@ -65,10 +60,10 @@ println(tags.len());               // 1
 
 ## Auto-Cleanup
 
-`Set<T>` memory is automatically freed when the containing function returns. You can also call `.free()` manually or use `defer`.
+`set<T>` memory is automatically freed when the containing function returns. You can also call `.free()` manually or use `defer`.
 
 ## See Also
 
-- [Vec\<T\>](vec.md) — Dynamic array
-- [Map\<K,V\>](map.md) — Key-value hash map
+- [vec\<T\>](vec.md) — Dynamic array
+- [map\<K,V\>](map.md) — Key-value hash map
 - [Generics](../../language/generics.md) — Generic types overview

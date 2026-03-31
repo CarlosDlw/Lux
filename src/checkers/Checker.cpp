@@ -86,6 +86,39 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
     registerGlobalBuiltins();
 
     // Pass 0.5: register C header bindings (from #include directives)
+    // Determine which C functions are overridden by Lux imports
+    // based on preamble declaration order (last import wins).
+    std::unordered_set<std::string> luxOverridesC;
+    if (cBindings_) {
+        int lastIncludePos = -1;
+        std::unordered_map<std::string, int> luxImportPos;
+        int pos = 0;
+        for (auto* pre : tree->preambleDecl()) {
+            if (pre->includeDecl()) {
+                lastIncludePos = pos;
+            } else if (auto* ud = pre->useDecl()) {
+                if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(ud)) {
+                    if (item->IDENTIFIER()) {
+                        auto n = item->IDENTIFIER()->getText();
+                        if (cBindings_->findFunction(n))
+                            luxImportPos[n] = pos;
+                    }
+                } else if (auto* group = dynamic_cast<LuxParser::UseGroupContext*>(ud)) {
+                    for (auto* id : group->IDENTIFIER()) {
+                        auto n = id->getText();
+                        if (cBindings_->findFunction(n))
+                            luxImportPos[n] = pos;
+                    }
+                }
+            }
+            pos++;
+        }
+        for (auto& [n, luxPos] : luxImportPos) {
+            if (luxPos > lastIncludePos)
+                luxOverridesC.insert(n);
+        }
+    }
+
     if (cBindings_) {
         // Register C structs as types
         for (auto& [name, cstruct] : cBindings_->structs()) {
@@ -130,19 +163,46 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             }
         }
 
-        // Register C functions
+        // Register C functions (skip those overridden by Lux imports)
         for (auto& [name, cfunc] : cBindings_->functions()) {
+            if (luxOverridesC.count(name)) continue;
             auto* funcType = makeFunctionType(
                 cfunc.returnType, cfunc.paramTypes, cfunc.isVariadic);
             functions_[name] = funcType;
             globalBuiltins_.insert(name);
         }
 
-        // Register C #define integer constants
+        // Register C #define constants (integer, float, string)
         for (auto& [name, cmacro] : cBindings_->macros()) {
-            auto* int32TI = typeRegistry_.lookup("int32");
-            if (int32TI)
-                cEnumConstants_[name] = { int32TI, cmacro.value };
+            if (cmacro.isFloat) {
+                auto* f64TI = typeRegistry_.lookup("float64");
+                if (f64TI)
+                    cEnumConstants_[name] = { f64TI, 0, cmacro.floatValue, true, false };
+            } else if (cmacro.isString) {
+                auto* charTI = typeRegistry_.lookup("char");
+                if (charTI) {
+                    // String macros are *char (pointer to char)
+                    auto ptrName = "*" + charTI->name;
+                    auto* ptrTI = typeRegistry_.lookup(ptrName);
+                    if (!ptrTI) {
+                        TypeInfo ti;
+                        ti.name = ptrName;
+                        ti.kind = TypeKind::Pointer;
+                        ti.pointeeType = charTI;
+                        ti.bitWidth = 0;
+                        ti.isSigned = false;
+                        ti.builtinSuffix = "ptr";
+                        typeRegistry_.registerType(std::move(ti));
+                        ptrTI = typeRegistry_.lookup(ptrName);
+                    }
+                    if (ptrTI)
+                        cEnumConstants_[name] = { ptrTI, 0, 0.0, false, true };
+                }
+            } else {
+                auto* int32TI = typeRegistry_.lookup("int32");
+                if (int32TI)
+                    cEnumConstants_[name] = { int32TI, cmacro.value };
+            }
         }
 
         // Register C #define struct literal constants (e.g. RAYWHITE)
@@ -299,6 +359,13 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         }
     }
 
+    // Pass 5.5: check extend method bodies
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* ext = decl->extendDecl()) {
+            checkExtendMethodBodies(ext);
+        }
+    }
+
     // Only actual errors (not warnings) should cause a check failure
     for (auto& d : diagnostics_) {
         if (d.severity == Diagnostic::Error)
@@ -333,6 +400,18 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
 
     // Pointer type: *T
     if (cur->STAR()) {
+        auto* childTS = cur->typeSpec(0);
+        if (childTS) {
+            auto starIdx = cur->STAR()->getSymbol()->getTokenIndex();
+            auto childIdx = childTS->getStart()->getTokenIndex();
+            if (starIdx > childIdx) {
+                // Postfix star: type* — wrong C-style syntax
+                error(cur, "invalid pointer syntax: use '*" +
+                      childTS->getText() + "' instead of '" +
+                      childTS->getText() + "*'");
+                return nullptr;
+            }
+        }
         unsigned innerDims = 0;
         auto* inner = resolveTypeSpec(cur->typeSpec(0), innerDims);
         if (!inner) return nullptr;
@@ -360,6 +439,141 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
     }
 
     // Generic extended type: Vec<int32>, Map<string, int32>, etc.
+    // Built-in collection types (vec, map, set) — no import required
+    std::string baseName;
+    if (cur->VEC())      baseName = "Vec";
+    else if (cur->MAP()) baseName = "Map";
+    else if (cur->SET()) baseName = "Set";
+
+    // tuple<T1, T2, ...> type
+    if (cur->TUPLE()) {
+        auto typeParams = cur->typeSpec();
+        if (typeParams.size() < 2) {
+            error(cur, "tuple requires at least 2 type parameters");
+            return nullptr;
+        }
+        std::vector<const TypeInfo*> elemTypes;
+        std::string fullName = "tuple<";
+        for (size_t i = 0; i < typeParams.size(); i++) {
+            unsigned elemDims = 0;
+            auto* elemType = resolveTypeSpec(typeParams[i], elemDims);
+            if (!elemType) return nullptr;
+            elemTypes.push_back(elemType);
+            if (i > 0) fullName += ", ";
+            fullName += elemType->name;
+        }
+        fullName += ">";
+
+        // Check for cached tuple type
+        for (auto& dt : dynamicTypes_) {
+            if (dt->name == fullName)
+                return dt.get();
+        }
+        auto ti = std::make_unique<TypeInfo>();
+        ti->name = fullName;
+        ti->kind = TypeKind::Tuple;
+        ti->bitWidth = 0;
+        ti->isSigned = false;
+        ti->tupleElements = std::move(elemTypes);
+        const TypeInfo* raw = ti.get();
+        dynamicTypes_.push_back(std::move(ti));
+        return raw;
+    }
+
+    if (!baseName.empty()) {
+        auto* extDesc = extTypeRegistry_.lookup(baseName);
+        if (!extDesc) {
+            error(cur, "'" + baseName + "' is not a known generic type");
+            return nullptr;
+        }
+        auto typeParams = cur->typeSpec();
+        if (typeParams.empty()) {
+            error(cur, "generic type '" + baseName + "' requires type parameters");
+            return nullptr;
+        }
+
+        if (extDesc->genericArity == 1) {
+            if (typeParams.size() != 1) {
+                error(cur, "'" + baseName + "' expects 1 type parameter, got " +
+                           std::to_string(typeParams.size()));
+                return nullptr;
+            }
+            unsigned elemDims = 0;
+            auto* elemType = resolveTypeSpec(typeParams[0], elemDims);
+            if (!elemType) return nullptr;
+
+            if (elemType->kind == TypeKind::Extended) {
+                error(cur, "nested collection types are not supported: '" +
+                           baseName + "<" + elemType->name + ">' — " +
+                           "'" + baseName + "' cannot contain '" +
+                           elemType->extendedKind + "' as element type");
+                return nullptr;
+            }
+
+            auto fullName = baseName + "<" + elemType->name + ">";
+            for (auto& dt : dynamicTypes_) {
+                if (dt->name == fullName)
+                    return dt.get();
+            }
+            auto ti = std::make_unique<TypeInfo>();
+            ti->name = fullName;
+            ti->kind = TypeKind::Extended;
+            ti->bitWidth = 0;
+            ti->isSigned = false;
+            ti->builtinSuffix = elemType->builtinSuffix;
+            ti->elementType = elemType;
+            ti->extendedKind = baseName;
+            const TypeInfo* raw = ti.get();
+            dynamicTypes_.push_back(std::move(ti));
+            return raw;
+        } else if (extDesc->genericArity == 2) {
+            if (typeParams.size() != 2) {
+                error(cur, "'" + baseName + "' expects 2 type parameters, got " +
+                           std::to_string(typeParams.size()));
+                return nullptr;
+            }
+            unsigned keyDims = 0, valDims = 0;
+            auto* keyType = resolveTypeSpec(typeParams[0], keyDims);
+            auto* valType = resolveTypeSpec(typeParams[1], valDims);
+            if (!keyType || !valType) return nullptr;
+
+            if (keyType->kind == TypeKind::Extended) {
+                error(cur, "nested collection types are not supported: '" +
+                           baseName + "' cannot use '" + keyType->extendedKind +
+                           "' as key type");
+                return nullptr;
+            }
+            if (valType->kind == TypeKind::Extended) {
+                error(cur, "nested collection types are not supported: '" +
+                           baseName + "' cannot use '" + valType->extendedKind +
+                           "' as value type");
+                return nullptr;
+            }
+
+            auto fullName = baseName + "<" + keyType->name + ", " + valType->name + ">";
+            for (auto& dt : dynamicTypes_) {
+                if (dt->name == fullName)
+                    return dt.get();
+            }
+            auto ti = std::make_unique<TypeInfo>();
+            ti->name = fullName;
+            ti->kind = TypeKind::Extended;
+            ti->bitWidth = 0;
+            ti->isSigned = false;
+            ti->builtinSuffix = keyType->builtinSuffix + "_" + valType->builtinSuffix;
+            ti->keyType = keyType;
+            ti->valueType = valType;
+            ti->extendedKind = baseName;
+            const TypeInfo* raw = ti.get();
+            dynamicTypes_.push_back(std::move(ti));
+            return raw;
+        } else {
+            error(cur, "unsupported generic arity for '" + baseName + "'");
+            return nullptr;
+        }
+    }
+
+    // User-defined generic types (e.g., Task<int32>)
     if (cur->LT()) {
         auto baseName = cur->IDENTIFIER()->getText();
         auto* extDesc = extTypeRegistry_.lookup(baseName);
@@ -369,8 +583,7 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
         }
         if (!imports_.isImported(baseName)) {
             error(cur, "type '" + baseName +
-                       "' is not imported. Did you forget 'use std::collections::" +
-                       baseName + ";'?");
+                       "' is not imported");
             return nullptr;
         }
         auto typeParams = cur->typeSpec();
@@ -389,6 +602,14 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
             unsigned elemDims = 0;
             auto* elemType = resolveTypeSpec(typeParams[0], elemDims);
             if (!elemType) return nullptr;
+
+            if (elemType->kind == TypeKind::Extended) {
+                error(cur, "nested collection types are not supported: '" +
+                           baseName + "<" + elemType->name + ">' — " +
+                           "'" + baseName + "' cannot contain '" +
+                           elemType->extendedKind + "' as element type");
+                return nullptr;
+            }
 
             auto fullName = baseName + "<" + elemType->name + ">";
             for (auto& dt : dynamicTypes_) {
@@ -418,6 +639,19 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
             auto* valType = resolveTypeSpec(typeParams[1], valDims);
             if (!keyType || !valType) return nullptr;
 
+            if (keyType->kind == TypeKind::Extended) {
+                error(cur, "nested collection types are not supported: '" +
+                           baseName + "' cannot use '" + keyType->extendedKind +
+                           "' as key type");
+                return nullptr;
+            }
+            if (valType->kind == TypeKind::Extended) {
+                error(cur, "nested collection types are not supported: '" +
+                           baseName + "' cannot use '" + valType->extendedKind +
+                           "' as value type");
+                return nullptr;
+            }
+
             auto fullName = baseName + "<" + keyType->name + ", " + valType->name + ">";
             for (auto& dt : dynamicTypes_) {
                 if (dt->name == fullName)
@@ -440,6 +674,9 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
             return nullptr;
         }
     }
+
+    // Auto type inference: auto x = 42;
+    if (cur->AUTO()) return nullptr;  // nullptr signals "infer from initializer"
 
     // Primitive or named type
     auto name = cur->getText();
@@ -625,7 +862,10 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
         expr = te->expression();
 
     // Case 1: Positive integer literal → always safe for unsigned
-    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::HexLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::OctLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::BinLitExprContext*>(expr))
         return;
 
     // Case 2: Negative literal (-N) → always invalid for unsigned
@@ -640,6 +880,8 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
         auto id = ident->IDENTIFIER()->getText();
         auto cit = cEnumConstants_.find(id);
         if (cit != cEnumConstants_.end()) {
+            if (cit->second.isFloat || cit->second.isString)
+                return;  // float/string macros are not relevant here
             if (cit->second.value < 0) {
                 error(ctx, "cannot assign negative value " +
                             std::to_string(cit->second.value) +
@@ -671,7 +913,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     if (!expr) return nullptr;
 
     // ── Literals ──────────────────────────────────────────────────────
-    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::HexLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::OctLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::BinLitExprContext*>(expr))
         return typeRegistry_.lookup("int32");
 
     if (dynamic_cast<LuxParser::FloatLitExprContext*>(expr))
@@ -745,6 +990,137 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     if (auto* p = dynamic_cast<LuxParser::ParenExprContext*>(expr))
         return resolveExprType(p->expression());
 
+    // ── Tuple literal: (expr, expr, ...) ─────────────────────────────
+    if (auto* tl = dynamic_cast<LuxParser::TupleLitExprContext*>(expr)) {
+        auto elements = tl->expression();
+        std::vector<const TypeInfo*> elemTypes;
+        std::string fullName = "tuple<";
+        for (size_t i = 0; i < elements.size(); i++) {
+            auto* et = resolveExprType(elements[i]);
+            if (!et) return nullptr;
+            elemTypes.push_back(et);
+            if (i > 0) fullName += ", ";
+            fullName += et->name;
+        }
+        fullName += ">";
+
+        for (auto& dt : dynamicTypes_) {
+            if (dt->name == fullName)
+                return dt.get();
+        }
+        auto ti = std::make_unique<TypeInfo>();
+        ti->name = fullName;
+        ti->kind = TypeKind::Tuple;
+        ti->bitWidth = 0;
+        ti->isSigned = false;
+        ti->tupleElements = std::move(elemTypes);
+        const TypeInfo* raw = ti.get();
+        dynamicTypes_.push_back(std::move(ti));
+        return raw;
+    }
+
+    // ── Tuple index: expr.0, expr.1, ... ─────────────────────────────
+    if (auto* ti = dynamic_cast<LuxParser::TupleIndexExprContext*>(expr)) {
+        auto* baseType = resolveExprType(ti->expression());
+        if (!baseType || baseType->kind != TypeKind::Tuple) {
+            if (baseType)
+                error(expr, "'.N' index requires a tuple type, got '" + baseType->name + "'");
+            return nullptr;
+        }
+        int index = std::stoi(ti->INT_LIT()->getText());
+        if (index < 0 || index >= static_cast<int>(baseType->tupleElements.size())) {
+            error(expr, "tuple index " + std::to_string(index) + " is out of range (tuple has " +
+                        std::to_string(baseType->tupleElements.size()) + " elements)");
+            return nullptr;
+        }
+        return baseType->tupleElements[index];
+    }
+
+    // ── Chained tuple index: expr.N.M (FLOAT_LIT) ──────────────────
+    if (auto* cti = dynamic_cast<LuxParser::ChainedTupleIndexExprContext*>(expr)) {
+        auto* baseType = resolveExprType(cti->expression());
+        if (!baseType || baseType->kind != TypeKind::Tuple) {
+            if (baseType)
+                error(expr, "'.N.M' index requires a tuple type, got '" + baseType->name + "'");
+            return nullptr;
+        }
+        auto text = cti->FLOAT_LIT()->getText();
+        auto dotPos = text.find('.');
+        int idx1 = std::stoi(text.substr(0, dotPos));
+        int idx2 = std::stoi(text.substr(dotPos + 1));
+        if (idx1 < 0 || idx1 >= static_cast<int>(baseType->tupleElements.size())) {
+            error(expr, "tuple index " + std::to_string(idx1) + " is out of range");
+            return nullptr;
+        }
+        auto* innerType = baseType->tupleElements[idx1];
+        if (!innerType || innerType->kind != TypeKind::Tuple) {
+            error(expr, "'.N.M' requires element " + std::to_string(idx1) + " to be a tuple");
+            return nullptr;
+        }
+        if (idx2 < 0 || idx2 >= static_cast<int>(innerType->tupleElements.size())) {
+            error(expr, "tuple index " + std::to_string(idx2) + " is out of range");
+            return nullptr;
+        }
+        return innerType->tupleElements[idx2];
+    }
+
+    // ── Tuple arrow index: ptr->0, ptr->1, ... ──────────────────────
+    if (auto* tai = dynamic_cast<LuxParser::TupleArrowIndexExprContext*>(expr)) {
+        auto* baseType = resolveExprType(tai->expression());
+        if (!baseType || baseType->kind != TypeKind::Pointer) {
+            if (baseType)
+                error(expr, "'->N' requires a pointer type, got '" + baseType->name + "'");
+            return nullptr;
+        }
+        auto* pointee = baseType->pointeeType;
+        if (!pointee || pointee->kind != TypeKind::Tuple) {
+            if (pointee)
+                error(expr, "'->N' requires pointer to tuple, got pointer to '" + pointee->name + "'");
+            return nullptr;
+        }
+        int index = std::stoi(tai->INT_LIT()->getText());
+        if (index < 0 || index >= static_cast<int>(pointee->tupleElements.size())) {
+            error(expr, "tuple index " + std::to_string(index) + " is out of range (tuple has " +
+                        std::to_string(pointee->tupleElements.size()) + " elements)");
+            return nullptr;
+        }
+        return pointee->tupleElements[index];
+    }
+
+    // ── Chained tuple arrow index: ptr->N.M (FLOAT_LIT) ────────────
+    if (auto* ctai = dynamic_cast<LuxParser::ChainedTupleArrowIndexExprContext*>(expr)) {
+        auto* baseType = resolveExprType(ctai->expression());
+        if (!baseType || baseType->kind != TypeKind::Pointer) {
+            if (baseType)
+                error(expr, "'->N.M' requires a pointer type, got '" + baseType->name + "'");
+            return nullptr;
+        }
+        auto* pointee = baseType->pointeeType;
+        if (!pointee || pointee->kind != TypeKind::Tuple) {
+            if (pointee)
+                error(expr, "'->N.M' requires pointer to tuple, got pointer to '" + pointee->name + "'");
+            return nullptr;
+        }
+        auto text = ctai->FLOAT_LIT()->getText();
+        auto dotPos = text.find('.');
+        int idx1 = std::stoi(text.substr(0, dotPos));
+        int idx2 = std::stoi(text.substr(dotPos + 1));
+        if (idx1 < 0 || idx1 >= static_cast<int>(pointee->tupleElements.size())) {
+            error(expr, "tuple index " + std::to_string(idx1) + " is out of range");
+            return nullptr;
+        }
+        auto* innerType = pointee->tupleElements[idx1];
+        if (!innerType || innerType->kind != TypeKind::Tuple) {
+            error(expr, "'->N.M' requires element " + std::to_string(idx1) + " to be a tuple");
+            return nullptr;
+        }
+        if (idx2 < 0 || idx2 >= static_cast<int>(innerType->tupleElements.size())) {
+            error(expr, "tuple index " + std::to_string(idx2) + " is out of range");
+            return nullptr;
+        }
+        return innerType->tupleElements[idx2];
+    }
+
     // ── Try expression (unwrap — same type as inner) ─────────────────
     if (auto* te = dynamic_cast<LuxParser::TryExprContext*>(expr))
         return resolveExprType(te->expression());
@@ -767,7 +1143,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             dynamicTypes_.push_back(std::move(ti));
             return raw;
         }
-        return nullptr;
+        error(expr, "cannot resolve type of spawned expression");
+        return typeRegistry_.lookup("void");
     }
 
     // ── Await expression: await task → T where task is Task<T> ──────
@@ -776,6 +1153,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (taskType && taskType->kind == TypeKind::Extended &&
             taskType->extendedKind == "Task" && taskType->elementType)
             return taskType->elementType;
+        if (!taskType) {
+            error(expr, "cannot resolve type of awaited expression");
+            return typeRegistry_.lookup("void");
+        }
         return taskType;
     }
 
@@ -818,12 +1199,21 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 error(expr, "operator '%' requires integer operands, got '" +
                                  rhs->name + "'");
         } else {
-            if (lhs && !isNumeric(lhs))
+            bool lhsBad = lhs && !isNumeric(lhs);
+            bool rhsBad = rhs && !isNumeric(rhs);
+            if (lhsBad || rhsBad) {
+                auto& t = lhsBad ? lhs : rhs;
                 error(expr, "operator '" + opText +
-                                 "' requires numeric operands, got '" + lhs->name + "'");
-            if (rhs && !isNumeric(rhs))
-                error(expr, "operator '" + opText +
-                                 "' requires numeric operands, got '" + rhs->name + "'");
+                                 "' requires numeric operands, got '" + t->name + "'");
+            }
+        }
+
+        // Compile-time division by zero check
+        if (opText == "/" || opText == "%") {
+            if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(exprs[1])) {
+                if (intLit->INT_LIT()->getText() == "0")
+                    error(expr, "division by zero");
+            }
         }
 
         if (lhs && rhs && lhs->kind == rhs->kind)
@@ -852,12 +1242,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             return typeRegistry_.lookup("i64");
         }
 
-        if (lhs && !isNumeric(lhs))
+        bool lhsBad = lhs && !isNumeric(lhs);
+        bool rhsBad = rhs && !isNumeric(rhs);
+        if (lhsBad || rhsBad) {
+            auto& t = lhsBad ? lhs : rhs;
             error(expr, "operator '" + opText +
-                             "' requires numeric operands, got '" + lhs->name + "'");
-        if (rhs && !isNumeric(rhs))
-            error(expr, "operator '" + opText +
-                             "' requires numeric operands, got '" + rhs->name + "'");
+                             "' requires numeric operands, got '" + t->name + "'");
+        }
 
         if (lhs && rhs && lhs->kind == rhs->kind)
             return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
@@ -865,12 +1256,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Shift: <<, >> ───────────────────────────────────────────────
-    if (auto* shift = dynamic_cast<LuxParser::ShiftExprContext*>(expr)) {
+    auto checkShift = [&](auto* shift, const std::string& opText) -> const TypeInfo* {
         auto exprs = shift->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
-        auto opText = shift->op->getText();
-
         if (lhs && !isInteger(lhs))
             error(expr, "operator '" + opText +
                              "' requires integer operands, got '" + lhs->name + "'");
@@ -878,7 +1267,11 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             error(expr, "operator '" + opText +
                              "' requires integer operands, got '" + rhs->name + "'");
         return lhs;
-    }
+    };
+    if (auto* lsh = dynamic_cast<LuxParser::LshiftExprContext*>(expr))
+        return checkShift(lsh, "<<");
+    if (auto* rsh = dynamic_cast<LuxParser::RshiftExprContext*>(expr))
+        return checkShift(rsh, ">>");
 
     // ── Relational: <, >, <=, >= ────────────────────────────────────
     if (auto* rel = dynamic_cast<LuxParser::RelExprContext*>(expr)) {
@@ -890,7 +1283,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (lhs && !isNumeric(lhs))
             error(expr, "operator '" + opText +
                              "' requires numeric operands, got '" + lhs->name + "'");
-        if (rhs && !isNumeric(rhs))
+        else if (rhs && !isNumeric(rhs))
             error(expr, "operator '" + opText +
                              "' requires numeric operands, got '" + rhs->name + "'");
         return typeRegistry_.lookup("bool");
@@ -962,6 +1355,14 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return typeRegistry_.lookup("bool");
     }
 
+    // ── Helper: check if an expression is an lvalue ─────────────────
+    auto isLValue = [](LuxParser::ExpressionContext* e) -> bool {
+        return dynamic_cast<LuxParser::IdentExprContext*>(e)
+            || dynamic_cast<LuxParser::FieldAccessExprContext*>(e)
+            || dynamic_cast<LuxParser::DerefExprContext*>(e)
+            || dynamic_cast<LuxParser::IndexExprContext*>(e);
+    };
+
     // ── Pre-increment/decrement ─────────────────────────────────────
     if (auto* pi = dynamic_cast<LuxParser::PreIncrExprContext*>(expr)) {
         auto* inner = pi->expression();
@@ -969,7 +1370,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (type && !isInteger(type))
             error(expr, "operator '++' requires integer operand, got '" +
                              type->name + "'");
-        if (!dynamic_cast<LuxParser::IdentExprContext*>(inner))
+        if (!isLValue(inner))
             error(expr, "operator '++' requires a variable (lvalue)");
         return type;
     }
@@ -980,7 +1381,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (type && !isInteger(type))
             error(expr, "operator '--' requires integer operand, got '" +
                              type->name + "'");
-        if (!dynamic_cast<LuxParser::IdentExprContext*>(inner))
+        if (!isLValue(inner))
             error(expr, "operator '--' requires a variable (lvalue)");
         return type;
     }
@@ -992,7 +1393,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (type && !isInteger(type))
             error(expr, "operator '++' requires integer operand, got '" +
                              type->name + "'");
-        if (!dynamic_cast<LuxParser::IdentExprContext*>(inner))
+        if (!isLValue(inner))
             error(expr, "operator '++' requires a variable (lvalue)");
         return type;
     }
@@ -1003,7 +1404,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (type && !isInteger(type))
             error(expr, "operator '--' requires integer operand, got '" +
                              type->name + "'");
-        if (!dynamic_cast<LuxParser::IdentExprContext*>(inner))
+        if (!isLValue(inner))
             error(expr, "operator '--' requires a variable (lvalue)");
         return type;
     }
@@ -1036,12 +1437,53 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (lhsType && lhsType->kind != TypeKind::Pointer)
             error(expr, "left side of '\?\?' must be a pointer type, got '" +
                              lhsType->name + "'");
-        if (lhsType && rhsType && lhsType->pointeeType &&
-            !isAssignable(lhsType->pointeeType, rhsType))
-            error(expr, "'\?\?' type mismatch: pointer to '" +
-                             lhsType->pointeeType->name + "', default is '" +
+        if (lhsType && rhsType && !isAssignable(lhsType, rhsType))
+            error(expr, "'\?\?' type mismatch: left is '" +
+                             lhsType->name + "', default is '" +
                              rhsType->name + "'");
-        return rhsType;
+        return lhsType ? lhsType : rhsType;
+    }
+
+    // ── Arrow method call: expr->method(args) ───────────────────────
+    if (auto* amc = dynamic_cast<LuxParser::ArrowMethodCallExprContext*>(expr)) {
+        auto* baseType = resolveExprType(amc->expression());
+        auto methodName = amc->IDENTIFIER()->getText();
+
+        std::vector<const TypeInfo*> argTypes;
+        if (auto* argList = amc->argList()) {
+            for (auto* argExpr : argList->expression())
+                argTypes.push_back(resolveExprType(argExpr));
+        }
+
+        if (!baseType) return nullptr;
+
+        if (baseType->kind != TypeKind::Pointer) {
+            error(expr, "'->' requires a pointer type, got '" +
+                             baseType->name + "'");
+            return nullptr;
+        }
+        auto* pointee = baseType->pointeeType;
+        if (!pointee || pointee->kind != TypeKind::Struct) {
+            error(expr, "'->' method call requires pointer to struct");
+            return nullptr;
+        }
+
+        auto smIt = structMethods_.find(pointee->name);
+        if (smIt != structMethods_.end()) {
+            for (auto& sm : smIt->second) {
+                if (sm.name == methodName && !sm.isStatic) {
+                    if (argTypes.size() != sm.paramTypes.size()) {
+                        error(expr, "method '" + methodName + "' expects " +
+                            std::to_string(sm.paramTypes.size()) +
+                            " arguments, got " + std::to_string(argTypes.size()));
+                    }
+                    return sm.returnType;
+                }
+            }
+        }
+        error(expr, "struct '" + pointee->name +
+                    "' has no method '" + methodName + "'");
+        return nullptr;
     }
 
     // ── Arrow access: expr->field ───────────────────────────────────
@@ -1192,6 +1634,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
         if (!receiverType) return nullptr;
 
+        // Auto-dereference: ptr.method() → pointee.method()
+        if (receiverType->kind == TypeKind::Pointer && receiverType->pointeeType)
+            receiverType = receiverType->pointeeType;
+
         unsigned recvArrayDims = resolveExprArrayDims(mc->expression());
 
         const MethodDescriptor* desc = nullptr;
@@ -1316,9 +1762,17 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             } else if (desc->paramTypes[i] == "_key") {
                 if (receiverType->kind == TypeKind::Extended && receiverType->keyType)
                     expectedParam = receiverType->keyType;
+                else {
+                    error(expr, "cannot resolve map key type for method '" + methodName + "'");
+                    continue;
+                }
             } else if (desc->paramTypes[i] == "_val") {
                 if (receiverType->kind == TypeKind::Extended && receiverType->valueType)
                     expectedParam = receiverType->valueType;
+                else {
+                    error(expr, "cannot resolve map value type for method '" + methodName + "'");
+                    continue;
+                }
             } else
                 expectedParam = typeRegistry_.lookup(desc->paramTypes[i]);
 
@@ -1347,6 +1801,31 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 return receiverType->valueType;
             return receiverType;
         }
+        // _vec_key → Vec<keyType>, _vec_val → Vec<valType>
+        if (desc->returnType == "_vec_key" || desc->returnType == "_vec_val") {
+            const TypeInfo* innerType = nullptr;
+            if (desc->returnType == "_vec_key" && receiverType->keyType)
+                innerType = receiverType->keyType;
+            else if (desc->returnType == "_vec_val" && receiverType->valueType)
+                innerType = receiverType->valueType;
+            if (innerType) {
+                auto fullName = "Vec<" + innerType->name + ">";
+                for (auto& dt : dynamicTypes_) {
+                    if (dt->name == fullName) return dt.get();
+                }
+                auto ti = std::make_unique<TypeInfo>();
+                ti->name = fullName;
+                ti->kind = TypeKind::Extended;
+                ti->bitWidth = 0;
+                ti->isSigned = false;
+                ti->builtinSuffix = innerType->builtinSuffix;
+                ti->elementType = innerType;
+                ti->extendedKind = "Vec";
+                const TypeInfo* raw = ti.get();
+                dynamicTypes_.push_back(std::move(ti));
+                return raw;
+            }
+        }
         return typeRegistry_.lookup(desc->returnType);
     }
 
@@ -1372,9 +1851,11 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             size_t paramCount = calleeType->paramTypes.size();
 
             if (calleeType->isVariadic) {
-                if (argTypes.size() < paramCount) {
+                // Variadic param itself is optional; only fixed params before it are required
+                size_t requiredCount = paramCount > 0 ? paramCount - 1 : 0;
+                if (argTypes.size() < requiredCount) {
                     error(expr, "function call expects at least " +
-                                     std::to_string(paramCount) +
+                                     std::to_string(requiredCount) +
                                      " arguments " + formatParamTypes(calleeType->paramTypes) +
                                      ", got " +
                                      std::to_string(argTypes.size()));
@@ -1501,6 +1982,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 error(expr, "map key type mismatch: expected '" +
                              baseType->keyType->name + "', got '" +
                              indexType->name + "'");
+            if (!baseType->valueType) {
+                error(expr, "map value type could not be resolved");
+                return typeRegistry_.lookup("void");
+            }
             return baseType->valueType;
         }
 
@@ -1671,14 +2156,14 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
     // ── Address-of: &var ────────────────────────────────────────────
     if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
-        auto varName = addr->IDENTIFIER()->getText();
-        auto it = locals_.find(varName);
-        if (it == locals_.end()) {
-            error(expr, "undefined variable '" + varName + "'");
-            return nullptr;
+        auto* innerType = resolveExprType(addr->expression());
+        if (!innerType) return nullptr;
+        // Mark the variable as used if it's a simple identifier
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
+            auto it = locals_.find(ident->IDENTIFIER()->getText());
+            if (it != locals_.end()) it->second.used = true;
         }
-        it->second.used = true;
-        return getPointerType(it->second.type);
+        return getPointerType(innerType);
     }
 
     // ── Dereference: *expr ──────────────────────────────────────────
@@ -1800,7 +2285,9 @@ bool Checker::isKnownType(const std::string& name) const {
 }
 
 void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
-    for (auto* useDecl : tree->useDecl()) {
+    for (auto* pre : tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
         if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
             std::string path;
             for (auto* id : item->modulePath()->IDENTIFIER()) {
@@ -1902,12 +2389,11 @@ void Checker::checkTypeAliasDecl(LuxParser::TypeAliasDeclContext* decl) {
 
         typeRegistry_.registerType(std::move(ti));
     } else {
-        // Simple alias: type MyInt = int32;
-        auto baseName = resolveBaseTypeName(typeSpecCtx);
-        auto* baseTI = typeRegistry_.lookup(baseName);
+        // General alias: type MyInt = int32; / type Result = tuple<string, int32>;
+        unsigned dims = 0;
+        auto* baseTI = resolveTypeSpec(typeSpecCtx, dims);
         if (!baseTI) {
-            error(decl, "unknown type '" + baseName +
-                             "' in type alias '" + name + "'");
+            error(decl, "unknown type in type alias '" + name + "'");
             return;
         }
         // Register as a copy with the alias name
@@ -2063,6 +2549,67 @@ void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
     }
 }
 
+void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
+    auto structName = decl->IDENTIFIER()->getText();
+    auto* structTI = typeRegistry_.lookup(structName);
+    if (!structTI || structTI->kind != TypeKind::Struct) return;
+
+    for (auto* method : decl->extendMethod()) {
+        locals_.clear();
+
+        unsigned retDims = 0;
+        auto* retType = resolveTypeSpec(method->typeSpec(), retDims);
+        if (!retType) retType = typeRegistry_.lookup("void");
+
+        bool isInstance = (method->AMPERSAND() != nullptr);
+
+        // Register 'self' for instance methods as *StructName
+        if (isInstance) {
+            auto* ptrType = getPointerType(structTI);
+            locals_["self"] = {ptrType, 0, true, true, nullptr};
+        }
+
+        // Register parameters
+        std::vector<LuxParser::ParamContext*> params;
+        if (isInstance) {
+            params = method->param();
+        } else {
+            if (auto* pl = method->paramList())
+                params = pl->param();
+        }
+
+        for (auto* param : params) {
+            auto paramName = param->IDENTIFIER()->getText();
+            unsigned pDims = 0;
+            auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
+            if (!pType) continue;
+
+            if (locals_.count(paramName)) {
+                error(param, "duplicate parameter name '" + paramName + "'");
+                continue;
+            }
+
+            if (param->SPREAD())
+                locals_[paramName] = {pType, 1, true, true, nullptr};
+            else
+                locals_[paramName] = {pType, pDims, true, true, nullptr};
+        }
+
+        checkBlock(method->block(), retType);
+
+        if (retType->kind != TypeKind::Void) {
+            if (!blockAlwaysReturns(method->block())) {
+                auto methodName = method->IDENTIFIER(0)->getText();
+                error(method, "method '" + structName + "." + methodName +
+                              "' must return a value of type '" + retType->name +
+                              "' on all code paths");
+            }
+        }
+
+        warnUnusedLocals(method);
+    }
+}
+
 void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
     auto funcName = func->IDENTIFIER()->getText();
 
@@ -2108,7 +2655,10 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
 void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
     unsigned retDims = 0;
     auto* retType = resolveTypeSpec(func->typeSpec(), retDims);
-    if (!retType) return;
+    if (!retType) {
+        // Use void as sentinel so the body still gets checked
+        retType = typeRegistry_.lookup("void");
+    }
 
     // Register parameters as locals (params are always initialized and used)
     if (auto* paramList = func->paramList()) {
@@ -2509,13 +3059,104 @@ void Checker::checkForClassicStmt(LuxParser::ForClassicStmtContext* stmt,
 // ═══════════════════════════════════════════════════════════════════════
 
 void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
-    auto name = stmt->IDENTIFIER()->getText();
+    // ── Tuple destructuring: auto (x, y) = expr; ─────────────────────
+    if (stmt->LPAREN()) {
+        auto ids = stmt->IDENTIFIER();
+        if (!stmt->expression()) {
+            error(stmt, "tuple destructuring requires an initializer");
+            return;
+        }
+        auto* initType = resolveExprType(stmt->expression());
+        if (!initType || initType->kind != TypeKind::Tuple) {
+            error(stmt, "tuple destructuring requires a tuple expression");
+            return;
+        }
+        if (ids.size() != initType->tupleElements.size()) {
+            error(stmt, "tuple destructuring expects " +
+                        std::to_string(initType->tupleElements.size()) +
+                        " variables, got " + std::to_string(ids.size()));
+            return;
+        }
+        for (size_t i = 0; i < ids.size(); i++) {
+            auto varName = ids[i]->getText();
+            if (locals_.count(varName)) {
+                error(stmt, "variable '" + varName + "' already declared in this scope");
+                continue;
+            }
+            VarInfo vi{initType->tupleElements[i], 0, true, false, nullptr};
+            vi.declToken = ids[i]->getSymbol();
+            locals_[varName] = vi;
+        }
+        return;
+    }
+
+    auto name = stmt->IDENTIFIER(0)->getText();
 
     if (locals_.count(name)) {
         error(stmt, "variable '" + name + "' already declared in this scope");
         return;
     }
 
+    // ── Detect auto type ─────────────────────────────────────────────
+    bool isAutoType = stmt->typeSpec() && stmt->typeSpec()->AUTO() != nullptr;
+
+    if (isAutoType) {
+        // auto MUST have an initializer
+        if (!stmt->expression()) {
+            error(stmt, "type 'auto' requires an initializer expression");
+            return;
+        }
+
+        // Infer the type from the initializer expression
+        auto* initType = resolveExprType(stmt->expression());
+
+        // Reject cases where the type cannot be inferred
+        if (!initType) {
+            error(stmt, "cannot infer type: initializer expression has no "
+                        "determinable type");
+            return;
+        }
+
+        // Reject void type inference
+        if (initType->kind == TypeKind::Void) {
+            error(stmt, "cannot infer type: initializer expression has "
+                        "type 'void'");
+            return;
+        }
+
+        // Determine array dimensions from the initializer
+        unsigned arrayDims = 0;
+        if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(
+                stmt->expression())) {
+            if (!arrLit->expression().empty()) {
+                arrayDims = 1;
+            }
+        } else {
+            // Check if the initializer is a known array variable
+            arrayDims = resolveExprArrayDims(stmt->expression());
+        }
+
+        // Infer pointer type from &var
+        if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(
+                stmt->expression())) {
+            if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
+                auto varName = ident->IDENTIFIER()->getText();
+                auto it = locals_.find(varName);
+                if (it != locals_.end() && initType &&
+                    initType->kind == TypeKind::Pointer) {
+                    // initType is already the pointer type from resolveExprType
+                }
+            }
+        }
+
+        VarInfo vi{initType, arrayDims, true, false, nullptr};
+        if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
+            vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
+        locals_[name] = vi;
+        return;
+    }
+
+    // ── Explicit type ────────────────────────────────────────────────
     unsigned arrayDims = 0;
     auto* typeInfo = resolveTypeSpec(stmt->typeSpec(), arrayDims);
     if (!typeInfo) return;
@@ -2526,8 +3167,8 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         bool autoInit = (typeInfo->kind == TypeKind::Extended ||
                          typeInfo->kind == TypeKind::Struct);
         VarInfo vi{typeInfo, arrayDims, autoInit, false, nullptr};
-        if (stmt->IDENTIFIER() && stmt->IDENTIFIER()->getSymbol())
-            vi.declToken = stmt->IDENTIFIER()->getSymbol();
+        if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
+            vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
         locals_[name] = vi;
         return;
     }
@@ -2535,9 +3176,14 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     // Validate initializer expression
     auto* initType = resolveExprType(stmt->expression());
 
-    // Allow array literal → vec conversion
+    // Allow array literal → vec/set conversion (but NOT for Map)
     if (typeInfo->kind == TypeKind::Extended &&
         dynamic_cast<LuxParser::ArrayLitExprContext*>(stmt->expression())) {
+        if (typeInfo->extendedKind == "Map") {
+            error(stmt, "Map cannot be initialized with a literal; "
+                        "use method 'set' to add entries");
+            return;
+        }
         // Array literal initializing an extended type — validate element types
         auto* arrExpr = dynamic_cast<LuxParser::ArrayLitExprContext*>(
             stmt->expression());
@@ -2561,8 +3207,8 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     checkNegativeToUnsigned(typeInfo, stmt->expression(), stmt);
 
     VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
-    if (stmt->IDENTIFIER() && stmt->IDENTIFIER()->getSymbol())
-        vi.declToken = stmt->IDENTIFIER()->getSymbol();
+    if (stmt->IDENTIFIER(0) && stmt->IDENTIFIER(0)->getSymbol())
+        vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
     locals_[name] = vi;
 }
 
@@ -2653,6 +3299,14 @@ void Checker::checkCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* stmt
     if (needsInteger && rhsType && !isInteger(rhsType))
         error(stmt, "operator '" + opText +
                          "' requires integer operand, got '" + rhsType->name + "'");
+
+    // Compile-time division by zero check
+    if (opText == "/=" || opText == "%=") {
+        if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(stmt->expression())) {
+            if (intLit->INT_LIT()->getText() == "0")
+                error(stmt, "division by zero");
+        }
+    }
 }
 
 void Checker::checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt) {
@@ -2972,14 +3626,17 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
 }
 
 void Checker::warnUnusedLocals(LuxParser::FunctionDeclContext* func) {
+    warnUnusedLocals(static_cast<antlr4::ParserRuleContext*>(func));
+}
+
+void Checker::warnUnusedLocals(antlr4::ParserRuleContext* ctx) {
     for (auto& [name, info] : locals_) {
         if (!info.used && name != "_") {
             if (info.declToken) {
                 warningToken(info.declToken, info.declToken,
                              "variable '" + name + "' is declared but never used");
             } else {
-                // Fallback — warn on the function itself
-                warning(func, "variable '" + name + "' is declared but never used");
+                warning(ctx, "variable '" + name + "' is declared but never used");
             }
         }
     }

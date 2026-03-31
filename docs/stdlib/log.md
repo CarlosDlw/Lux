@@ -36,8 +36,8 @@ print("no newline");
 
 dbg(42);              // debug output with type info
 
-string msg = sprintf("x = %d, y = %.2f", 10, 3.14);
-println(msg);
+string msg = sprintf("x = {}, y = {}", 10, 3.14);
+println(msg);         // x = 10, y = 3.14
 ```
 
 ## See Also

@@ -59,7 +59,9 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source) {
         // Resolve C header includes so FFI functions are known
         CBindings cBindings;
         TypeRegistry cTypeReg;
-        auto includes = parsed.tree->includeDecl();
+        std::vector<LuxParser::IncludeDeclContext*> includes;
+        for (auto* pre : parsed.tree->preambleDecl())
+            if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
             CHeaderResolver resolver(cTypeReg, cBindings);
             for (auto* incl : includes) {
@@ -120,7 +122,9 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
         // (in case the in-memory source has new includes not yet in the project).
         CBindings localBindings;
         TypeRegistry localTypeReg;
-        auto includes = parsed.tree->includeDecl();
+        std::vector<LuxParser::IncludeDeclContext*> includes;
+        for (auto* pre : parsed.tree->preambleDecl())
+            if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
             CHeaderResolver resolver(localTypeReg, localBindings);
             for (auto* incl : includes) {

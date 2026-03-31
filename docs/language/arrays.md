@@ -85,11 +85,25 @@ All arrays support the following built-in methods:
 | `indexOf` | `(T) -> int64` | Index of first occurrence, or -1 |
 | `lastIndexOf` | `(T) -> int64` | Index of last occurrence, or -1 |
 | `count` | `(T) -> usize` | Number of occurrences of a value |
+| `fill` | `(T)` | Fill all elements with a value |
+| `swap` | `(usize, usize)` | Swap two elements by index |
 | `reverse` | `()` | Reverse elements in place |
+| `copy` | `() -> [N]T` | Return a copy of the array |
+| `slice` | `(usize, usize) -> []T` | Extract a sub-array |
+| `sum` | `() -> T` | Sum of all elements (numeric only) |
+| `product` | `() -> T` | Product of all elements (numeric only) |
+| `min` | `() -> T` | Minimum element (numeric only) |
+| `max` | `() -> T` | Maximum element (numeric only) |
+| `minIndex` | `() -> usize` | Index of minimum element |
+| `maxIndex` | `() -> usize` | Index of maximum element |
+| `average` | `() -> float64` | Average value (numeric only) |
 | `sort` | `()` | Sort in ascending order (numeric types only) |
-| `push` | `(T)` | Append element |
-| `pop` | `() -> T` | Remove and return last element |
-| `forEach` | `(fn(T))` | Call function on each element |
+| `sortDesc` | `()` | Sort in descending order (numeric types only) |
+| `isSorted` | `() -> bool` | Whether elements are in ascending order |
+| `equals` | `([N]T) -> bool` | Compare two arrays element-by-element |
+| `toString` | `() -> string` | String representation |
+| `join` | `(string) -> string` | Join elements with separator |
+| `rotate` | `(int64)` | Rotate elements (positive = right, negative = left) |
 
 ```tm
 []int32 nums = [30, 10, 20, 10, 40];
@@ -171,5 +185,5 @@ This is useful when interfacing with C APIs that expect `*char` or `*T` argument
 
 - [Types](types.md) — Primitive type reference
 - [Ranges](ranges.md) — `..` and `..=` range operators
-- [Generics](generics.md) — `Vec<T>` dynamic arrays
+- [Generics](generics.md) — `vec<T>` dynamic arrays
 - [Control Flow](control-flow.md) — `for-in` loops over arrays

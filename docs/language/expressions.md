@@ -189,14 +189,14 @@ println(nums[0]);   // 10
 println(matrix[1][0]);   // 3
 ```
 
-Subscript also works on `Vec<T>` and `Map<K, V>`:
+Subscript also works on `vec<T>` and `map<K, V>`:
 
 ```tm
-Vec<int32> v = [1, 2, 3];
+vec<int32> v = [1, 2, 3];
 println(v[0]);   // 1
 
-Map<string, int64> m = [];
-m["key"] = 42;
+map<string, int64> m;
+m.insert("key", 42);
 println(m["key"]);   // 42
 ```
 

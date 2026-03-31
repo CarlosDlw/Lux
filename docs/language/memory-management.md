@@ -49,13 +49,13 @@ defer println("cleanup done");
 
 ## Automatic Cleanup for Collections
 
-`Vec<T>`, `Map<K, V>`, and `Set<T>` are automatically freed when the function they're declared in exits. This prevents memory leaks for the common case of local collections.
+`vec<T>`, `map<K, V>`, and `set<T>` are automatically freed when the function they're declared in exits. This prevents memory leaks for the common case of local collections.
 
 ### Vec Auto-Cleanup
 
 ```tm
 void example() {
-    Vec<int32> v;
+    vec<int32> v;
     v.push(10);
     v.push(20);
     v.push(30);
@@ -68,9 +68,9 @@ void example() {
 
 ```tm
 void example() {
-    Map<int32, int32> m;
-    m.set(1, 100);
-    m.set(2, 200);
+    map<int32, int32> m;
+    m.insert(1, 100);
+    m.insert(2, 200);
     println(m.len());   // 2
     // m is automatically freed at function exit
 }
@@ -80,7 +80,7 @@ void example() {
 
 ```tm
 void example() {
-    Set<int32> s;
+    set<int32> s;
     s.add(1);
     s.add(2);
     s.add(3);
@@ -95,10 +95,10 @@ Both mechanisms can coexist in the same function. Explicit `defer` statements ru
 
 ```tm
 void example() {
-    Vec<int32> v;
+    vec<int32> v;
     v.push(1);
     defer println(99);
-    Vec<int32> w;
+    vec<int32> w;
     w.push(2);
     w.push(3);
     println(v.len());   // 1
@@ -113,7 +113,7 @@ void example() {
 You can also call `.free()` manually or use `defer` for explicit control:
 
 ```tm
-Vec<int32> v = [1, 2, 3];
+vec<int32> v = [1, 2, 3];
 defer v.free();
 // ... use v ...
 ```
@@ -210,5 +210,5 @@ extern void free(*void ptr);
 ## See Also
 
 - [Pointers](pointers.md) — Pointer types, address-of, dereference
-- [Generics](generics.md) — `Vec<T>`, `Map<K,V>`, `Set<T>` methods
+- [Generics](generics.md) — `vec<T>`, `map<K,V>`, `set<T>` methods
 - [Modules](modules.md) — Importing `std::mem`

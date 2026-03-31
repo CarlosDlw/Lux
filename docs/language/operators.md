@@ -125,8 +125,8 @@ namespace BitwiseDemo;
 use std::log::println;
 
 int32 main() {
-    int32 a = 12;     // binary: 1100
-    int32 b = 10;     // binary: 1010
+    int32 a = 0b1100;    // 12 in binary
+    int32 b = 0b1010;    // 10 in binary
 
     println(a & b);   // 8  (1000)
     println(a | b);   // 14 (1110)
@@ -135,6 +135,12 @@ int32 main() {
 
     println(1 << 4);  // 16
     println(64 >> 2); // 16
+
+    // hex literals are convenient for bitmask operations
+    int32 value = 0xFF;
+    println(value & 0x0F);    // 15
+    println(value | 0x100);   // 511
+    println(value ^ 0xFF);    // 0
 
     // set and check flags
     int32 flags = 0 | (1 << 3);   // set bit 3

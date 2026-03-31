@@ -376,7 +376,7 @@ typeSpec → '*' typeSpec                                        // pointer: *in
          | '[' INT_LIT ']' typeSpec                            // fixed array: [10]int32
          | '[]' typeSpec                                       // dynamic array: []int32
          | fnTypeSpec                                          // function type
-         | IDENTIFIER '<' typeSpec (',' typeSpec)* '>'         // generic: Vec<int32>
+         | IDENTIFIER '<' typeSpec (',' typeSpec)* '>'         // generic: vec<int32>
          | primitiveType                                       // int32, bool, etc.
          | IDENTIFIER                                          // user-defined: Point
 

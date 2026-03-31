@@ -1,17 +1,13 @@
-# Map\<K, V\>
+# map\<K, V\>
 
 An open-addressing hash map with linear probing.
 
-## Import
+## Declaration
+
+`vec`, `map`, and `set` are native keywords — no import required.
 
 ```tm
-use std::collections::Map;
-```
-
-## Construction
-
-```tm
-Map<string, int32> ages = [];
+map<string, int32> ages;
 ```
 
 ## Methods
@@ -35,7 +31,7 @@ Map<string, int32> ages = [];
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `set(K, V)` | `void` | Insert or update key-value pair |
+| `insert(K, V)` | `void` | Insert or update key-value pair |
 | `remove(K)` | `bool` | Remove key, returns whether it existed |
 | `clear()` | `void` | Remove all entries |
 
@@ -43,8 +39,8 @@ Map<string, int32> ages = [];
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `keys()` | `Vec<K>` | All keys as vector |
-| `values()` | `Vec<V>` | All values as vector |
+| `keys()` | `vec<K>` | All keys as vector |
+| `values()` | `vec<V>` | All values as vector |
 
 ### Cleanup
 
@@ -55,13 +51,11 @@ Map<string, int32> ages = [];
 ## Example
 
 ```tm
-use std::log::println;
+map<string, int32> scores;
 
-Map<string, int32> scores = [];
-
-scores.set("alice", 95);
-scores.set("bob", 87);
-scores.set("carol", 92);
+scores.insert("alice", 95);
+scores.insert("bob", 87);
+scores.insert("carol", 92);
 
 println(scores.len());                    // 3
 println(scores.has("alice"));             // true
@@ -71,16 +65,16 @@ println(scores.getOrDefault("dave", 0));  // 0
 scores.remove("bob");
 println(scores.len());                    // 2
 
-Vec<string> k = scores.keys();
-Vec<int32> v = scores.values();
+vec<string> k = scores.keys();
+vec<int32> v = scores.values();
 ```
 
 ## Auto-Cleanup
 
-`Map<K, V>` memory is automatically freed when the containing function returns. You can also call `.free()` manually or use `defer`.
+`map<K, V>` memory is automatically freed when the containing function returns. You can also call `.free()` manually or use `defer`.
 
 ## See Also
 
-- [Vec\<T\>](vec.md) — Dynamic array
-- [Set\<T\>](set.md) — Unique value set
+- [vec\<T\>](vec.md) — Dynamic array
+- [set\<T\>](set.md) — Unique value set
 - [Generics](../../language/generics.md) — Generic types overview

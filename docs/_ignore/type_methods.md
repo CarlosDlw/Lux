@@ -83,7 +83,6 @@ Methods callable via dot syntax on built-in types: `value.method(args)`
 | `toStringPrecision(n)` | `(float*, uint32) → string` | Convert with n decimal places |
 | `toInt()` | `float* → int64` | Truncate to integer |
 | `toBits()` | `float* → uint64` | Raw IEEE 754 bit pattern |
-| `fromBits(bits)` | `uint64 → float*` | Construct from raw bits (static) |
 
 ---
 
@@ -202,36 +201,14 @@ Methods callable via dot syntax on built-in types: `value.method(args)`
 | `minIndex()` | `[]T → usize` | Index of minimum element |
 | `maxIndex()` | `[]T → usize` | Index of maximum element |
 | `average()` | `[]T → float64` | Arithmetic mean (numeric T only) |
-| `all(pred)` | `([]T, fn(T) → bool) → bool` | True if predicate holds for all elements |
-| `any(pred)` | `([]T, fn(T) → bool) → bool` | True if predicate holds for at least one element |
-| `none(pred)` | `([]T, fn(T) → bool) → bool` | True if predicate holds for no elements |
-| `forEach(action)` | `([]T, fn(T) → void) → void` | Apply action to each element |
-| `map(f)` | `([]T, fn(T) → U) → []U` | Transform each element |
-| `filter(pred)` | `([]T, fn(T) → bool) → []T` | Keep elements matching predicate |
-| `reduce(init, f)` | `([]T, U, fn(U, T) → U) → U` | Fold/reduce into a single value |
-| `find(pred)` | `([]T, fn(T) → bool) → int64` | Index of first match, -1 if none |
-| `countWhere(pred)` | `([]T, fn(T) → bool) → usize` | Count elements matching predicate |
 | `isSorted()` | `[]T → bool` | Check if sorted ascending (comparable T) |
 | `sort()` | `[]T → void` | Sort in place ascending (comparable T) |
 | `sortDesc()` | `[]T → void` | Sort in place descending |
 | `equals(other)` | `([]T, []T) → bool` | Element-wise equality check |
 | `toString()` | `[]T → string` | String representation: `[1, 2, 3]` |
 | `join(sep)` | `([]T, string) → string` | Join elements as string with separator |
-| `zip(other)` | `([]T, []U) → [](T, U)` | Pair elements from two arrays |
-| `flatten()` | `[][]T → []T` | Flatten 2D array to 1D |
-| `chunks(size)` | `([]T, usize) → [][]T` | Split into chunks of given size |
-| `windows(size)` | `([]T, usize) → [][]T` | Sliding windows of given size |
-| `distinct()` | `[]T → []T` | Remove duplicate elements |
 | `rotate(n)` | `([]T, int32) → void` | Rotate elements by n positions |
 
 ---
 
-## Types that do NOT need methods
 
-| Type | Reason |
-|------|--------|
-| `*T` (pointers) | Low-level type. Operations via `*`, `&`, `->` operators are sufficient. |
-| `void` | Not a value type. |
-| `enum` | Access via `Enum::Variant`. Cast to int via `as`. No methods needed. |
-| `struct` | User-defined. Methods would come from future `impl` blocks, not built-in. |
-| `fn(T) → R` | Function pointers. Called directly, no methods needed. |

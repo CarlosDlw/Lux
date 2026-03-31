@@ -19,6 +19,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitPreambleDecl(LuxParser::PreambleDeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitNamespaceDecl(LuxParser::NamespaceDeclContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -239,6 +243,18 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitRshiftExpr(LuxParser::RshiftExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitArrowMethodCallExpr(LuxParser::ArrowMethodCallExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitOctLitExpr(LuxParser::OctLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitBitXorExpr(LuxParser::BitXorExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -259,6 +275,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitChainedTupleIndexExpr(LuxParser::ChainedTupleIndexExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitNullLitExpr(LuxParser::NullLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -275,6 +295,14 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitLshiftExpr(LuxParser::LshiftExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTupleLitExpr(LuxParser::TupleLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitAddSubExpr(LuxParser::AddSubExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -284,6 +312,10 @@ public:
   }
 
   virtual std::any visitAddrOfExpr(LuxParser::AddrOfExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTupleIndexExpr(LuxParser::TupleIndexExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -300,10 +332,6 @@ public:
   }
 
   virtual std::any visitListCompExpr(LuxParser::ListCompExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitShiftExpr(LuxParser::ShiftExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -371,7 +399,15 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitBinLitExpr(LuxParser::BinLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitRangeInclExpr(LuxParser::RangeInclExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTupleArrowIndexExpr(LuxParser::TupleArrowIndexExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -424,6 +460,14 @@ public:
   }
 
   virtual std::any visitBoolLitExpr(LuxParser::BoolLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitHexLitExpr(LuxParser::HexLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitChainedTupleArrowIndexExpr(LuxParser::ChainedTupleArrowIndexExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

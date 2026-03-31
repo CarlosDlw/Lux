@@ -73,15 +73,15 @@ int32 main() {
 
 ## Heap Allocation
 
-Collections (`Vec`, `Map`, `Set`) allocate their internal data on the heap. The collection header (pointer + metadata) lives on the stack, but the element storage is heap-allocated via `malloc`.
+Collections (`vec`, `map`, `set`) allocate their internal data on the heap. The collection header (pointer + metadata) lives on the stack, but the element storage is heap-allocated via `malloc`.
 
-### Vec\<T\> Layout
+### vec\<T\> Layout
 
-A `Vec<T>` is a 3-field struct:
+A `vec<T>` is a 3-field struct:
 
 ```
 ┌─────────────────────────────────────────────┐
-│  Vec<T> header (stack)                      │
+│  vec<T> header (stack)                      │
 │  ┌──────────┬──────────┬──────────┐         │
 │  │ ptr      │ len      │ cap      │         │
 │  │ (void*)  │ (size_t) │ (size_t) │         │
@@ -103,20 +103,20 @@ A `Vec<T>` is a 3-field struct:
 **Growth strategy:** Initial capacity is 8. When full, capacity doubles (growth factor 2x). Reallocation uses `realloc`, which may copy data to a new location.
 
 ```tm
-Vec<int32> v = [1, 2, 3];    // cap=8, len=3
+vec<int32> v = [1, 2, 3];    // cap=8, len=3
 v.push(4);                    // cap=8, len=4
 v.push(5);                    // cap=8, len=5
 // ... push until 8 ...
 v.push(9);                    // cap=16, len=9 (doubled)
 ```
 
-### Map\<K, V\> Layout
+### map\<K, V\> Layout
 
-A `Map<K, V>` uses open addressing with quadratic probing:
+A `map<K, V>` uses open addressing with quadratic probing:
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Map<K, V> header (stack)                            │
+│  map<K, V> header (stack)                            │
 │  ┌────────┬──────┬────────┬────────┐                 │
 │  │ states │ keys │ values │ hashes │                  │
 │  │ (ptr)  │(ptr) │ (ptr)  │ (ptr)  │                  │
@@ -139,13 +139,13 @@ A `Map<K, V>` uses open addressing with quadratic probing:
 - Resize when load factor exceeds 75%
 - Type-agnostic storage: `key_size` and `val_size` determine element stride
 
-### Set\<T\> Layout
+### set\<T\> Layout
 
-A `Set<T>` is similar to `Map` but without the values array:
+A `set<T>` is similar to `map` but without the values array:
 
 ```
 ┌──────────────────────────────────────────┐
-│  Set<T> header (stack)                   │
+│  set<T> header (stack)                   │
 │  ┌────────┬──────┬────────┐              │
 │  │ states │ keys │ hashes │              │
 │  │ (ptr)  │(ptr) │ (ptr)  │              │
@@ -191,7 +191,7 @@ When the compiler encounters a `defer` statement, it does **not** emit any code 
 
 ```tm
 void processData() {
-    Vec<int32> v = [1, 2, 3];
+    vec<int32> v = [1, 2, 3];
     defer v.free();              // pushed first
 
     int32* ptr = alloc(4);
@@ -244,7 +244,7 @@ The compiler duplicates the deferred cleanup at **both** return points, ensuring
 
 ## Automatic Cleanup
 
-In addition to explicit `defer`, the compiler automatically inserts cleanup calls for collection types (`Vec`, `Map`, `Set`) at function exit. This means you don't **have** to call `.free()` manually — the compiler will do it for you if you forget.
+In addition to explicit `defer`, the compiler automatically inserts cleanup calls for collection types (`vec`, `map`, `set`) at function exit. This means you don't **have** to call `.free()` manually — the compiler will do it for you if you forget.
 
 ### How It Works
 
@@ -252,10 +252,10 @@ Before every return statement, after emitting explicit defer cleanups, the compi
 
 | Type | Free function called |
 |------|---------------------|
-| `Vec<int32>` | `lux_vec_free_i32()` |
-| `Vec<string>` | `lux_vec_free_str()` |
-| `Map<string, int32>` | `lux_map_free_str_i32()` |
-| `Set<float64>` | `lux_set_free_f64()` |
+| `vec<int32>` | `lux_vec_free_i32()` |
+| `vec<string>` | `lux_vec_free_str()` |
+| `map<string, int32>` | `lux_map_free_str_i32()` |
+| `set<float64>` | `lux_set_free_f64()` |
 
 ### Cleanup Order
 
@@ -266,8 +266,8 @@ The full cleanup sequence at every return point is:
 
 ```tm
 void example() {
-    Vec<int32> a = [1, 2, 3];
-    Map<string, int32> m = {};
+    vec<int32> a = [1, 2, 3];
+    map<string, int32> m;
     defer println("goodbye");
 
     // At ret:
@@ -282,8 +282,8 @@ void example() {
 When a function returns a collection value, the compiler skips auto-cleanup for that specific variable to avoid freeing memory that's being returned to the caller:
 
 ```tm
-fn createVec() -> Vec<int32> {
-    Vec<int32> result = [1, 2, 3];
+fn createVec() -> vec<int32> {
+    vec<int32> result = [1, 2, 3];
     ret result;   // result is NOT auto-freed — ownership transfers to caller
 }
 ```
@@ -354,7 +354,7 @@ Deferred statements execute even when an exception occurs. Before `longjmp` unwi
 
 ```tm
 try {
-    Vec<int32> data = [1, 2, 3];
+    vec<int32> data = [1, 2, 3];
     defer data.free();
 
     panic("error");
@@ -381,9 +381,9 @@ try {
 | `string` | Stack (fat ptr) | 16 | None (literals are static) |
 | `int32[N]` | Stack | N × 4 | None |
 | `struct` | Stack | Sum of fields + padding | None |
-| `Vec<T>` | Stack header + heap data | 24 + (cap × elem_size) | Auto or `defer v.free()` |
-| `Map<K,V>` | Stack header + heap data | 64 + (cap × (1 + key + val + 8)) | Auto or `defer m.free()` |
-| `Set<T>` | Stack header + heap data | 48 + (cap × (1 + key + 8)) | Auto or `defer s.free()` |
+| `vec<T>` | Stack header + heap data | 24 + (cap × elem_size) | Auto or `defer v.free()` |
+| `map<K,V>` | Stack header + heap data | 64 + (cap × (1 + key + val + 8)) | Auto or `defer m.free()` |
+| `set<T>` | Stack header + heap data | 48 + (cap × (1 + key + 8)) | Auto or `defer s.free()` |
 | Pointer (`T*`) | Stack | 8 | Manual (`free()`) |
 
 ---
@@ -400,7 +400,7 @@ defer close(fd);
 **Let auto-cleanup handle collections when possible:**
 ```tm
 void compute() {
-    Vec<int32> v = [1, 2, 3];
+    vec<int32> v = [1, 2, 3];
     // no need for defer v.free() — auto-cleanup handles it
     println(v.len());
 }
@@ -412,7 +412,7 @@ void transaction() {
     lock(mutex);
     defer unlock(mutex);       // always unlocked, even on panic
 
-    Vec<int32> data = loadData();
+    vec<int32> data = loadData();
     defer data.free();         // freed before unlock
 
     process(data);

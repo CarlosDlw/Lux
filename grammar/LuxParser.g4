@@ -6,7 +6,13 @@ options {
 
 // Entry point
 program
-    : namespaceDecl? useDecl* includeDecl* topLevelDecl* EOF
+    : namespaceDecl? preambleDecl* topLevelDecl* EOF
+    ;
+
+// use and #include can appear in any order
+preambleDecl
+    : useDecl
+    | includeDecl
     ;
 
 // namespace Main;
@@ -156,7 +162,8 @@ exprStmt
 
 // int32 x = 42;  or  int32 x;
 varDeclStmt
-    : typeSpec IDENTIFIER ASSIGN expression SEMI
+    : typeSpec LPAREN IDENTIFIER (COMMA IDENTIFIER)* RPAREN ASSIGN expression SEMI  // auto (x, y) = expr;
+    | typeSpec IDENTIFIER ASSIGN expression SEMI
     | typeSpec IDENTIFIER SEMI
     ;
 
@@ -311,7 +318,12 @@ expression
     : expression DOT IDENTIFIER LPAREN argList? RPAREN         # methodCallExpr
     | expression LPAREN argList? RPAREN                        # fnCallExpr
     | expression DOT IDENTIFIER                               # fieldAccessExpr
+    | expression DOT INT_LIT                                   # tupleIndexExpr
+    | expression DOT FLOAT_LIT                                 # chainedTupleIndexExpr
+    | expression ARROW IDENTIFIER LPAREN argList? RPAREN       # arrowMethodCallExpr
     | expression ARROW IDENTIFIER                              # arrowAccessExpr
+    | expression ARROW INT_LIT                                 # tupleArrowIndexExpr
+    | expression ARROW FLOAT_LIT                               # chainedTupleArrowIndexExpr
     | expression LBRACKET expression RBRACKET                  # indexExpr
     | expression AS typeSpec                                   # castExpr
     | expression IS typeSpec                                   # isExpr
@@ -323,7 +335,7 @@ expression
     | IDENTIFIER SCOPE IDENTIFIER                              # enumAccessExpr
     // Unary prefix
     | STAR expression                                          # derefExpr
-    | AMPERSAND IDENTIFIER                                     # addrOfExpr
+    | AMPERSAND expression                                     # addrOfExpr
     | MINUS expression                                         # negExpr
     | SPAWN expression                                         # spawnExpr
     | AWAIT expression                                         # awaitExpr
@@ -338,7 +350,8 @@ expression
     // Additive
     | expression op=(PLUS | MINUS) expression                  # addSubExpr
     // Shift
-    | expression op=(LSHIFT | RSHIFT) expression               # shiftExpr
+    | expression LSHIFT expression                              # lshiftExpr
+    | expression GT GT expression                               # rshiftExpr
     // Relational
     | expression op=(LT | GT | LTE | GTE) expression           # relExpr
     // Equality
@@ -358,17 +371,21 @@ expression
     // Range
     | expression RANGE expression                              # rangeExpr
     | expression RANGE_INCL expression                         # rangeInclExpr
-    // Ternary
-    | expression QUESTION expression COLON expression          # ternaryExpr
+    // Ternary (right-associative for chaining: a ? b : c ? d : e)
+    | <assoc=right> expression QUESTION expression COLON expression  # ternaryExpr
     // Try expression (lowest precedence – wraps entire sub-expression)
     | TRY expression                                           # tryExpr
     // Atoms
+    | LPAREN expression COMMA expression (COMMA expression)* RPAREN  # tupleLitExpr
     | LPAREN expression RPAREN                                 # parenExpr
     | SPREAD expression                                        # spreadExpr
     | LBRACKET expression PIPE FOR typeSpec IDENTIFIER IN expression (IF expression)? RBRACKET  # listCompExpr
     | LBRACKET (expression (COMMA expression)*)? RBRACKET      # arrayLitExpr
     | NULL_LIT                                                 # nullLitExpr
     | INT_LIT                                                  # intLitExpr
+    | HEX_LIT                                                  # hexLitExpr
+    | OCT_LIT                                                  # octLitExpr
+    | BIN_LIT                                                  # binLitExpr
     | FLOAT_LIT                                                # floatLitExpr
     | BOOL_LIT                                                 # boolLitExpr
     | CHAR_LIT                                                 # charLitExpr
@@ -380,11 +397,17 @@ expression
 // Type specifiers (recursive for array types: []int32, [10]int32, [][]char)
 typeSpec
     : STAR typeSpec                    // Pointer type: *int32, *[]char
+    | typeSpec STAR                    // Error: C-style pointer (int32*)
     | LBRACKET INT_LIT RBRACKET typeSpec  // Fixed-size array: [10]int32, [3][3]float64
     | LBRACKET RBRACKET typeSpec       // Array type: []int32, [][]char
     | fnTypeSpec                       // Function type
-    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT  // Generic extended type: Vec<int32>, Map<string, int64>
+    | VEC LT typeSpec GT               // Built-in: vec<int32>
+    | MAP LT typeSpec COMMA typeSpec GT // Built-in: map<string, int32>
+    | SET LT typeSpec GT               // Built-in: set<string>
+    | TUPLE LT typeSpec (COMMA typeSpec)+ GT  // Built-in: tuple<int32, string>
+    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT  // Generic extended type: Task<int32>
     | primitiveType                    // int32, float64, bool, etc.
+    | AUTO                             // Type inference: auto x = 42;
     | IDENTIFIER                       // User-defined type: Point, Color, etc.
     ;
 

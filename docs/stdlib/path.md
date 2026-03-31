@@ -13,7 +13,7 @@ use std::path::{ join, parent, fileName, extension, normalize };
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `join` | `(string, string) -> string` | Join two path segments |
-| `joinAll` | `(Vec<string>) -> string` | Join multiple path segments |
+| `joinAll` | `(vec<string>) -> string` | Join multiple path segments |
 | `parent` | `(string) -> string` | Parent directory |
 | `fileName` | `(string) -> string` | File name with extension |
 | `stem` | `(string) -> string` | File name without extension |

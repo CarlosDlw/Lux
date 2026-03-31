@@ -100,6 +100,7 @@ private:
     void checkUnionDecl(LuxParser::UnionDeclContext* decl);
     void checkEnumDecl(LuxParser::EnumDeclContext* decl);
     void checkExtendDecl(LuxParser::ExtendDeclContext* decl);
+    void checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl);
     void checkExternDecl(LuxParser::ExternDeclContext* decl);
     void registerFunctionSignature(LuxParser::FunctionDeclContext* func);
     void checkFunction(LuxParser::FunctionDeclContext* func);
@@ -129,6 +130,7 @@ private:
     // ── Flow analysis helpers ───────────────────────────────────────
     bool isTerminatorStmt(LuxParser::StatementContext* stmt);
     void warnUnusedLocals(LuxParser::FunctionDeclContext* func);
+    void warnUnusedLocals(antlr4::ParserRuleContext* ctx);
 
     // ── Error reporting with source location ────────────────────────
     void error(antlr4::ParserRuleContext* ctx, const std::string& msg);
@@ -154,7 +156,10 @@ private:
     // C enum constants: name → { type, value }
     struct CEnumConstant {
         const TypeInfo* type;
-        int64_t value;
+        int64_t value = 0;
+        double  floatValue = 0.0;
+        bool    isFloat  = false;
+        bool    isString = false;
     };
     std::unordered_map<std::string, CEnumConstant> cEnumConstants_;
 

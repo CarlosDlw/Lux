@@ -290,9 +290,20 @@ bool CHeaderResolver::resolveLocalHeader(const std::string& headerName,
 }
 
 // libclang visitor callback
+namespace {
 struct VisitorData {
     CTypeMapper* mapper;
     CBindings*   bindings;
+
+    // Macros whose body couldn't be directly evaluated (e.g. references
+    // other macros or function-like macro calls).  Resolved in a second
+    // pass via a synthetic translation unit.
+    struct UnresolvedMacro {
+        std::string name;
+        std::string sourceFile;
+        unsigned    line;
+    };
+    std::vector<UnresolvedMacro> unresolvedMacros;
 };
 
 // ── Macro constant evaluation helpers ────────────────────────────────────
@@ -496,6 +507,49 @@ static bool tryEvalMacroTokens(const std::vector<std::string>& tokens,
     return true;
 }
 
+// Try to parse a single float literal token (e.g. "3.14", "9.80665f", "1e-5").
+static bool tryEvalFloatLiteral(const std::vector<std::string>& tokens,
+                                double& result) {
+    if (tokens.size() != 1) return false;
+    std::string tok = tokens[0];
+    if (tok.empty()) return false;
+
+    // Strip trailing f/F/l/L suffix
+    while (!tok.empty()) {
+        char c = tok.back();
+        if (c == 'f' || c == 'F' || c == 'l' || c == 'L')
+            tok.pop_back();
+        else break;
+    }
+    if (tok.empty()) return false;
+
+    // Must contain a dot or exponent to be a float
+    bool hasFloatChar = false;
+    for (char c : tok) {
+        if (c == '.' || c == 'e' || c == 'E') { hasFloatChar = true; break; }
+    }
+    if (!hasFloatChar) return false;
+
+    try {
+        size_t pos = 0;
+        result = std::stod(tok, &pos);
+        return pos == tok.size();
+    } catch (...) {
+        return false;
+    }
+}
+
+// Try to parse a single string literal token (e.g. "\"hello\"").
+static bool tryEvalStringLiteral(const std::vector<std::string>& tokens,
+                                 std::string& result) {
+    if (tokens.size() != 1) return false;
+    const std::string& tok = tokens[0];
+    if (tok.size() < 2) return false;
+    if (tok.front() != '"' || tok.back() != '"') return false;
+    result = tok.substr(1, tok.size() - 2);
+    return true;
+}
+
 // Try to parse a macro body as a struct compound literal.
 // Patterns recognized:
 //   CLITERAL(Color){245, 245, 245, 255}     (raylib style)
@@ -556,6 +610,30 @@ static bool tryEvalStructLiteralMacro(const std::vector<std::string>& tokens,
     if (pos != tokens.size()) return false;
 
     return !outType.empty() && !outValues.empty();
+}
+
+// Heuristic: given the raw body tokens of an object-like macro, return true
+// if they look like they *might* evaluate to a numeric constant expression.
+// Rejects bodies that contain string literals, attribute keywords, or other
+// tokens that can't possibly be part of a constant expression.
+static bool couldBeConstantExpr(const std::vector<std::string>& tokens) {
+    if (tokens.empty()) return false;
+    for (auto& tok : tokens) {
+        if (tok.empty()) return false;
+        // String / wide-string literal → not integer
+        if (tok[0] == '"') return false;
+        if (tok.size() >= 2 && tok[0] == 'L' && tok[1] == '"') return false;
+        // Compiler attribute keywords → not integer
+        if (tok.find("__attribute") != std::string::npos) return false;
+        if (tok.find("__has_") != std::string::npos) return false;
+        if (tok.find("__extension") != std::string::npos) return false;
+        if (tok == "__inline__" || tok == "__inline") return false;
+        if (tok == "__volatile__" || tok == "__volatile") return false;
+        if (tok == "extern" || tok == "static" || tok == "typedef") return false;
+        if (tok == "void" || tok == "struct" || tok == "union") return false;
+        // Operators, parens, digits, identifiers → ok
+    }
+    return true;
 }
 
 // ── libclang visitor callback ────────────────────────────────────────────
@@ -777,16 +855,45 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
             cm.sourceFile = extractCursorSourceFile(cursor, &cm.line);
             data->bindings->addMacro(std::move(cm));
         } else {
-            // Try as struct compound literal: CLITERAL(Type){...} or (Type){...}
-            std::string structType;
-            std::vector<int64_t> fieldValues;
-            if (tryEvalStructLiteralMacro(bodyTokens, structType, fieldValues)) {
-                CStructMacro sm;
-                sm.name       = name;
-                sm.structType = structType;
-                sm.fieldValues = std::move(fieldValues);
-                sm.sourceFile  = extractCursorSourceFile(cursor, &sm.line);
-                data->bindings->addStructMacro(std::move(sm));
+            // Try as float literal: #define M_PI 3.14159...
+            double floatVal = 0.0;
+            if (tryEvalFloatLiteral(bodyTokens, floatVal)) {
+                CMacro cm;
+                cm.name       = name;
+                cm.floatValue = floatVal;
+                cm.isFloat    = true;
+                cm.sourceFile = extractCursorSourceFile(cursor, &cm.line);
+                data->bindings->addMacro(std::move(cm));
+            }
+            // Try as string literal: #define FOO "bar"
+            else {
+                std::string strVal;
+                if (tryEvalStringLiteral(bodyTokens, strVal)) {
+                    CMacro cm;
+                    cm.name        = name;
+                    cm.stringValue = std::move(strVal);
+                    cm.isString    = true;
+                    cm.sourceFile  = extractCursorSourceFile(cursor, &cm.line);
+                    data->bindings->addMacro(std::move(cm));
+                }
+                // Try as struct compound literal: CLITERAL(Type){...} or (Type){...}
+                else {
+                    std::string structType;
+                    std::vector<int64_t> fieldValues;
+                    if (tryEvalStructLiteralMacro(bodyTokens, structType, fieldValues)) {
+                        CStructMacro sm;
+                        sm.name       = name;
+                        sm.structType = structType;
+                        sm.fieldValues = std::move(fieldValues);
+                        sm.sourceFile  = extractCursorSourceFile(cursor, &sm.line);
+                        data->bindings->addStructMacro(std::move(sm));
+                    } else if (!bodyTokens.empty() && couldBeConstantExpr(bodyTokens)) {
+                        // Defer for batch evaluation via preprocessor expansion
+                        unsigned srcLine = 0;
+                        std::string srcFile = extractCursorSourceFile(cursor, &srcLine);
+                        data->unresolvedMacros.push_back({name, srcFile, srcLine});
+                    }
+                }
             }
         }
     }
@@ -821,6 +928,8 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
 
     return CXChildVisit_Continue;
 }
+
+} // anonymous namespace
 
 bool CHeaderResolver::parseHeader(const std::string& headerContent,
                                    const std::vector<std::string>& clangArgs) {
@@ -882,6 +991,121 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
     vdata.bindings = &bindings_;
 
     clang_visitChildren(rootCursor, cursorVisitor, &vdata);
+
+    // ── Batch-evaluate unresolved macros via preprocessor expansion ──
+    // Macros whose body references other macros (including function-like
+    // macro calls) can't be evaluated from raw tokens alone.  We create a
+    // synthetic TU that assigns each macro to a variable and let the C
+    // preprocessor + clang constant evaluator resolve the values.
+    //
+    // Pass 1: try as long long (integer constants)
+    // Pass 2: try remaining as double (float constants)
+    if (!vdata.unresolvedMacros.empty()) {
+        struct EvalData {
+            std::vector<VisitorData::UnresolvedMacro>* macros;
+            CBindings* bindings;
+            std::vector<bool> resolved;  // track which indices were resolved
+            bool isFloatPass;
+        };
+
+        auto runBatchEval = [&](const std::string& cType, bool floatPass,
+                                const std::vector<VisitorData::UnresolvedMacro>& macros,
+                                std::vector<bool>& resolved) {
+            std::string evalSource = headerContent;
+            for (size_t i = 0; i < macros.size(); i++) {
+                if (resolved[i]) continue;
+                evalSource += "static const " + cType + " __lux_eval_" +
+                              std::to_string(i) + " = " +
+                              macros[i].name + ";\n";
+            }
+
+            CXUnsavedFile evalUnsaved;
+            evalUnsaved.Filename = "lux_eval.c";
+            evalUnsaved.Contents = evalSource.c_str();
+            evalUnsaved.Length   = evalSource.size();
+
+            CXTranslationUnit evalTU = clang_parseTranslationUnit(
+                index,
+                "lux_eval.c",
+                argv.data(),
+                static_cast<int>(argv.size()),
+                &evalUnsaved,
+                1,
+                CXTranslationUnit_SkipFunctionBodies
+            );
+            if (!evalTU) return;
+
+            EvalData evd = { const_cast<std::vector<VisitorData::UnresolvedMacro>*>(&macros),
+                             &bindings_, resolved, floatPass };
+
+            CXCursor evalRoot = clang_getTranslationUnitCursor(evalTU);
+            clang_visitChildren(evalRoot,
+                [](CXCursor cur, CXCursor, CXClientData cd)
+                    -> CXChildVisitResult {
+                    if (clang_getCursorKind(cur) != CXCursor_VarDecl)
+                        return CXChildVisit_Continue;
+
+                    CXString cxN = clang_getCursorSpelling(cur);
+                    std::string vn = clang_getCString(cxN);
+                    clang_disposeString(cxN);
+
+                    if (vn.size() <= 11 ||
+                        vn.substr(0, 11) != "__lux_eval_")
+                        return CXChildVisit_Continue;
+
+                    size_t idx = 0;
+                    try { idx = std::stoul(vn.substr(11)); }
+                    catch (...) { return CXChildVisit_Continue; }
+
+                    auto* evd = static_cast<EvalData*>(cd);
+                    if (idx >= evd->macros->size() || evd->resolved[idx])
+                        return CXChildVisit_Continue;
+
+                    CXEvalResult ev = clang_Cursor_Evaluate(cur);
+                    if (!ev) return CXChildVisit_Continue;
+
+                    auto kind = clang_EvalResult_getKind(ev);
+                    auto& m = (*evd->macros)[idx];
+
+                    if (kind == CXEval_Int && !evd->isFloatPass) {
+                        CMacro cm;
+                        cm.name       = m.name;
+                        cm.value      = clang_EvalResult_getAsLongLong(ev);
+                        cm.isNull     = false;
+                        cm.sourceFile = m.sourceFile;
+                        cm.line       = m.line;
+                        evd->bindings->addMacro(std::move(cm));
+                        evd->resolved[idx] = true;
+                    } else if (kind == CXEval_Float && evd->isFloatPass) {
+                        CMacro cm;
+                        cm.name       = m.name;
+                        cm.floatValue = clang_EvalResult_getAsDouble(ev);
+                        cm.isFloat    = true;
+                        cm.sourceFile = m.sourceFile;
+                        cm.line       = m.line;
+                        evd->bindings->addMacro(std::move(cm));
+                        evd->resolved[idx] = true;
+                    }
+
+                    clang_EvalResult_dispose(ev);
+                    return CXChildVisit_Continue;
+                },
+                &evd);
+
+            clang_disposeTranslationUnit(evalTU);
+        };
+
+        std::vector<bool> resolved(vdata.unresolvedMacros.size(), false);
+
+        // Pass 1: integer constants (long long)
+        runBatchEval("long long", false, vdata.unresolvedMacros, resolved);
+
+        // Pass 2: float constants (double) — only for remaining unresolved
+        bool hasUnresolved = false;
+        for (bool r : resolved) if (!r) { hasUnresolved = true; break; }
+        if (hasUnresolved)
+            runBatchEval("double", true, vdata.unresolvedMacros, resolved);
+    }
 
     clang_disposeTranslationUnit(tu);
     clang_disposeIndex(index);

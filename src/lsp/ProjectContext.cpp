@@ -91,46 +91,29 @@ std::string ProjectContext::namespaceFor(const std::string& filePath) const {
 // ═══════════════════════════════════════════════════════════════════════
 
 std::string ProjectContext::findProjectRoot(const std::string& filePath) {
-    // Walk up from the file's directory looking for the project root.
-    // Heuristic: the root is the highest directory that still contains .lx files.
+    // Walk up from the file's directory looking for an explicit project marker.
+    // Using project markers (CMakeLists.txt, Makefile, .git, etc.) is far more
+    // reliable than scanning for .lx files, which can cause runaway traversal
+    // into system directories like /proc when no marker is found.
+    static const std::vector<std::string> kMarkers = {
+        "CMakeLists.txt", "Makefile", "makefile", ".git", ".hg", ".svn"
+    };
+
     try {
         auto dir = fs::canonical(fs::path(filePath).parent_path());
-        std::string bestRoot = dir.string();
 
         while (dir.has_parent_path() && dir != dir.parent_path()) {
-            auto parent = dir.parent_path();
-            // Check if parent still has .lx files (directly or in subdirs)
-            bool hasLx = false;
-            for (auto& entry : fs::directory_iterator(parent)) {
-                if (entry.is_regular_file() && entry.path().extension() == ".lx") {
-                    hasLx = true;
-                    break;
-                }
-                if (entry.is_directory()) {
-                    auto dirName = entry.path().filename().string();
-                    if (!dirName.empty() && dirName[0] == '.') continue;
-                    // Quick check: does this subdir have any .lx?
-                    for (auto& sub : fs::recursive_directory_iterator(
-                             entry.path(), fs::directory_options::skip_permission_denied)) {
-                        if (sub.is_regular_file() && sub.path().extension() == ".lx") {
-                            hasLx = true;
-                            break;
-                        }
-                    }
-                    if (hasLx) break;
-                }
+            for (const auto& marker : kMarkers) {
+                std::error_code ec;
+                if (fs::exists(dir / marker, ec) && !ec)
+                    return dir.string();
             }
-            if (hasLx) {
-                bestRoot = parent.string();
-                dir = parent;
-            } else {
-                break;
-            }
+            dir = dir.parent_path();
         }
 
-        return bestRoot;
+        // No marker found — fall back to the file's own directory.
+        return fs::canonical(fs::path(filePath).parent_path()).string();
     } catch (...) {
-        // If path resolution fails, use the file's directory.
         return fs::path(filePath).parent_path().string();
     }
 }

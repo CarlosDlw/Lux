@@ -153,7 +153,8 @@ std::string LspServer::findMainFile(const std::string& projectRoot) {
     try {
         for (auto& entry : fs::recursive_directory_iterator(
                  projectRoot, fs::directory_options::skip_permission_denied)) {
-            if (!entry.is_regular_file()) continue;
+            std::error_code ec;
+            if (!entry.is_regular_file(ec) || ec) continue;
             if (entry.path().extension() != ".lx") continue;
 
             std::ifstream f(entry.path());

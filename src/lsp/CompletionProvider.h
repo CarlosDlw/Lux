@@ -105,6 +105,7 @@ private:
         std::string modulePath;      // for use: accumulated path (e.g. "std::log")
         unsigned    indexDepth = 0;   // for dot: number of [..] index accesses on receiver
         std::vector<std::string> methodChain; // for dot: chained method calls (e.g. {"abs", "toString"})
+        bool closingCharPresent = false; // for IncludeHeader: '>' or '"' already exists after cursor
     };
 
     // Analyze the source text around the cursor to determine context.
@@ -196,7 +197,8 @@ private:
 
     // Add C header file suggestions for #include <|.
     void addHeaderSuggestions(std::vector<CompletionItem>& items,
-                             const std::string& prefix);
+                              const std::string& prefix,
+                              bool omitClosingChar = false);
 
     // Add doc-tag completions inside /** ... */ blocks.
     void addDocTagCompletions(std::vector<CompletionItem>& items,

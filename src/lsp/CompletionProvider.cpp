@@ -494,7 +494,7 @@ std::vector<CompletionItem> CompletionProvider::complete(
     // Short-circuit for #include header completion — no parsing needed
     if (req.context == CompletionContext::IncludeHeader) {
         std::vector<CompletionItem> items;
-        addHeaderSuggestions(items, req.prefix);
+        addHeaderSuggestions(items, req.prefix, req.closingCharPresent);
         return items;
     }
 
@@ -699,12 +699,14 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
         if (trimmed.size() >= 10 && trimmed.substr(0, 10) == "#include <") {
             req.context = CompletionContext::IncludeHeader;
             req.prefix = trimmed.substr(10); // everything after '<'
+            req.closingCharPresent = (col < lineText.size() && lineText[col] == '>');
             return req;
         }
         // Match: #include "prefix (local headers — same logic)
         if (trimmed.size() >= 10 && trimmed.substr(0, 10) == "#include \"") {
             req.context = CompletionContext::IncludeHeader;
             req.prefix = trimmed.substr(10);
+            req.closingCharPresent = (col < lineText.size() && lineText[col] == '"');
             return req;
         }
     }
@@ -2205,7 +2207,8 @@ void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem>& items,
 }
 
 void CompletionProvider::addHeaderSuggestions(std::vector<CompletionItem>& items,
-                                              const std::string& prefix) {
+                                              const std::string& prefix,
+                                              bool omitClosingChar) {
     // Cache the header list to avoid re-scanning on every keystroke
     static std::vector<std::string> cachedHeaders;
     static bool cached = false;
@@ -2220,7 +2223,7 @@ void CompletionProvider::addHeaderSuggestions(std::vector<CompletionItem>& items
         ci.label = h;
         ci.kind = CompletionKind::File;
         ci.detail = "C header";
-        ci.insertText = h + ">";
+        ci.insertText = omitClosingChar ? h : h + ">";
         items.push_back(std::move(ci));
     }
 }

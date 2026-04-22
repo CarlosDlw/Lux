@@ -186,9 +186,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             if (!func->IDENTIFIER()) continue;
             auto* nameToken = func->IDENTIFIER()->getSymbol();
             if (nameToken == hoveredToken) {
-                return HoverResult{withDoc(formatFunctionDecl(func), func->getStart()->getLine() - 1),
-                                   line, col,
-                                   line, col + tokenText.size()};
+                return makeResult(nameToken, withDoc(formatFunctionDecl(func), func->getStart()->getLine() - 1));
             }
             // Check parameter names
             if (auto* params = func->paramList()) {

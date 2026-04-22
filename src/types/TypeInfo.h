@@ -9,6 +9,10 @@ class LLVMContext;
 class DataLayout;
 }
 
+namespace antlr4 {
+class ParserRuleContext;
+}
+
 enum class TypeKind {
     Integer,
     Float,
@@ -52,6 +56,14 @@ struct TypeInfo {
     unsigned arraySize = 0;                  // >0 for fixed-size arrays: [N]T
     std::vector<unsigned> arraySizes;        // multi-dim array sizes for type aliases: [3][3]T → {3,3}
     std::vector<const TypeInfo*> tupleElements; // non-empty only for Tuple
+
+    // User-defined generic instance metadata (set by Checker during monomorphization)
+    bool isGenericInstance = false;                     // true when Foo<int32> was instantiated
+    std::string genericBaseName;                       // "Node" for Node<int32>
+    std::vector<std::string> typeParamNames;           // ["T"] — from the template definition
+    std::vector<const TypeInfo*> typeArgs;             // [int32] — resolved concrete types
+    // Opaque pointer to the original struct AST node — cast to StructDeclContext* at use sites
+    antlr4::ParserRuleContext* genericStructDecl = nullptr;
 
     llvm::Type* toLLVMType(llvm::LLVMContext& ctx,
                            const llvm::DataLayout& dl) const;

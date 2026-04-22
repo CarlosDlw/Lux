@@ -169,4 +169,58 @@ private:
     // Check if a function is known (local, same-namespace, imported, or builtin)
     bool isKnownFunction(const std::string& name) const;
     bool isKnownType(const std::string& name) const;
+
+    // ── User-defined generics (monomorphization) ─────────────────────
+    struct GenericStructTemplate {
+        std::vector<std::string>      typeParams;  // e.g. {"T"} or {"K", "V"}
+        LuxParser::StructDeclContext* decl;        // original AST node (non-owning)
+    };
+    struct GenericFuncTemplate {
+        std::vector<std::string>       typeParams;
+        LuxParser::FunctionDeclContext* decl;
+    };
+    struct GenericExtendTemplate {
+        std::vector<std::string>       typeParams;
+        LuxParser::ExtendDeclContext*  decl;
+    };
+    std::unordered_map<std::string, GenericStructTemplate>  genericStructTemplates_;
+    std::unordered_map<std::string, GenericFuncTemplate>    genericFuncTemplates_;
+    std::unordered_map<std::string, GenericExtendTemplate>  genericExtendTemplates_;
+    // Tracks instantiations in progress for cycle detection
+    std::unordered_set<std::string> instantiatingGenerics_;
+
+    // Mangles "Node" + ["int32"] → "Node__int32"
+    static std::string mangleGenericName(const std::string& baseName,
+                                         const std::vector<const TypeInfo*>& typeArgs);
+
+    // Produces (and caches) a concrete TypeInfo for a generic struct instantiation.
+    // Returns nullptr and emits an error on failure.
+    const TypeInfo* instantiateGenericStruct(
+        const std::string& baseName,
+        const GenericStructTemplate& tmpl,
+        const std::vector<const TypeInfo*>& typeArgs,
+        antlr4::ParserRuleContext* ctx);
+
+    // Produces (and caches) a concrete TypeInfo for a generic function instantiation.
+    const TypeInfo* instantiateGenericFunc(
+        const std::string& baseName,
+        const GenericFuncTemplate& tmpl,
+        const std::vector<const TypeInfo*>& typeArgs,
+        antlr4::ParserRuleContext* ctx);
+
+    // Resolves a type spec under a substitution map (typeParam → concrete TypeInfo*).
+    const TypeInfo* resolveTypeSpecWithSubst(
+        LuxParser::TypeSpecContext* typeSpec,
+        const std::unordered_map<std::string, const TypeInfo*>& subst,
+        unsigned& arrayDims);
+
+    // Returns the constraint TypeInfo for a type param (e.g. "numeric"), or nullptr.
+    const TypeInfo* resolveTypeParamConstraint(const std::string& constraintName,
+                                               antlr4::ParserRuleContext* ctx);
+
+    // Checks that a concrete type arg satisfies its constraint.
+    bool satisfiesConstraint(const TypeInfo* typeArg,
+                             const TypeInfo* constraint,
+                             const std::string& paramName,
+                             antlr4::ParserRuleContext* ctx);
 };

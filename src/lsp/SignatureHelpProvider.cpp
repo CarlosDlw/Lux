@@ -116,8 +116,23 @@ SignatureHelpProvider::analyzeCallSite(const std::string& source,
 
     // Extract function/method name from just before the '('.
     // Walk backwards over whitespace, then collect identifier characters.
+    // Handle generic calls: max<int32>( → funcName = "max"
     size_t nameEnd = openParen;
     while (nameEnd > 0 && source[nameEnd - 1] == ' ') nameEnd--;
+
+    // If preceded by '>', this is a generic call — skip back over <type args>
+    bool isGenericCall = (nameEnd > 0 && source[nameEnd - 1] == '>');
+    if (isGenericCall) {
+        size_t pos = nameEnd - 1; // points at '>'
+        int angleDepth = 1;
+        while (pos > 0 && angleDepth > 0) {
+            pos--;
+            if (source[pos] == '>') angleDepth++;
+            else if (source[pos] == '<') angleDepth--;
+        }
+        nameEnd = pos; // points at '<'
+        while (nameEnd > 0 && source[nameEnd - 1] == ' ') nameEnd--;
+    }
 
     size_t nameStart = nameEnd;
     while (nameStart > 0) {
@@ -143,22 +158,48 @@ SignatureHelpProvider::analyzeCallSite(const std::string& source,
     size_t checkPos = nameStart;
     while (checkPos > 0 && source[checkPos - 1] == ' ') checkPos--;
 
-    // Check for static call: Type::method(...)
+    // Check for static call: Type::method(...) or Type<T>::method(...)
     if (checkPos >= 2 && source[checkPos - 1] == ':' && source[checkPos - 2] == ':') {
         site.isStaticCall = true;
         size_t scopeEnd = checkPos - 2;
         while (scopeEnd > 0 && source[scopeEnd - 1] == ' ') scopeEnd--;
-        size_t scopeStart = scopeEnd;
-        while (scopeStart > 0) {
-            char sc = source[scopeStart - 1];
-            if (std::isalnum(static_cast<unsigned char>(sc)) || sc == '_') {
-                scopeStart--;
-            } else {
-                break;
+
+        // Handle generic base type: Node<int32>::method
+        if (scopeEnd > 0 && source[scopeEnd - 1] == '>') {
+            size_t pos = scopeEnd - 1;
+            int angleDepth = 1;
+            while (pos > 0 && angleDepth > 0) {
+                pos--;
+                if (source[pos] == '>') angleDepth++;
+                else if (source[pos] == '<') angleDepth--;
             }
+            // pos now points at '<'; walk back over base name
+            size_t baseEnd = pos;
+            while (baseEnd > 0 && source[baseEnd - 1] == ' ') baseEnd--;
+            size_t baseStart = baseEnd;
+            while (baseStart > 0) {
+                char sc = source[baseStart - 1];
+                if (std::isalnum(static_cast<unsigned char>(sc)) || sc == '_') {
+                    baseStart--;
+                } else {
+                    break;
+                }
+            }
+            if (baseStart < baseEnd)
+                site.staticTypeName = source.substr(baseStart, baseEnd - baseStart);
+        } else {
+            size_t scopeStart = scopeEnd;
+            while (scopeStart > 0) {
+                char sc = source[scopeStart - 1];
+                if (std::isalnum(static_cast<unsigned char>(sc)) || sc == '_') {
+                    scopeStart--;
+                } else {
+                    break;
+                }
+            }
+            if (scopeStart < scopeEnd)
+                site.staticTypeName = source.substr(scopeStart, scopeEnd - scopeStart);
         }
-        if (scopeStart < scopeEnd)
-            site.staticTypeName = source.substr(scopeStart, scopeEnd - scopeStart);
     }
     // Check for method call: obj.method(...)
     else if (checkPos > 0 && source[checkPos - 1] == '.') {

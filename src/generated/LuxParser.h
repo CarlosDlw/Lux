@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/projects/cpp/tollvm/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -42,17 +42,18 @@ public:
     RuleModulePath = 4, RuleIncludeDecl = 5, RuleTopLevelDecl = 6, RuleTypeAliasDecl = 7, 
     RuleEnumDecl = 8, RuleStructDecl = 9, RuleStructField = 10, RuleUnionDecl = 11, 
     RuleUnionField = 12, RuleExternDecl = 13, RuleExternParamList = 14, 
-    RuleExternParam = 15, RuleFunctionDecl = 16, RuleExtendDecl = 17, RuleExtendMethod = 18, 
-    RuleParamList = 19, RuleParam = 20, RuleBlock = 21, RuleStatement = 22, 
-    RuleDeferStmt = 23, RuleExprStmt = 24, RuleVarDeclStmt = 25, RuleAssignStmt = 26, 
-    RuleCompoundAssignStmt = 27, RuleFieldAssignStmt = 28, RuleIndexFieldAssignStmt = 29, 
-    RuleDerefAssignStmt = 30, RuleArrowAssignStmt = 31, RuleArrowCompoundAssignStmt = 32, 
-    RuleCallStmt = 33, RuleArgList = 34, RuleReturnStmt = 35, RuleIfStmt = 36, 
-    RuleElseIfClause = 37, RuleElseClause = 38, RuleForStmt = 39, RuleBreakStmt = 40, 
-    RuleContinueStmt = 41, RuleLoopStmt = 42, RuleWhileStmt = 43, RuleDoWhileStmt = 44, 
-    RuleLockStmt = 45, RuleTryCatchStmt = 46, RuleCatchClause = 47, RuleFinallyClause = 48, 
-    RuleThrowStmt = 49, RuleSwitchStmt = 50, RuleCaseClause = 51, RuleDefaultClause = 52, 
-    RuleExpression = 53, RuleTypeSpec = 54, RuleFnTypeSpec = 55, RulePrimitiveType = 56
+    RuleExternParam = 15, RuleFunctionDecl = 16, RuleExtendDecl = 17, RuleTypeParamList = 18, 
+    RuleTypeParam = 19, RuleExtendMethod = 20, RuleParamList = 21, RuleParam = 22, 
+    RuleBlock = 23, RuleStatement = 24, RuleDeferStmt = 25, RuleExprStmt = 26, 
+    RuleVarDeclStmt = 27, RuleAssignStmt = 28, RuleCompoundAssignStmt = 29, 
+    RuleFieldAssignStmt = 30, RuleIndexFieldAssignStmt = 31, RuleDerefAssignStmt = 32, 
+    RuleArrowAssignStmt = 33, RuleArrowCompoundAssignStmt = 34, RuleCallStmt = 35, 
+    RuleArgList = 36, RuleReturnStmt = 37, RuleIfStmt = 38, RuleElseIfClause = 39, 
+    RuleElseClause = 40, RuleForStmt = 41, RuleBreakStmt = 42, RuleContinueStmt = 43, 
+    RuleLoopStmt = 44, RuleWhileStmt = 45, RuleDoWhileStmt = 46, RuleLockStmt = 47, 
+    RuleTryCatchStmt = 48, RuleCatchClause = 49, RuleFinallyClause = 50, 
+    RuleThrowStmt = 51, RuleSwitchStmt = 52, RuleCaseClause = 53, RuleDefaultClause = 54, 
+    RuleExpression = 55, RuleTypeSpec = 56, RuleFnTypeSpec = 57, RulePrimitiveType = 58
   };
 
   explicit LuxParser(antlr4::TokenStream *input);
@@ -90,6 +91,8 @@ public:
   class ExternParamContext;
   class FunctionDeclContext;
   class ExtendDeclContext;
+  class TypeParamListContext;
+  class TypeParamContext;
   class ExtendMethodContext;
   class ParamListContext;
   class ParamContext;
@@ -316,6 +319,7 @@ public:
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
     antlr4::tree::TerminalNode *RBRACE();
+    TypeParamListContext *typeParamList();
     std::vector<StructFieldContext *> structField();
     StructFieldContext* structField(size_t i);
 
@@ -434,6 +438,7 @@ public:
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *RPAREN();
     BlockContext *block();
+    TypeParamListContext *typeParamList();
     ParamListContext *paramList();
 
 
@@ -451,6 +456,7 @@ public:
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
     antlr4::tree::TerminalNode *RBRACE();
+    TypeParamListContext *typeParamList();
     std::vector<ExtendMethodContext *> extendMethod();
     ExtendMethodContext* extendMethod(size_t i);
 
@@ -460,6 +466,39 @@ public:
   };
 
   ExtendDeclContext* extendDecl();
+
+  class  TypeParamListContext : public antlr4::ParserRuleContext {
+  public:
+    TypeParamListContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeParamContext *> typeParam();
+    TypeParamContext* typeParam(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  TypeParamListContext* typeParamList();
+
+  class  TypeParamContext : public antlr4::ParserRuleContext {
+  public:
+    TypeParamContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *COLON();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  TypeParamContext* typeParam();
 
   class  ExtendMethodContext : public antlr4::ParserRuleContext {
   public:
@@ -1388,6 +1427,28 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  GenericStructLitExprContext : public ExpressionContext {
+  public:
+    GenericStructLitExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COLON();
+    antlr4::tree::TerminalNode* COLON(size_t i);
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  SpawnExprContext : public ExpressionContext {
   public:
     SpawnExprContext(ExpressionContext *ctx);
@@ -1405,6 +1466,26 @@ public:
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *ARROW();
     antlr4::tree::TerminalNode *IDENTIFIER();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  GenericStaticMethodCallExprContext : public ExpressionContext {
+  public:
+    GenericStaticMethodCallExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *SCOPE();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+    ArgListContext *argList();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1511,6 +1592,24 @@ public:
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *AS();
     TypeSpecContext *typeSpec();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  GenericFnCallExprContext : public ExpressionContext {
+  public:
+    GenericFnCallExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+    ArgListContext *argList();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

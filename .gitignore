@@ -6,3 +6,4 @@ build/
 errors/
 node_modules/
 ztests/
+examples/

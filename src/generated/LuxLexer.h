@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/projects/cpp/tollvm/grammar/LuxLexer.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxLexer.g4 by ANTLR 4.13.2
 
 #pragma once
 

@@ -1059,6 +1059,104 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── Generic function call: max<int32>(a, b) ─────────────────────
+    if (auto* gfc = dynamic_cast<LuxParser::GenericFnCallExprContext*>(expr)) {
+        auto* fnId = gfc->IDENTIFIER();
+        if (fnId && fnId->getSymbol() == hoveredToken) {
+            return hoverIdent(fnId->getText(), hoveredToken, tree, bindings,
+                               cursorLine, project);
+        }
+        if (auto* al = gfc->argList()) {
+            for (auto* a : al->expression()) {
+                auto r = walkExprForHover(a, hoveredToken, tokenText,
+                                           tree, bindings, cursorLine, project);
+                if (r) return r;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Generic static method call: Node<int32>::create(42) ─────────
+    if (auto* gsmc = dynamic_cast<LuxParser::GenericStaticMethodCallExprContext*>(expr)) {
+        auto ids = gsmc->IDENTIFIER();
+        if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
+            return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings,
+                               cursorLine, project);
+        }
+        if (ids.size() >= 2 && ids[1]->getSymbol() == hoveredToken) {
+            // Show the generic struct template name + method info
+            std::string structName = ids[0]->getText();
+            std::string methodName = ids[1]->getText();
+            auto* ext = findExtendDecl(tree, structName);
+            if (ext) {
+                for (auto* m : ext->extendMethod()) {
+                    if (m->IDENTIFIER().empty()) continue;
+                    if (m->IDENTIFIER(0)->getText() == methodName) {
+                        std::ostringstream ss;
+                        ss << "```lux\n(static method) " << typeSpecToString(m->typeSpec())
+                           << " " << structName << "<T>::" << methodName << "(";
+                        if (auto* params = m->paramList()) {
+                            bool first = true;
+                            for (auto* p : params->param()) {
+                                if (!first) ss << ", ";
+                                first = false;
+                                ss << typeSpecToString(p->typeSpec())
+                                   << " " << p->IDENTIFIER()->getText();
+                            }
+                        }
+                        ss << ")\n```";
+                        return makeResult(hoveredToken, ss.str());
+                    }
+                }
+            }
+            return makeResult(hoveredToken,
+                "```lux\n(method) " + structName + "::" + methodName + "()\n```");
+        }
+        if (auto* al = gsmc->argList()) {
+            for (auto* a : al->expression()) {
+                auto r = walkExprForHover(a, hoveredToken, tokenText,
+                                           tree, bindings, cursorLine, project);
+                if (r) return r;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Generic struct literal: Node<int32> { field: val } ──────────
+    if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
+        auto ids = gsl->IDENTIFIER();
+        if (!ids.empty() && ids[0]->getSymbol() == hoveredToken) {
+            return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings,
+                               cursorLine, project);
+        }
+        if (ids.size() > 1) {
+            std::string structName = ids[0]->getText();
+            auto* sd = findStructDecl(tree, structName);
+            for (size_t i = 1; i < ids.size(); i++) {
+                if (ids[i]->getSymbol() != hoveredToken) continue;
+                std::string fieldName = ids[i]->getText();
+                if (sd) {
+                    for (auto* f : sd->structField()) {
+                        if (f->IDENTIFIER()->getText() == fieldName) {
+                            std::string md = "```lux\n(field) "
+                                + typeSpecToString(f->typeSpec()) + " "
+                                + structName + "." + fieldName + "\n```";
+                            return makeResult(hoveredToken, md);
+                        }
+                    }
+                }
+                return makeResult(hoveredToken,
+                    "```lux\n(field) " + structName + "." + fieldName + "\n```");
+            }
+        }
+        for (auto* child : gsl->expression()) {
+            auto r = walkExprForHover(child, hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
     // ── Cast: expr as Type ──────────────────────────────────────────
     if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr)) {
         if (auto* ts = cast->typeSpec()) {
@@ -2970,7 +3068,20 @@ std::string HoverProvider::formatExternDecl(LuxParser::ExternDeclContext* ext) {
 
 std::string HoverProvider::formatStructDecl(LuxParser::StructDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lux\nstruct " << decl->IDENTIFIER()->getText() << " {\n";
+    ss << "```lux\nstruct " << decl->IDENTIFIER()->getText();
+    if (auto* tpl = decl->typeParamList()) {
+        ss << "<";
+        bool first = true;
+        for (auto* tp : tpl->typeParam()) {
+            if (!first) ss << ", ";
+            auto ids = tp->IDENTIFIER();
+            if (!ids.empty()) ss << ids[0]->getText();
+            if (tp->COLON() && ids.size() >= 2) ss << ": " << ids[1]->getText();
+            first = false;
+        }
+        ss << ">";
+    }
+    ss << " {\n";
     for (auto* f : decl->structField()) {
         ss << "    " << typeSpecToString(f->typeSpec()) << " "
            << f->IDENTIFIER()->getText() << "\n";

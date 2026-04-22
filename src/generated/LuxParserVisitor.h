@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/projects/cpp/tollvm/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -56,6 +56,10 @@ public:
     virtual std::any visitFunctionDecl(LuxParser::FunctionDeclContext *context) = 0;
 
     virtual std::any visitExtendDecl(LuxParser::ExtendDeclContext *context) = 0;
+
+    virtual std::any visitTypeParamList(LuxParser::TypeParamListContext *context) = 0;
+
+    virtual std::any visitTypeParam(LuxParser::TypeParamContext *context) = 0;
 
     virtual std::any visitExtendMethod(LuxParser::ExtendMethodContext *context) = 0;
 
@@ -173,9 +177,13 @@ public:
 
     virtual std::any visitFloatLitExpr(LuxParser::FloatLitExprContext *context) = 0;
 
+    virtual std::any visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext *context) = 0;
+
     virtual std::any visitSpawnExpr(LuxParser::SpawnExprContext *context) = 0;
 
     virtual std::any visitArrowAccessExpr(LuxParser::ArrowAccessExprContext *context) = 0;
+
+    virtual std::any visitGenericStaticMethodCallExpr(LuxParser::GenericStaticMethodCallExprContext *context) = 0;
 
     virtual std::any visitListCompExpr(LuxParser::ListCompExprContext *context) = 0;
 
@@ -194,6 +202,8 @@ public:
     virtual std::any visitNullCoalExpr(LuxParser::NullCoalExprContext *context) = 0;
 
     virtual std::any visitCastExpr(LuxParser::CastExprContext *context) = 0;
+
+    virtual std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext *context) = 0;
 
     virtual std::any visitEnumAccessExpr(LuxParser::EnumAccessExprContext *context) = 0;
 

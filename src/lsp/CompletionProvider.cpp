@@ -787,36 +787,62 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
         }
     }
 
-    // Check for scope access: Name::|
+    // Check for scope access: Name::| or Name<T>::|
     {
-        // Look for IDENTIFIER:: just before cursor
-        size_t pos = before.size();
-        if (pos >= 2 && before[pos - 1] == ':' && before[pos - 2] == ':') {
-            // Extract identifier before ::
-            size_t end = pos - 2;
+        // Helper lambda: given a position at ':' in '::', extract base name
+        // handling both plain "Name::" and generic "Name<T>::"
+        auto extractScopeName = [&](size_t colonStart) -> std::string {
+            // colonStart points to the first ':' of '::'
+            size_t end = colonStart;
+            while (end > 0 && before[end - 1] == ' ') --end;
+            // Check for generic: ends with '>'
+            if (end > 0 && before[end - 1] == '>') {
+                size_t pos2 = end - 1;
+                int depth = 1;
+                while (pos2 > 0 && depth > 0) {
+                    --pos2;
+                    if (before[pos2] == '>') depth++;
+                    else if (before[pos2] == '<') depth--;
+                }
+                // pos2 points at '<'; now extract identifier before it
+                size_t nameEnd = pos2;
+                while (nameEnd > 0 && before[nameEnd - 1] == ' ') --nameEnd;
+                size_t nameStart = nameEnd;
+                while (nameStart > 0 && (std::isalnum(before[nameStart - 1]) || before[nameStart - 1] == '_'))
+                    --nameStart;
+                if (nameStart < nameEnd)
+                    return before.substr(nameStart, nameEnd - nameStart);
+                return "";
+            }
+            // Plain identifier before ::
             size_t start = end;
             while (start > 0 && (std::isalnum(before[start - 1]) || before[start - 1] == '_'))
                 --start;
-            if (start < end) {
+            if (start < end)
+                return before.substr(start, end - start);
+            return "";
+        };
+
+        size_t pos = before.size();
+        if (pos >= 2 && before[pos - 1] == ':' && before[pos - 2] == ':') {
+            std::string sname = extractScopeName(pos - 2);
+            if (!sname.empty()) {
                 req.context = CompletionContext::ScopeAccess;
-                req.scopeName = before.substr(start, end - start);
+                req.scopeName = sname;
                 req.prefix.clear();
                 return req;
             }
         }
-        // Also handle Name::partial|
+        // Also handle Name::partial| or Name<T>::partial|
         if (pos >= 3) {
             size_t idEnd = pos;
             while (idEnd > 0 && (std::isalnum(before[idEnd - 1]) || before[idEnd - 1] == '_'))
                 --idEnd;
             if (idEnd >= 2 && before[idEnd - 1] == ':' && before[idEnd - 2] == ':') {
-                size_t scopeEnd = idEnd - 2;
-                size_t scopeStart = scopeEnd;
-                while (scopeStart > 0 && (std::isalnum(before[scopeStart - 1]) || before[scopeStart - 1] == '_'))
-                    --scopeStart;
-                if (scopeStart < scopeEnd) {
+                std::string sname = extractScopeName(idEnd - 2);
+                if (!sname.empty()) {
                     req.context = CompletionContext::ScopeAccess;
-                    req.scopeName = before.substr(scopeStart, scopeEnd - scopeStart);
+                    req.scopeName = sname;
                     req.prefix = before.substr(idEnd);
                     return req;
                 }
@@ -1050,7 +1076,23 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem>& items,
             CompletionItem item;
             item.label = name;
             item.kind = CompletionKind::Struct;
-            item.detail = "struct " + name;
+            if (sd->typeParamList()) {
+                // Generic struct: show type params in detail
+                std::string params;
+                bool first = true;
+                for (auto* tp : sd->typeParamList()->typeParam()) {
+                    auto ids = tp->IDENTIFIER();
+                    if (!first) params += ", ";
+                    if (!ids.empty()) params += ids[0]->getText();
+                    if (tp->COLON() && ids.size() >= 2) params += ": " + ids[1]->getText();
+                    first = false;
+                }
+                item.detail = "struct " + name + "<" + params + ">";
+                item.insertText = name + "<${1}>";
+                item.insertTextFormat = InsertTextFormat::Snippet;
+            } else {
+                item.detail = "struct " + name;
+            }
             items.push_back(std::move(item));
         }
 

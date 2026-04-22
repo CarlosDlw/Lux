@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/projects/cpp/tollvm/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -88,6 +88,14 @@ public:
   }
 
   virtual std::any visitExtendDecl(LuxParser::ExtendDeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTypeParamList(LuxParser::TypeParamListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTypeParam(LuxParser::TypeParamContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -323,11 +331,19 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitSpawnExpr(LuxParser::SpawnExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
   virtual std::any visitArrowAccessExpr(LuxParser::ArrowAccessExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitGenericStaticMethodCallExpr(LuxParser::GenericStaticMethodCallExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -364,6 +380,10 @@ public:
   }
 
   virtual std::any visitCastExpr(LuxParser::CastExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

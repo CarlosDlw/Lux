@@ -153,6 +153,15 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                       static_cast<uint32_t>(SemanticTokenMod::Definition));
+        // Type params (T, U, ...) declared in the generic list
+        if (ctx->typeParamList()) {
+            for (auto* tp : ctx->typeParamList()->typeParam()) {
+                auto ids = tp->IDENTIFIER();
+                if (!ids.empty())
+                    classifyIdent(map, ids[0], SemanticTokenType::Type,
+                                  static_cast<uint32_t>(SemanticTokenMod::Declaration));
+            }
+        }
     }
     else if (auto* ctx = dynamic_cast<LuxParser::StructFieldContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Property,
@@ -194,6 +203,15 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                       static_cast<uint32_t>(SemanticTokenMod::Definition));
+        // Generic type params
+        if (ctx->typeParamList()) {
+            for (auto* tp : ctx->typeParamList()->typeParam()) {
+                auto ids = tp->IDENTIFIER();
+                if (!ids.empty())
+                    classifyIdent(map, ids[0], SemanticTokenType::Type,
+                                  static_cast<uint32_t>(SemanticTokenMod::Declaration));
+            }
+        }
     }
 
     // ── extern decl ──
@@ -205,6 +223,15 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     // ── extend block ──
     else if (auto* ctx = dynamic_cast<LuxParser::ExtendDeclContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct);
+        // Generic type params
+        if (ctx->typeParamList()) {
+            for (auto* tp : ctx->typeParamList()->typeParam()) {
+                auto ids = tp->IDENTIFIER();
+                if (!ids.empty())
+                    classifyIdent(map, ids[0], SemanticTokenType::Type,
+                                  static_cast<uint32_t>(SemanticTokenMod::Declaration));
+            }
+        }
     }
     else if (auto* ctx = dynamic_cast<LuxParser::ExtendMethodContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
@@ -301,6 +328,30 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         if (!ids.empty()) {
             classifyIdent(map, ids[0], SemanticTokenType::Struct);
             // Rest are field names
+            for (size_t i = 1; i < ids.size(); ++i)
+                classifyIdent(map, ids[i], SemanticTokenType::Property);
+        }
+    }
+
+    // ── generic function call: max<int32>(a, b) ──
+    else if (auto* ctx = dynamic_cast<LuxParser::GenericFnCallExprContext*>(node)) {
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function);
+    }
+
+    // ── generic static method call: Node<int32>::create(42) ──
+    else if (auto* ctx = dynamic_cast<LuxParser::GenericStaticMethodCallExprContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        if (ids.size() >= 1) classifyIdent(map, ids[0], SemanticTokenType::Struct);
+        if (ids.size() >= 2) classifyIdent(map, ids[1], SemanticTokenType::Method,
+                                            static_cast<uint32_t>(SemanticTokenMod::Static));
+    }
+
+    // ── generic struct literal: Node<int32> { value: 42 } ──
+    else if (auto* ctx = dynamic_cast<LuxParser::GenericStructLitExprContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        if (!ids.empty()) {
+            classifyIdent(map, ids[0], SemanticTokenType::Struct);
+            // Field names start at [1]
             for (size_t i = 1; i < ids.size(); ++i)
                 classifyIdent(map, ids[i], SemanticTokenType::Property);
         }

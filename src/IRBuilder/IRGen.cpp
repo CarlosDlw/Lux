@@ -316,6 +316,17 @@ std::any IRGen::visitProgram(LuxParser::ProgramContext* ctx) {
 }
 
 std::any IRGen::visitStructDecl(LuxParser::StructDeclContext* ctx) {
+    // Generic struct template — register as template, do NOT emit LLVM struct yet
+    if (auto* tpl = ctx->typeParamList()) {
+        GenericStructTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = ctx;
+        auto name = ctx->IDENTIFIER()->getText();
+        genericStructTemplates_[name] = std::move(tmpl);
+        return {};
+    }
+
     auto structName = ctx->IDENTIFIER()->getText();
 
     // Create opaque LLVM struct first (enables self-referencing pointer fields)
@@ -405,6 +416,17 @@ std::any IRGen::visitEnumDecl(LuxParser::EnumDeclContext* ctx) {
 
 std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
     auto structName = ctx->IDENTIFIER()->getText();
+
+    // Generic extend template — register but don't emit yet
+    if (auto* tpl = ctx->typeParamList()) {
+        GenericExtendTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = ctx;
+        genericExtendTemplates_[structName] = std::move(tmpl);
+        return {};
+    }
+
     auto* structTI = typeRegistry_.lookup(structName);
     if (!structTI || structTI->kind != TypeKind::Struct) {
         std::cerr << "lux: cannot extend unknown struct '" << structName << "'\n";
@@ -609,6 +631,17 @@ std::any IRGen::visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) {
 
 // ── Forward-declare a user function (signature only, no body) ───────────
 void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
+    // Generic function templates are not forward-declared — only instantiations are
+    if (ctx->typeParamList()) {
+        auto funcName = ctx->IDENTIFIER()->getText();
+        GenericFuncTemplate tmpl;
+        for (auto* tp : ctx->typeParamList()->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = ctx;
+        genericFuncTemplates_[funcName] = std::move(tmpl);
+        return;
+    }
+
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
     auto  funcName   = ctx->IDENTIFIER()->getText();
@@ -670,6 +703,9 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
 }
 
 std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
+    // Generic function templates are handled on-demand at call sites
+    if (ctx->typeParamList()) return {};
+
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
     auto  funcName   = ctx->IDENTIFIER()->getText();
@@ -4580,6 +4616,41 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
 
         auto* alloca   = it->second.alloca;
         auto* structTI = it->second.typeInfo;
+
+        // Auto-dereference: if variable is a pointer to struct, load it first
+        if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
+            (structTI->pointeeType->kind == TypeKind::Struct ||
+             structTI->pointeeType->kind == TypeKind::Union)) {
+            auto* ptrVal = builder_->CreateLoad(
+                llvm::PointerType::getUnqual(*context_), alloca, "selfptr");
+            auto* pointeeTI = structTI->pointeeType;
+            int fieldIdx = -1;
+            const TypeInfo* fieldTI = nullptr;
+            for (size_t f = 0; f < pointeeTI->fields.size(); f++) {
+                if (pointeeTI->fields[f].name == fieldName) {
+                    fieldIdx = static_cast<int>(f);
+                    fieldTI = pointeeTI->fields[f].typeInfo;
+                    break;
+                }
+            }
+            if (fieldIdx < 0) {
+                std::cerr << "lux: '" << pointeeTI->name
+                          << "' has no field '" << fieldName << "'\n";
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+            auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+            auto* structLLTy = llvm::StructType::getTypeByName(*context_, pointeeTI->name);
+            if (!structLLTy) {
+                // Fallback: look up from LLVM module
+                structLLTy = static_cast<llvm::StructType*>(
+                    pointeeTI->toLLVMType(*context_, module_->getDataLayout()));
+            }
+            auto* gep = builder_->CreateStructGEP(
+                structLLTy, ptrVal, fieldIdx, fieldName + "_ptr");
+            return static_cast<llvm::Value*>(
+                builder_->CreateLoad(fieldLLTy, gep, fieldName));
+        }
 
         if (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union) {
             std::cerr << "lux: '" << varName << "' is not a struct or union\n";
@@ -9142,14 +9213,28 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
         return typeRegistry_.lookup(fullName);
     }
 
-    // Generic extended type: Task<int32>, etc. (user-defined generics)
+    // Generic extended type: Task<int32>, or user-defined generic struct: Node<int32>
     if (ctx->LT()) {
         auto baseName = ctx->IDENTIFIER()->getText();
         auto typeParams = ctx->typeSpec();
 
-        if (typeParams.size() == 1) {
-            // Single type param: Vec<T>
-            auto* elemTI = resolveTypeInfo(typeParams[0]);
+        // Resolve all type arguments
+        std::vector<const TypeInfo*> resolvedArgs;
+        for (auto* tp : typeParams) {
+            auto* argTI = resolveTypeInfo(tp);
+            if (!argTI) argTI = typeRegistry_.lookup("int32");
+            resolvedArgs.push_back(argTI);
+        }
+
+        // Check if it's a user-defined generic struct
+        auto structIt = genericStructTemplates_.find(baseName);
+        if (structIt != genericStructTemplates_.end()) {
+            return instantiateGenericStruct(baseName, structIt->second, resolvedArgs);
+        }
+
+        // Built-in extended generics (Task, etc.)
+        if (resolvedArgs.size() == 1) {
+            auto* elemTI = resolvedArgs[0];
             if (!elemTI) return typeRegistry_.lookup("int32");
             auto fullName = baseName + "<" + elemTI->name + ">";
             if (auto* existing = typeRegistry_.lookup(fullName))
@@ -9165,10 +9250,9 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
             ti.extendedKind = baseName;
             typeRegistry_.registerType(std::move(ti));
             return typeRegistry_.lookup(fullName);
-        } else if (typeParams.size() == 2) {
-            // Two type params: Map<K, V>
-            auto* keyTI = resolveTypeInfo(typeParams[0]);
-            auto* valTI = resolveTypeInfo(typeParams[1]);
+        } else if (resolvedArgs.size() == 2) {
+            auto* keyTI = resolvedArgs[0];
+            auto* valTI = resolvedArgs[1];
             if (!keyTI || !valTI) return typeRegistry_.lookup("int32");
             auto fullName = baseName + "<" + keyTI->name + ", " + valTI->name + ">";
             if (auto* existing = typeRegistry_.lookup(fullName))
@@ -9215,6 +9299,9 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
 
     auto* ti  = typeRegistry_.lookup(name);
     if (!ti) {
+        // Check active generic type-param substitution (e.g. T → int32 inside generic body)
+        auto substIt = currentGenericSubst_.find(name);
+        if (substIt != currentGenericSubst_.end()) return substIt->second;
         std::cerr << "lux: unknown type '" << name << "'\n";
         return typeRegistry_.lookup("int32");
     }
@@ -12821,4 +12908,567 @@ IRGen::promoteArithmetic(llvm::Value* lhs, llvm::Value* rhs) {
     }
 
     return {lhs, rhs};
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  User-defined generics — monomorphization (IRGen side)
+// ═══════════════════════════════════════════════════════════════════════
+
+std::string IRGen::mangleGenericName(const std::string& baseName,
+                                      const std::vector<const TypeInfo*>& typeArgs) {
+    std::string name = baseName;
+    for (auto* arg : typeArgs) {
+        name += "__";
+        for (char c : arg->name) {
+            if (c == '<' || c == '>' || c == ' ' || c == ',')
+                name += '_';
+            else
+                name += c;
+        }
+    }
+    return name;
+}
+
+const TypeInfo* IRGen::resolveTypeInfoWithSubst(
+    LuxParser::TypeSpecContext* ctx,
+    const std::unordered_map<std::string, const TypeInfo*>& subst) {
+    if (!ctx) return typeRegistry_.lookup("int32");
+
+    // Bare IDENTIFIER that is a type param → substitute
+    if (!ctx->LBRACKET() && !ctx->STAR() && !ctx->LT() &&
+        !ctx->VEC() && !ctx->MAP() && !ctx->SET() &&
+        !ctx->TUPLE() && !ctx->AUTO() && !ctx->fnTypeSpec()) {
+        auto name = ctx->getText();
+        auto it = subst.find(name);
+        if (it != subst.end()) return it->second;
+    }
+
+    // Pointer: *T
+    if (ctx->STAR() && ctx->typeSpec().size() == 1) {
+        auto* inner = resolveTypeInfoWithSubst(ctx->typeSpec(0), subst);
+        if (!inner) return typeRegistry_.lookup("int32");
+        auto ptrName = "*" + inner->name;
+        if (auto* existing = typeRegistry_.lookup(ptrName)) return existing;
+        TypeInfo ti;
+        ti.name = ptrName;
+        ti.kind = TypeKind::Pointer;
+        ti.pointeeType = inner;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        ti.builtinSuffix = "ptr";
+        typeRegistry_.registerType(std::move(ti));
+        return typeRegistry_.lookup(ptrName);
+    }
+
+    // Generic instantiation: Foo<T> → Foo<int32>
+    if (ctx->LT()) {
+        auto innerBaseName = ctx->IDENTIFIER()->getText();
+        std::vector<const TypeInfo*> resolvedArgs;
+        for (auto* argSpec : ctx->typeSpec()) {
+            auto* argTI = resolveTypeInfoWithSubst(argSpec, subst);
+            if (!argTI) argTI = typeRegistry_.lookup("int32");
+            resolvedArgs.push_back(argTI);
+        }
+        auto structIt = genericStructTemplates_.find(innerBaseName);
+        if (structIt != genericStructTemplates_.end()) {
+            return instantiateGenericStruct(innerBaseName, structIt->second, resolvedArgs);
+        }
+    }
+
+    // Default: normal resolution
+    return resolveTypeInfo(ctx);
+}
+
+llvm::StructType* IRGen::ensureGenericStructType(const std::string& mangledName,
+                                                   const TypeInfo* instanceTI) {
+    // Check if LLVM struct already created
+    if (auto* existing = llvm::StructType::getTypeByName(*context_, mangledName))
+        return existing;
+
+    // Create the LLVM struct type from instanceTI fields
+    auto* structType = llvm::StructType::create(*context_, mangledName);
+
+    std::vector<llvm::Type*> fieldTypes;
+    for (auto& field : instanceTI->fields) {
+        auto* llTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+        fieldTypes.push_back(llTy);
+    }
+    structType->setBody(fieldTypes);
+    return structType;
+}
+
+const TypeInfo* IRGen::instantiateGenericStruct(
+    const std::string& baseName,
+    const GenericStructTemplate& tmpl,
+    const std::vector<const TypeInfo*>& typeArgs) {
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+
+    // Already instantiated?
+    if (auto* existing = typeRegistry_.lookup(mangledName)) {
+        ensureGenericStructType(mangledName, existing);
+        return existing;
+    }
+
+    // Cycle detection
+    if (instantiatedGenerics_.count(mangledName)) {
+        std::cerr << "lux: recursive generic instantiation: " << mangledName << "\n";
+        return typeRegistry_.lookup("int32");
+    }
+    instantiatedGenerics_.insert(mangledName);
+
+    // Build substitution map: T → int32, etc.
+    std::unordered_map<std::string, const TypeInfo*> subst;
+    for (size_t i = 0; i < tmpl.typeParams.size() && i < typeArgs.size(); i++)
+        subst[tmpl.typeParams[i]] = typeArgs[i];
+
+    // Register skeleton for self-referencing fields
+    TypeInfo skeleton;
+    skeleton.name = mangledName;
+    skeleton.kind = TypeKind::Struct;
+    skeleton.bitWidth = 0;
+    skeleton.isSigned = false;
+    skeleton.isGenericInstance = true;
+    skeleton.genericBaseName = baseName;
+    skeleton.typeParamNames = tmpl.typeParams;
+    skeleton.typeArgs = typeArgs;
+    skeleton.genericStructDecl = static_cast<antlr4::ParserRuleContext*>(tmpl.decl);
+    typeRegistry_.registerType(skeleton);
+
+    // Create opaque LLVM struct first (enables self-referencing pointer fields)
+    auto* structLLTy = llvm::StructType::create(*context_, mangledName);
+
+    // Instantiate fields
+    TypeInfo ti = skeleton;
+    std::vector<llvm::Type*> fieldTypes;
+    for (auto* field : tmpl.decl->structField()) {
+        auto* fieldTI = resolveTypeInfoWithSubst(field->typeSpec(), subst);
+        if (!fieldTI) fieldTI = typeRegistry_.lookup("int32");
+        fieldTypes.push_back(fieldTI->toLLVMType(*context_, module_->getDataLayout()));
+        ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI });
+    }
+    structLLTy->setBody(fieldTypes);
+
+    // Update registry with full type info
+    typeRegistry_.registerType(std::move(ti));
+    const TypeInfo* result = typeRegistry_.lookup(mangledName);
+
+    // Instantiate extend methods for this struct, if any
+    auto extendIt = genericExtendTemplates_.find(baseName);
+    if (extendIt != genericExtendTemplates_.end()) {
+        auto& extTmpl = extendIt->second;
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+
+        for (auto* method : extTmpl.decl->extendMethod()) {
+            auto methodName = method->IDENTIFIER(0)->getText();
+            auto* retTI = resolveTypeInfoWithSubst(method->typeSpec(), subst);
+            auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
+
+            bool isStatic = (method->AMPERSAND() == nullptr);
+
+            std::vector<llvm::Type*> paramLLTypes;
+            std::vector<const TypeInfo*> paramTIs;
+            if (!isStatic) {
+                paramLLTypes.push_back(ptrTy); // &self
+            }
+
+            std::vector<LuxParser::ParamContext*> params;
+            if (isStatic) {
+                if (auto* pl = method->paramList()) params = pl->param();
+            } else {
+                params = method->param();
+            }
+
+            for (auto* param : params) {
+                auto* pTI = resolveTypeInfoWithSubst(param->typeSpec(), subst);
+                if (!pTI) pTI = typeRegistry_.lookup("int32");
+                paramTIs.push_back(pTI);
+                paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
+            }
+
+            auto funcName = mangledName + "__" + methodName;
+            auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
+            auto* fn = llvm::Function::Create(
+                fnType, llvm::Function::ExternalLinkage, funcName, module_);
+
+            if (isStatic)
+                staticStructMethods_[mangledName][methodName] = fn;
+            else
+                structMethods_[mangledName][methodName] = fn;
+
+            // Emit body
+            auto* savedFunc = currentFunction_;
+            auto  savedLocals = locals_;
+            auto* savedBB = builder_->GetInsertBlock();
+            auto  savedSubst = currentGenericSubst_;
+            currentGenericSubst_ = subst;
+            currentFunction_ = fn;
+            locals_.clear();
+
+            auto* entry = llvm::BasicBlock::Create(*context_, "entry", fn);
+            builder_->SetInsertPoint(entry);
+
+            if (!isStatic) {
+                auto* selfArg = fn->getArg(0);
+                selfArg->setName("self");
+                auto* selfAlloca = builder_->CreateAlloca(ptrTy, nullptr, "self");
+                builder_->CreateStore(selfArg, selfAlloca);
+                auto ptrTIName = "*" + mangledName;
+                if (!typeRegistry_.lookup(ptrTIName)) {
+                    TypeInfo ptrTI;
+                    ptrTI.name = ptrTIName;
+                    ptrTI.kind = TypeKind::Pointer;
+                    ptrTI.pointeeType = result;
+                    ptrTI.bitWidth = 0;
+                    ptrTI.isSigned = false;
+                    ptrTI.builtinSuffix = "ptr";
+                    typeRegistry_.registerType(std::move(ptrTI));
+                }
+                locals_["self"] = { selfAlloca, typeRegistry_.lookup(ptrTIName), 0 };
+            }
+
+            size_t argOffset = isStatic ? 0 : 1;
+            for (size_t i = 0; i < params.size(); i++) {
+                auto paramName = params[i]->IDENTIFIER()->getText();
+                auto* arg = fn->getArg(i + argOffset);
+                arg->setName(paramName);
+                auto* paramLLTy = paramLLTypes[i + argOffset];
+                auto* alloca = builder_->CreateAlloca(paramLLTy, nullptr, paramName);
+                builder_->CreateStore(arg, alloca);
+                locals_[paramName] = { alloca, paramTIs[i], 0, true };
+            }
+
+            // Register all type params as their concrete types so body can use them
+            // (we can't inject them into locals_, but resolveTypeInfo already uses
+            //  the substituted types since fields are concrete)
+
+            for (auto* stmt : method->block()->statement())
+                visit(stmt);
+
+            if (!builder_->GetInsertBlock()->getTerminator()) {
+                if (retLLTy->isVoidTy())
+                    builder_->CreateRetVoid();
+                else
+                    builder_->CreateRet(llvm::UndefValue::get(retLLTy));
+            }
+
+            currentFunction_ = savedFunc;
+            locals_ = savedLocals;
+            currentGenericSubst_ = savedSubst;
+            if (savedBB)
+                builder_->SetInsertPoint(savedBB);
+        }
+    }
+
+    instantiatedGenerics_.erase(mangledName);
+    return result;
+}
+
+llvm::Function* IRGen::instantiateGenericFunc(
+    const std::string& baseName,
+    const GenericFuncTemplate& tmpl,
+    const std::vector<const TypeInfo*>& typeArgs) {
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+
+    // Already instantiated?
+    if (auto* existing = module_->getFunction(mangledName))
+        return existing;
+
+    // Cycle detection
+    if (instantiatedGenerics_.count(mangledName)) {
+        std::cerr << "lux: recursive generic function instantiation: " << mangledName << "\n";
+        return nullptr;
+    }
+    instantiatedGenerics_.insert(mangledName);
+
+    // Build substitution map
+    std::unordered_map<std::string, const TypeInfo*> subst;
+    for (size_t i = 0; i < tmpl.typeParams.size() && i < typeArgs.size(); i++)
+        subst[tmpl.typeParams[i]] = typeArgs[i];
+
+    // Resolve return type
+    auto* retTI = resolveTypeInfoWithSubst(tmpl.decl->typeSpec(), subst);
+    if (!retTI) retTI = typeRegistry_.lookup("int32");
+    auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
+
+    // Collect parameter types
+    std::vector<llvm::Type*> paramLLTypes;
+    std::vector<const TypeInfo*> paramTIs;
+    if (auto* paramList = tmpl.decl->paramList()) {
+        for (auto* param : paramList->param()) {
+            auto* pTI = resolveTypeInfoWithSubst(param->typeSpec(), subst);
+            if (!pTI) pTI = typeRegistry_.lookup("int32");
+            paramTIs.push_back(pTI);
+            paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
+        }
+    }
+
+    auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
+    auto* fn = llvm::Function::Create(
+        fnType, llvm::Function::ExternalLinkage, mangledName, module_);
+
+    fnReturnTypes_[mangledName] = retTI;
+
+    // Emit body
+    auto* savedFunc = currentFunction_;
+    auto  savedLocals = locals_;
+    auto* savedBB = builder_->GetInsertBlock();
+    auto  savedSubst = currentGenericSubst_;
+    currentGenericSubst_ = subst;
+    currentFunction_ = fn;
+    locals_.clear();
+
+    auto* entry = llvm::BasicBlock::Create(*context_, "entry", fn);
+    builder_->SetInsertPoint(entry);
+
+    if (auto* paramList = tmpl.decl->paramList()) {
+        auto params = paramList->param();
+        for (size_t i = 0; i < params.size(); i++) {
+            auto paramName = params[i]->IDENTIFIER()->getText();
+            auto* arg = fn->getArg(i);
+            arg->setName(paramName);
+            auto* paramLLTy = paramLLTypes[i];
+            auto* alloca = builder_->CreateAlloca(paramLLTy, nullptr, paramName);
+            builder_->CreateStore(arg, alloca);
+            locals_[paramName] = { alloca, paramTIs[i], 0, true };
+        }
+    }
+
+    for (auto* stmt : tmpl.decl->block()->statement())
+        visit(stmt);
+
+    if (!builder_->GetInsertBlock()->getTerminator()) {
+        if (retLLTy->isVoidTy())
+            builder_->CreateRetVoid();
+        else
+            builder_->CreateRet(llvm::UndefValue::get(retLLTy));
+    }
+
+    currentFunction_ = savedFunc;
+    locals_ = savedLocals;
+    currentGenericSubst_ = savedSubst;
+    if (savedBB)
+        builder_->SetInsertPoint(savedBB);
+
+    instantiatedGenerics_.erase(mangledName);
+    return fn;
+}
+
+// ── Generic expression visitors ──────────────────────────────────────────
+
+std::any IRGen::visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext* ctx) {
+    auto funcName = ctx->IDENTIFIER()->getText();
+
+    // Resolve type arguments
+    std::vector<const TypeInfo*> typeArgs;
+    for (auto* ts : ctx->typeSpec()) {
+        auto* argTI = resolveTypeInfo(ts);
+        if (!argTI) argTI = typeRegistry_.lookup("int32");
+        typeArgs.push_back(argTI);
+    }
+
+    // Check if it's a user-defined generic function
+    auto funcIt = genericFuncTemplates_.find(funcName);
+    llvm::Function* fn = nullptr;
+    if (funcIt != genericFuncTemplates_.end()) {
+        fn = instantiateGenericFunc(funcName, funcIt->second, typeArgs);
+    }
+
+    if (!fn) {
+        std::cerr << "lux: unknown generic function '" << funcName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    // Collect and coerce arguments
+    std::vector<llvm::Value*> callArgs;
+    if (auto* argList = ctx->argList()) {
+        auto* fnType = fn->getFunctionType();
+        size_t paramIdx = 0;
+        for (auto* argExpr : argList->expression()) {
+            auto* argVal = castValue(visit(argExpr));
+            if (paramIdx < fnType->getNumParams()) {
+                auto* paramTy = fnType->getParamType(paramIdx);
+                if (argVal->getType() != paramTy) {
+                    if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                        argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                    else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                        argVal = builder_->CreateFPCast(argVal, paramTy);
+                }
+            }
+            callArgs.push_back(argVal);
+            paramIdx++;
+        }
+    }
+
+    auto* retTy = fn->getReturnType();
+    if (retTy->isVoidTy()) {
+        builder_->CreateCall(fn, callArgs);
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+    return static_cast<llvm::Value*>(
+        builder_->CreateCall(fn, callArgs, "generic_call"));
+}
+
+std::any IRGen::visitGenericStaticMethodCallExpr(
+    LuxParser::GenericStaticMethodCallExprContext* ctx) {
+    auto ids = ctx->IDENTIFIER();
+    auto structBaseName = ids[0]->getText();
+    auto methodName = ids[1]->getText();
+
+    // Resolve type arguments
+    std::vector<const TypeInfo*> typeArgs;
+    for (auto* ts : ctx->typeSpec()) {
+        auto* argTI = resolveTypeInfo(ts);
+        if (!argTI) argTI = typeRegistry_.lookup("int32");
+        typeArgs.push_back(argTI);
+    }
+
+    // Instantiate the generic struct if needed
+    auto structIt = genericStructTemplates_.find(structBaseName);
+    if (structIt == genericStructTemplates_.end()) {
+        std::cerr << "lux: '" << structBaseName << "' is not a generic struct\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+    instantiateGenericStruct(structBaseName, structIt->second, typeArgs);
+
+    auto mangledName = mangleGenericName(structBaseName, typeArgs);
+
+    // Find the static method
+    auto smIt = staticStructMethods_.find(mangledName);
+    if (smIt == staticStructMethods_.end()) {
+        std::cerr << "lux: struct '" << mangledName << "' has no static methods\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+    auto mIt = smIt->second.find(methodName);
+    if (mIt == smIt->second.end()) {
+        std::cerr << "lux: struct '" << mangledName
+                  << "' has no static method '" << methodName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* fn = mIt->second;
+
+    // Collect arguments
+    std::vector<llvm::Value*> callArgs;
+    if (auto* argList = ctx->argList()) {
+        auto* fnType = fn->getFunctionType();
+        size_t paramIdx = 0;
+        for (auto* argExpr : argList->expression()) {
+            auto* argVal = castValue(visit(argExpr));
+            if (paramIdx < fnType->getNumParams()) {
+                auto* paramTy = fnType->getParamType(paramIdx);
+                if (argVal->getType() != paramTy) {
+                    if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                        argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                    else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                        argVal = builder_->CreateFPCast(argVal, paramTy);
+                }
+            }
+            callArgs.push_back(argVal);
+            paramIdx++;
+        }
+    }
+
+    auto* retTy = fn->getReturnType();
+    if (retTy->isVoidTy()) {
+        builder_->CreateCall(fn, callArgs);
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+    return static_cast<llvm::Value*>(
+        builder_->CreateCall(fn, callArgs, "generic_static_call"));
+}
+
+std::any IRGen::visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext* ctx) {
+    auto baseName = ctx->IDENTIFIER(0)->getText();
+
+    // Resolve type arguments
+    std::vector<const TypeInfo*> typeArgs;
+    for (auto* ts : ctx->typeSpec()) {
+        auto* argTI = resolveTypeInfo(ts);
+        if (!argTI) argTI = typeRegistry_.lookup("int32");
+        typeArgs.push_back(argTI);
+    }
+
+    // Ensure the generic struct is instantiated
+    auto structIt = genericStructTemplates_.find(baseName);
+    if (structIt == genericStructTemplates_.end()) {
+        std::cerr << "lux: '" << baseName << "' is not a generic struct\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+    auto* instanceTI = instantiateGenericStruct(baseName, structIt->second, typeArgs);
+    if (!instanceTI) {
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+    auto* structLLTy = llvm::StructType::getTypeByName(*context_, mangledName);
+    if (!structLLTy) {
+        structLLTy = ensureGenericStructType(mangledName, instanceTI);
+    }
+
+    // Allocate the struct on the stack
+    auto* alloca = builder_->CreateAlloca(structLLTy, nullptr, mangledName + ".tmp");
+
+    // Build a map from field name → index
+    std::unordered_map<std::string, unsigned> fieldIndex;
+    for (unsigned i = 0; i < instanceTI->fields.size(); i++)
+        fieldIndex[instanceTI->fields[i].name] = i;
+
+    // Get field initializers from the literal
+    auto ids = ctx->IDENTIFIER();      // field names (includes base struct name at [0]? No — it's separate)
+    auto exprs = ctx->expression();
+
+    // NOTE: The grammar rule is:
+    //   IDENTIFIER LT typeSpec* GT LBRACE (IDENTIFIER COLON expression ...)? RBRACE
+    // IDENTIFIER is the struct name (already used for baseName above).
+    // The field IDENTIFIER/expression pairs come from the repeated IDENTIFIER COLON expression.
+    // In the generated context, IDENTIFIER() returns all IDENTIFIERs including the base name.
+    // Field names start at IDENTIFIER(0) (the struct base name is NOT in ctx->IDENTIFIER() for
+    // the field list — it's the primary IDENTIFIER before LT).
+    // Let's check: the grammar has: IDENTIFIER LT ... GT LBRACE (IDENTIFIER COLON expression)* RBRACE
+    // ctx->IDENTIFIER() returns ALL identifiers matched: [0]=struct name, [1..n]=field names.
+    // So field names start at index 1.
+
+    // Initialize all fields to zero first
+    for (unsigned i = 0; i < instanceTI->fields.size(); i++) {
+        auto* fieldTI = instanceTI->fields[i].typeInfo;
+        auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* gep = builder_->CreateStructGEP(structLLTy, alloca, i);
+        builder_->CreateStore(llvm::Constant::getNullValue(fieldLLTy), gep);
+    }
+
+    // Apply provided field initializers
+    for (size_t i = 0; i < exprs.size(); i++) {
+        auto fieldName = ids[i + 1]->getText(); // field names start at [1]
+        auto it = fieldIndex.find(fieldName);
+        if (it == fieldIndex.end()) {
+            std::cerr << "lux: unknown field '" << fieldName
+                      << "' in generic struct literal '" << mangledName << "'\n";
+            continue;
+        }
+        auto* gep = builder_->CreateStructGEP(structLLTy, alloca, it->second);
+        auto* fieldTI = instanceTI->fields[it->second].typeInfo;
+        auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* val = castValue(visit(exprs[i]));
+        if (val->getType() != fieldLLTy) {
+            if (val->getType()->isIntegerTy() && fieldLLTy->isIntegerTy())
+                val = builder_->CreateIntCast(val, fieldLLTy, true);
+            else if (val->getType()->isPointerTy() && fieldLLTy->isPointerTy())
+                ; // ok — opaque pointers
+        }
+        builder_->CreateStore(val, gep);
+    }
+
+    // Return the value by loading the struct
+    return static_cast<llvm::Value*>(
+        builder_->CreateLoad(structLLTy, alloca, "generic_struct_lit"));
 }

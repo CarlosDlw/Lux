@@ -61,8 +61,9 @@ enumDecl
     ;
 
 // struct Point { int32 x; int32 y; }
+// struct Node<T> { T value; *Node<T> next; }
 structDecl
-    : STRUCT IDENTIFIER LBRACE structField* RBRACE
+    : STRUCT IDENTIFIER typeParamList? LBRACE structField* RBRACE
     ;
 
 structField
@@ -92,14 +93,25 @@ externParam
     : typeSpec IDENTIFIER?
     ;
 
-// int main() { ... }
+// int32 main() { ... }
+// T max<T>(T a, T b) { ... }
 functionDecl
-    : typeSpec IDENTIFIER LPAREN paramList? RPAREN block
+    : typeSpec IDENTIFIER typeParamList? LPAREN paramList? RPAREN block
     ;
 
-// extend Point { ... methods ... }
+// extend Point { ... }
+// extend Node<T> { ... }
 extendDecl
-    : EXTEND IDENTIFIER LBRACE extendMethod* RBRACE
+    : EXTEND IDENTIFIER typeParamList? LBRACE extendMethod* RBRACE
+    ;
+
+// <T>, <K, V>, <T: numeric>
+typeParamList
+    : LT typeParam (COMMA typeParam)* GT
+    ;
+
+typeParam
+    : IDENTIFIER (COLON IDENTIFIER)?  // T or T: constraint
     ;
 
 extendMethod
@@ -316,8 +328,8 @@ defaultClause
 expression
     // Postfix (highest precedence)
     : expression DOT IDENTIFIER LPAREN argList? RPAREN         # methodCallExpr
-    | expression LPAREN argList? RPAREN                        # fnCallExpr
-    | expression DOT IDENTIFIER                               # fieldAccessExpr
+    | expression LPAREN argList? RPAREN                        # fnCallExpr    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LPAREN argList? RPAREN  # genericFnCallExpr
+    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER LPAREN argList? RPAREN  # genericStaticMethodCallExpr    | expression DOT IDENTIFIER                               # fieldAccessExpr
     | expression DOT INT_LIT                                   # tupleIndexExpr
     | expression DOT FLOAT_LIT                                 # chainedTupleIndexExpr
     | expression ARROW IDENTIFIER LPAREN argList? RPAREN       # arrowMethodCallExpr
@@ -331,6 +343,7 @@ expression
     | expression DECR                                          # postDecrExpr
     // Special syntax
     | IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # structLitExpr
+    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # genericStructLitExpr
     | IDENTIFIER SCOPE IDENTIFIER LPAREN argList? RPAREN        # staticMethodCallExpr
     | IDENTIFIER SCOPE IDENTIFIER                              # enumAccessExpr
     // Unary prefix

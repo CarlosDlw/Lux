@@ -141,6 +141,10 @@ public:
     std::any visitTryExpr(LuxParser::TryExprContext* ctx)             override;
     std::any visitExtendDecl(LuxParser::ExtendDeclContext* ctx)        override;
     std::any visitDeferStmt(LuxParser::DeferStmtContext* ctx)           override;
+    // Generic expression visitors
+    std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext* ctx) override;
+    std::any visitGenericStaticMethodCallExpr(LuxParser::GenericStaticMethodCallExprContext* ctx) override;
+    std::any visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext* ctx) override;
 
 private:
     // Non-owning pointers valid only during generate().
@@ -268,6 +272,56 @@ private:
     // Forward-declare a user function (signature only, no body)
     void forwardDeclareFunction(LuxParser::FunctionDeclContext* decl);
     std::string resolveCallTarget(const std::string& name) const;
+
+    // ── User-defined generics ──────────────────────────────────────────────
+    // Generic struct and function template registries
+    struct GenericStructTemplate {
+        std::vector<std::string>      typeParams;
+        LuxParser::StructDeclContext* decl;
+    };
+    struct GenericFuncTemplate {
+        std::vector<std::string>        typeParams;
+        LuxParser::FunctionDeclContext* decl;
+    };
+    struct GenericExtendTemplate {
+        std::vector<std::string>      typeParams;
+        LuxParser::ExtendDeclContext*  decl;
+    };
+    std::unordered_map<std::string, GenericStructTemplate>  genericStructTemplates_;
+    std::unordered_map<std::string, GenericFuncTemplate>    genericFuncTemplates_;
+    std::unordered_map<std::string, GenericExtendTemplate>  genericExtendTemplates_;
+    // Prevents re-instantiation (also detects cycles)
+    std::unordered_set<std::string> instantiatedGenerics_;
+    // Active type-param substitution during generic body emission (T → int32, etc.)
+    std::unordered_map<std::string, const TypeInfo*> currentGenericSubst_;
+
+    // Mangles "Node" + ["int32"] → "Node__int32"
+    static std::string mangleGenericName(const std::string& baseName,
+                                          const std::vector<const TypeInfo*>& typeArgs);
+
+    // Resolves a type spec with a substitution map (type param → concrete TypeInfo*)
+    const TypeInfo* resolveTypeInfoWithSubst(
+        LuxParser::TypeSpecContext* ctx,
+        const std::unordered_map<std::string, const TypeInfo*>& subst);
+
+    // Ensures the LLVM struct type for a generic struct instance exists.
+    // Returns the LLVM StructType* on success, nullptr on error.
+    llvm::StructType* ensureGenericStructType(const std::string& mangledName,
+                                               const TypeInfo* instanceTI);
+
+    // Instantiates a generic struct (TypeInfo + LLVM struct type).
+    // Returns the mangled TypeInfo* (or nullptr on error).
+    const TypeInfo* instantiateGenericStruct(
+        const std::string& baseName,
+        const GenericStructTemplate& tmpl,
+        const std::vector<const TypeInfo*>& typeArgs);
+
+    // Instantiates a generic function (declares LLVM function, emits body).
+    // Returns the LLVM Function* (or nullptr on error).
+    llvm::Function* instantiateGenericFunc(
+        const std::string& baseName,
+        const GenericFuncTemplate& tmpl,
+        const std::vector<const TypeInfo*>& typeArgs);
 
     // Helpers
     const TypeInfo*    resolveTypeInfo(LuxParser::TypeSpecContext* ctx);

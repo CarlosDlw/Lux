@@ -573,35 +573,49 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
         }
     }
 
-    // User-defined generic types (e.g., Task<int32>)
+    // User-defined and extended generic types (e.g., Task<int32>, Node<int32>)
     if (cur->LT()) {
         auto baseName = cur->IDENTIFIER()->getText();
+        auto typeParams = cur->typeSpec();
+
+        if (typeParams.empty()) {
+            error(cur, "generic type '" + baseName + "' requires type parameters");
+            return nullptr;
+        }
+
+        // Resolve all type arguments first
+        std::vector<const TypeInfo*> resolvedArgs;
+        for (auto* tp : typeParams) {
+            unsigned argDims = 0;
+            auto* argTI = resolveTypeSpec(tp, argDims);
+            if (!argTI) return nullptr;
+            resolvedArgs.push_back(argTI);
+        }
+
+        // Check user-defined generic struct templates first
+        auto structIt = genericStructTemplates_.find(baseName);
+        if (structIt != genericStructTemplates_.end()) {
+            return instantiateGenericStruct(baseName, structIt->second, resolvedArgs, cur);
+        }
+
+        // Fall through to known extended types (Task, etc.)
         auto* extDesc = extTypeRegistry_.lookup(baseName);
         if (!extDesc) {
             error(cur, "'" + baseName + "' is not a known generic type");
             return nullptr;
         }
         if (!imports_.isImported(baseName)) {
-            error(cur, "type '" + baseName +
-                       "' is not imported");
-            return nullptr;
-        }
-        auto typeParams = cur->typeSpec();
-        if (typeParams.empty()) {
-            error(cur, "generic type '" + baseName + "' requires type parameters");
+            error(cur, "type '" + baseName + "' is not imported");
             return nullptr;
         }
 
         if (extDesc->genericArity == 1) {
-            // Single type param: Vec<T>
-            if (typeParams.size() != 1) {
+            if (resolvedArgs.size() != 1) {
                 error(cur, "'" + baseName + "' expects 1 type parameter, got " +
-                           std::to_string(typeParams.size()));
+                           std::to_string(resolvedArgs.size()));
                 return nullptr;
             }
-            unsigned elemDims = 0;
-            auto* elemType = resolveTypeSpec(typeParams[0], elemDims);
-            if (!elemType) return nullptr;
+            auto* elemType = resolvedArgs[0];
 
             if (elemType->kind == TypeKind::Extended) {
                 error(cur, "nested collection types are not supported: '" +
@@ -628,16 +642,13 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
             dynamicTypes_.push_back(std::move(ti));
             return raw;
         } else if (extDesc->genericArity == 2) {
-            // Two type params: Map<K, V>
-            if (typeParams.size() != 2) {
+            if (resolvedArgs.size() != 2) {
                 error(cur, "'" + baseName + "' expects 2 type parameters, got " +
-                           std::to_string(typeParams.size()));
+                           std::to_string(resolvedArgs.size()));
                 return nullptr;
             }
-            unsigned keyDims = 0, valDims = 0;
-            auto* keyType = resolveTypeSpec(typeParams[0], keyDims);
-            auto* valType = resolveTypeSpec(typeParams[1], valDims);
-            if (!keyType || !valType) return nullptr;
+            auto* keyType = resolvedArgs[0];
+            auto* valType = resolvedArgs[1];
 
             if (keyType->kind == TypeKind::Extended) {
                 error(cur, "nested collection types are not supported: '" +
@@ -2128,6 +2139,135 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return nullptr;
     }
 
+    // ── Generic function call: max<int32>(a, b) ─────────────────────
+    if (auto* gfc = dynamic_cast<LuxParser::GenericFnCallExprContext*>(expr)) {
+        auto funcName = gfc->IDENTIFIER()->getText();
+        auto typeParamSpecs = gfc->typeSpec();
+
+        // Resolve type arguments
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : typeParamSpecs) {
+            unsigned dims = 0;
+            auto* argTI = resolveTypeSpec(ts, dims);
+            if (!argTI) return nullptr;
+            typeArgs.push_back(argTI);
+        }
+
+        // Find the generic function template
+        auto funcIt = genericFuncTemplates_.find(funcName);
+        if (funcIt == genericFuncTemplates_.end()) {
+            error(expr, "'" + funcName + "' is not a generic function");
+            if (auto* argList = gfc->argList())
+                for (auto* a : argList->expression()) resolveExprType(a);
+            return nullptr;
+        }
+
+        // Instantiate (type-check the body with concrete types)
+        return instantiateGenericFunc(funcName, funcIt->second, typeArgs, expr);
+    }
+
+    // ── Generic static method call: Node<int32>::create(42) ─────────
+    if (auto* gsmc = dynamic_cast<LuxParser::GenericStaticMethodCallExprContext*>(expr)) {
+        auto ids = gsmc->IDENTIFIER();
+        auto structBaseName = ids[0]->getText();
+        auto methodName = ids[1]->getText();
+        auto typeParamSpecs = gsmc->typeSpec();
+
+        // Resolve type arguments
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : typeParamSpecs) {
+            unsigned dims = 0;
+            auto* argTI = resolveTypeSpec(ts, dims);
+            if (!argTI) return nullptr;
+            typeArgs.push_back(argTI);
+        }
+
+        // Find the generic struct template
+        auto structIt = genericStructTemplates_.find(structBaseName);
+        if (structIt == genericStructTemplates_.end()) {
+            error(expr, "'" + structBaseName + "' is not a generic struct");
+            if (auto* argList = gsmc->argList())
+                for (auto* a : argList->expression()) resolveExprType(a);
+            return nullptr;
+        }
+
+        // Instantiate the struct (registers methods)
+        auto* instanceTI = instantiateGenericStruct(structBaseName, structIt->second,
+                                                     typeArgs, expr);
+        if (!instanceTI) return nullptr;
+
+        auto mangledName = mangleGenericName(structBaseName, typeArgs);
+
+        // Find the method in the instantiated struct
+        auto smIt = structMethods_.find(mangledName);
+        if (smIt == structMethods_.end()) {
+            error(expr, "struct '" + mangledName + "' has no methods");
+            if (auto* argList = gsmc->argList())
+                for (auto* a : argList->expression()) resolveExprType(a);
+            return nullptr;
+        }
+
+        for (auto& sm : smIt->second) {
+            if (sm.name == methodName && sm.isStatic) {
+                if (auto* argList = gsmc->argList())
+                    for (auto* a : argList->expression()) resolveExprType(a);
+                return sm.returnType;
+            }
+        }
+
+        error(expr, "struct '" + mangledName + "' has no static method '" + methodName + "'");
+        return nullptr;
+    }
+
+    // ── Generic struct literal: Node<int32> { value: 42, next: null } ─
+    if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
+        auto baseName = gsl->IDENTIFIER(0)->getText();
+        auto typeParamSpecs = gsl->typeSpec();
+
+        // Resolve type arguments
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : typeParamSpecs) {
+            unsigned dims = 0;
+            auto* argTI = resolveTypeSpec(ts, dims);
+            if (!argTI) return nullptr;
+            typeArgs.push_back(argTI);
+        }
+
+        // Find template and instantiate
+        auto structIt = genericStructTemplates_.find(baseName);
+        if (structIt == genericStructTemplates_.end()) {
+            error(expr, "'" + baseName + "' is not a generic struct");
+            return nullptr;
+        }
+
+        auto* instanceTI = instantiateGenericStruct(baseName, structIt->second,
+                                                      typeArgs, expr);
+        if (!instanceTI) return nullptr;
+
+        // Validate field initializers
+        auto mangledName = mangleGenericName(baseName, typeArgs);
+        auto ids = gsl->IDENTIFIER();
+        auto fieldExprs = gsl->expression();
+        std::unordered_map<std::string, const TypeInfo*> fieldTypeMap;
+        for (auto& f : instanceTI->fields)
+            fieldTypeMap[f.name] = f.typeInfo;
+
+        // ids[0] is the struct name, ids[1..n] are field names
+        for (size_t i = 0; i < fieldExprs.size(); i++) {
+            auto fieldName = ids[i + 1]->getText();
+            auto* exprType = resolveExprType(fieldExprs[i]);
+            auto ftIt = fieldTypeMap.find(fieldName);
+            if (ftIt == fieldTypeMap.end()) {
+                error(expr, "unknown field '" + fieldName + "' in '" + mangledName + "'");
+            } else if (exprType && !isAssignable(ftIt->second, exprType)) {
+                error(expr, "field '" + fieldName + "' type mismatch: expected '" +
+                           ftIt->second->name + "', got '" + exprType->name + "'");
+            }
+        }
+
+        return instanceTI;
+    }
+
     // ── Enum access: Enum::Variant ──────────────────────────────────
     if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
         auto ids = ea->IDENTIFIER();
@@ -2270,6 +2410,8 @@ bool Checker::isKnownFunction(const std::string& name) const {
 
 bool Checker::isKnownType(const std::string& name) const {
     if (typeRegistry_.lookup(name)) return true;
+    // Check user-defined generic struct templates
+    if (genericStructTemplates_.count(name)) return true;
     // Check user imports for struct/enum/alias
     if (userImports_.count(name)) return true;
     // Check same-namespace types from other files
@@ -2406,6 +2548,20 @@ void Checker::checkTypeAliasDecl(LuxParser::TypeAliasDeclContext* decl) {
 void Checker::checkStructDecl(LuxParser::StructDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
+    // Generic struct template — register as template, not as concrete type
+    if (auto* tpl = decl->typeParamList()) {
+        if (genericStructTemplates_.count(name)) {
+            error(decl, "generic struct '" + name + "' already defined");
+            return;
+        }
+        GenericStructTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = decl;
+        genericStructTemplates_[name] = std::move(tmpl);
+        return;
+    }
+
     if (typeRegistry_.lookup(name)) {
         error(decl, "type '" + name + "' already defined");
         return;
@@ -2507,6 +2663,21 @@ void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
 
 void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
     auto structName = decl->IDENTIFIER()->getText();
+
+    // Generic extend block — register as template and skip body registration
+    if (auto* tpl = decl->typeParamList()) {
+        if (genericExtendTemplates_.count(structName)) {
+            error(decl, "generic extend for '" + structName + "' already defined");
+            return;
+        }
+        GenericExtendTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = decl;
+        genericExtendTemplates_[structName] = std::move(tmpl);
+        return;
+    }
+
     auto* structTI = typeRegistry_.lookup(structName);
     if (!structTI) {
         error(decl, "cannot extend unknown type '" + structName + "'");
@@ -2550,6 +2721,9 @@ void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
 }
 
 void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
+    // Generic extend blocks are processed lazily during struct instantiation
+    if (decl->typeParamList()) return;
+
     auto structName = decl->IDENTIFIER()->getText();
     auto* structTI = typeRegistry_.lookup(structName);
     if (!structTI || structTI->kind != TypeKind::Struct) return;
@@ -2613,6 +2787,20 @@ void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
 void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
     auto funcName = func->IDENTIFIER()->getText();
 
+    // Generic function template — register as template, not as a concrete function
+    if (auto* tpl = func->typeParamList()) {
+        if (genericFuncTemplates_.count(funcName)) {
+            error(func, "generic function '" + funcName + "' already defined");
+            return;
+        }
+        GenericFuncTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = func;
+        genericFuncTemplates_[funcName] = std::move(tmpl);
+        return;
+    }
+
     // Detect duplicate function definitions (skip builtins/externs)
     if (functions_.count(funcName) && !globalBuiltins_.count(funcName)) {
         error(func, "function '" + funcName + "' already defined");
@@ -2653,6 +2841,9 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
 // ═══════════════════════════════════════════════════════════════════════
 
 void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
+    // Generic function templates are not checked directly — only their instantiations are.
+    if (func->typeParamList()) return;
+
     unsigned retDims = 0;
     auto* retType = resolveTypeSpec(func->typeSpec(), retDims);
     if (!retType) {
@@ -3640,4 +3831,347 @@ void Checker::warnUnusedLocals(antlr4::ParserRuleContext* ctx) {
             }
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  User-defined generics — monomorphization
+// ═══════════════════════════════════════════════════════════════════════
+
+std::string Checker::mangleGenericName(const std::string& baseName,
+                                        const std::vector<const TypeInfo*>& typeArgs) {
+    std::string name = baseName;
+    for (auto* arg : typeArgs) {
+        name += "__";
+        // Replace characters that are not valid in identifiers
+        for (char c : arg->name) {
+            if (c == '<' || c == '>' || c == ' ' || c == ',')
+                name += '_';
+            else
+                name += c;
+        }
+    }
+    return name;
+}
+
+const TypeInfo* Checker::resolveTypeSpecWithSubst(
+    LuxParser::TypeSpecContext* typeSpec,
+    const std::unordered_map<std::string, const TypeInfo*>& subst,
+    unsigned& arrayDims) {
+    // If the typeSpec is a bare IDENTIFIER that matches a type param, substitute it
+    if (!typeSpec->LBRACKET() && !typeSpec->STAR() && !typeSpec->LT() &&
+        !typeSpec->VEC() && !typeSpec->MAP() && !typeSpec->SET() &&
+        !typeSpec->TUPLE() && !typeSpec->AUTO() && !typeSpec->fnTypeSpec()) {
+        auto name = typeSpec->getText();
+        auto it = subst.find(name);
+        if (it != subst.end()) {
+            arrayDims = 0;
+            return it->second;
+        }
+    }
+    // For pointer types, substitute into the inner type
+    if (typeSpec->STAR() && typeSpec->typeSpec().size() == 1) {
+        unsigned innerDims = 0;
+        auto* inner = resolveTypeSpecWithSubst(typeSpec->typeSpec(0), subst, innerDims);
+        if (!inner) return nullptr;
+        arrayDims = 0;
+        return getPointerType(inner);
+    }
+    // For array types, substitute into the element type
+    if (typeSpec->LBRACKET() && typeSpec->typeSpec().size() >= 1) {
+        arrayDims = 0;
+        auto* outerSpec = typeSpec;
+        while (outerSpec->LBRACKET()) {
+            arrayDims++;
+            outerSpec = outerSpec->typeSpec(0);
+        }
+        unsigned elemDims = 0;
+        auto* elemType = resolveTypeSpecWithSubst(outerSpec, subst, elemDims);
+        return elemType;
+    }
+    // For generic instantiations like Node<T> where T is a type param
+    if (typeSpec->LT()) {
+        // Resolve all type args with substitution
+        auto typeArgSpecs = typeSpec->typeSpec();
+        std::vector<const TypeInfo*> resolvedArgs;
+        for (auto* argSpec : typeArgSpecs) {
+            unsigned argDims = 0;
+            auto* argTI = resolveTypeSpecWithSubst(argSpec, subst, argDims);
+            if (!argTI) return nullptr;
+            resolvedArgs.push_back(argTI);
+        }
+        auto innerBaseName = typeSpec->IDENTIFIER()->getText();
+        // Check if it's a user-defined generic struct
+        auto structIt = genericStructTemplates_.find(innerBaseName);
+        if (structIt != genericStructTemplates_.end()) {
+            arrayDims = 0;
+            return instantiateGenericStruct(innerBaseName, structIt->second,
+                                             resolvedArgs, typeSpec);
+        }
+        // Otherwise fall back to normal resolution (built-in generics, etc.)
+    }
+    // Default: normal resolution (no substitution needed for this node)
+    return resolveTypeSpec(typeSpec, arrayDims);
+}
+
+const TypeInfo* Checker::resolveTypeParamConstraint(const std::string& constraintName,
+                                                      antlr4::ParserRuleContext* ctx) {
+    // Supported constraints: numeric, integer, float, bool, string, any
+    // For now, constraints are informational — we store them but don't hard-enforce at
+    // the Checker level (IRGen doesn't need them). Return nullptr for "any".
+    if (constraintName == "any" || constraintName == "Any") return nullptr;
+    auto* ti = typeRegistry_.lookup(constraintName);
+    if (!ti) {
+        error(ctx, "unknown type constraint '" + constraintName + "'");
+        return nullptr;
+    }
+    return ti;
+}
+
+bool Checker::satisfiesConstraint(const TypeInfo* typeArg,
+                                   const TypeInfo* constraint,
+                                   const std::string& paramName,
+                                   antlr4::ParserRuleContext* ctx) {
+    if (!constraint) return true; // no constraint = any type is OK
+    // Simple constraint check: typeArg must be the same kind or compatible
+    if (constraint->name == "numeric") {
+        if (typeArg->kind != TypeKind::Integer && typeArg->kind != TypeKind::Float) {
+            error(ctx, "type argument for '" + paramName + "' must be numeric, got '" +
+                       typeArg->name + "'");
+            return false;
+        }
+    } else if (constraint->name == "integer") {
+        if (typeArg->kind != TypeKind::Integer) {
+            error(ctx, "type argument for '" + paramName + "' must be an integer, got '" +
+                       typeArg->name + "'");
+            return false;
+        }
+    } else if (constraint->name == "float") {
+        if (typeArg->kind != TypeKind::Float) {
+            error(ctx, "type argument for '" + paramName + "' must be a float, got '" +
+                       typeArg->name + "'");
+            return false;
+        }
+    }
+    return true;
+}
+
+const TypeInfo* Checker::instantiateGenericStruct(
+    const std::string& baseName,
+    const GenericStructTemplate& tmpl,
+    const std::vector<const TypeInfo*>& typeArgs,
+    antlr4::ParserRuleContext* ctx) {
+
+    if (typeArgs.size() != tmpl.typeParams.size()) {
+        error(ctx, "generic struct '" + baseName + "' expects " +
+                   std::to_string(tmpl.typeParams.size()) + " type parameter(s), got " +
+                   std::to_string(typeArgs.size()));
+        return nullptr;
+    }
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+
+    // Check dynamic type cache first (already instantiated)
+    for (auto& dt : dynamicTypes_) {
+        if (dt->name == mangledName)
+            return dt.get();
+    }
+    // Also check type registry (registered during instantiation skeleton)
+    if (auto* existing = typeRegistry_.lookup(mangledName))
+        return existing;
+
+    // Cycle detection
+    if (instantiatingGenerics_.count(mangledName)) {
+        error(ctx, "recursive generic instantiation detected for '" + mangledName + "'");
+        return nullptr;
+    }
+    instantiatingGenerics_.insert(mangledName);
+
+    // Build substitution map: T → int32, K → string, etc.
+    std::unordered_map<std::string, const TypeInfo*> subst;
+    for (size_t i = 0; i < tmpl.typeParams.size(); i++) {
+        // Validate constraint if present
+        auto* tpCtx = tmpl.decl->typeParamList()->typeParam(i);
+        if (tpCtx->COLON()) {
+            // Has constraint: T: numeric
+            auto constraintName = tpCtx->IDENTIFIER(1)->getText();
+            auto* constraint = resolveTypeParamConstraint(constraintName, ctx);
+            if (!satisfiesConstraint(typeArgs[i], constraint, tmpl.typeParams[i], ctx)) {
+                instantiatingGenerics_.erase(mangledName);
+                return nullptr;
+            }
+        }
+        subst[tmpl.typeParams[i]] = typeArgs[i];
+    }
+
+    // Register skeleton for self-referencing fields (e.g., *Node<T> inside Node<T>)
+    TypeInfo skeleton;
+    skeleton.name = mangledName;
+    skeleton.kind = TypeKind::Struct;
+    skeleton.bitWidth = 0;
+    skeleton.isSigned = false;
+    skeleton.isGenericInstance = true;
+    skeleton.genericBaseName = baseName;
+    skeleton.typeParamNames = tmpl.typeParams;
+    skeleton.typeArgs = typeArgs;
+    skeleton.genericStructDecl = static_cast<antlr4::ParserRuleContext*>(tmpl.decl);
+    typeRegistry_.registerType(skeleton);
+
+    // Instantiate fields with substitution
+    TypeInfo ti = skeleton;
+    std::unordered_set<std::string> seen;
+    for (auto* field : tmpl.decl->structField()) {
+        unsigned fieldDims = 0;
+        auto* fieldTI = resolveTypeSpecWithSubst(field->typeSpec(), subst, fieldDims);
+        if (!fieldTI) {
+            error(field, "cannot resolve field type in generic struct '" + baseName + "'");
+            instantiatingGenerics_.erase(mangledName);
+            return nullptr;
+        }
+        auto fieldName = field->IDENTIFIER()->getText();
+        if (!seen.insert(fieldName).second) {
+            error(field, "duplicate field '" + fieldName +
+                         "' in generic struct '" + baseName + "'");
+            instantiatingGenerics_.erase(mangledName);
+            return nullptr;
+        }
+        ti.fields.push_back({ fieldName, fieldTI });
+    }
+
+    // Register concrete type (updates the skeleton registered above)
+    typeRegistry_.registerType(std::move(ti));
+    const TypeInfo* result = typeRegistry_.lookup(mangledName);
+
+    // If there's a generic extend block for this struct, instantiate methods too
+    auto extendIt = genericExtendTemplates_.find(baseName);
+    if (extendIt != genericExtendTemplates_.end()) {
+        auto& extTmpl = extendIt->second;
+        for (auto* method : extTmpl.decl->extendMethod()) {
+            auto methodName = method->IDENTIFIER(0)->getText();
+
+            unsigned retDims = 0;
+            auto* retType = resolveTypeSpecWithSubst(method->typeSpec(), subst, retDims);
+            if (!retType) continue;
+
+            StructMethodInfo info;
+            info.name = methodName;
+            info.returnType = retType;
+            info.isStatic = (method->AMPERSAND() == nullptr);
+
+            std::vector<LuxParser::ParamContext*> params;
+            if (info.isStatic) {
+                if (auto* pl = method->paramList())
+                    params = pl->param();
+            } else {
+                params = method->param();
+            }
+
+            for (auto* param : params) {
+                unsigned pDims = 0;
+                auto* pType = resolveTypeSpecWithSubst(param->typeSpec(), subst, pDims);
+                if (!pType) continue;
+                info.paramTypes.push_back(pType);
+            }
+
+            structMethods_[mangledName].push_back(std::move(info));
+        }
+    }
+
+    instantiatingGenerics_.erase(mangledName);
+    return result;
+}
+
+const TypeInfo* Checker::instantiateGenericFunc(
+    const std::string& baseName,
+    const GenericFuncTemplate& tmpl,
+    const std::vector<const TypeInfo*>& typeArgs,
+    antlr4::ParserRuleContext* ctx) {
+
+    if (typeArgs.size() != tmpl.typeParams.size()) {
+        error(ctx, "generic function '" + baseName + "' expects " +
+                   std::to_string(tmpl.typeParams.size()) + " type parameter(s), got " +
+                   std::to_string(typeArgs.size()));
+        return nullptr;
+    }
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+
+    // Already instantiated? Return the function's return type.
+    if (functions_.count(mangledName)) {
+        auto* ft = functions_[mangledName];
+        return ft ? ft->returnType : nullptr;
+    }
+
+    // Cycle detection
+    if (instantiatingGenerics_.count(mangledName)) {
+        error(ctx, "recursive generic function instantiation detected for '" + mangledName + "'");
+        return nullptr;
+    }
+    instantiatingGenerics_.insert(mangledName);
+
+    // Build substitution map
+    std::unordered_map<std::string, const TypeInfo*> subst;
+    for (size_t i = 0; i < tmpl.typeParams.size(); i++) {
+        auto* tpCtx = tmpl.decl->typeParamList()->typeParam(i);
+        if (tpCtx->COLON()) {
+            auto constraintName = tpCtx->IDENTIFIER(1)->getText();
+            auto* constraint = resolveTypeParamConstraint(constraintName, ctx);
+            if (!satisfiesConstraint(typeArgs[i], constraint, tmpl.typeParams[i], ctx)) {
+                instantiatingGenerics_.erase(mangledName);
+                return nullptr;
+            }
+        }
+        subst[tmpl.typeParams[i]] = typeArgs[i];
+    }
+
+    // Resolve return type with substitution
+    unsigned retDims = 0;
+    auto* retType = resolveTypeSpecWithSubst(tmpl.decl->typeSpec(), subst, retDims);
+    if (!retType) {
+        instantiatingGenerics_.erase(mangledName);
+        return nullptr;
+    }
+
+    // Resolve parameter types with substitution
+    std::vector<const TypeInfo*> paramTypes;
+    if (auto* paramList = tmpl.decl->paramList()) {
+        for (auto* param : paramList->param()) {
+            unsigned pDims = 0;
+            auto* pType = resolveTypeSpecWithSubst(param->typeSpec(), subst, pDims);
+            if (!pType) {
+                instantiatingGenerics_.erase(mangledName);
+                return nullptr;
+            }
+            paramTypes.push_back(pType);
+        }
+    }
+
+    auto* funcType = makeFunctionType(retType, paramTypes);
+    functions_[mangledName] = funcType;
+
+    // Check the function body with the substituted locals
+    // We save/restore locals_ since this is a nested instantiation
+    auto savedLocals = locals_;
+    locals_.clear();
+    if (auto* paramList = tmpl.decl->paramList()) {
+        for (auto* param : paramList->param()) {
+            auto paramName = param->IDENTIFIER()->getText();
+            unsigned pDims = 0;
+            auto* pType = resolveTypeSpecWithSubst(param->typeSpec(), subst, pDims);
+            if (!pType) continue;
+            locals_[paramName] = { pType, pDims, true, true, nullptr };
+        }
+    }
+
+    // Temporarily add type params as dummy locals so references inside the body resolve
+    // (they'll be substituted by resolveTypeSpec when body expressions are checked)
+    // We don't need this — body checking happens via resolveTypeSpec normally since
+    // subst is only used for type specs, not for body expression checking.
+    // The body is checked with the concrete types already registered.
+    checkBlock(tmpl.decl->block(), retType);
+
+    locals_ = savedLocals;
+    instantiatingGenerics_.erase(mangledName);
+
+    // Return the function's return type (not the function type itself)
+    return retType;
 }

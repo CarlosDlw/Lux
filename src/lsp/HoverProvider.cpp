@@ -3123,12 +3123,17 @@ std::string HoverProvider::formatCFunction(const CFunction& func) {
     for (size_t i = 0; i < func.paramTypes.size(); i++) {
         if (i > 0) ss << ", ";
         ss << func.paramTypes[i]->name;
+        // Show parameter name if available and non-empty
+        if (i < func.paramNames.size() && !func.paramNames[i].empty())
+            ss << " " << func.paramNames[i];
     }
     if (func.isVariadic) {
         if (!func.paramTypes.empty()) ss << ", ";
         ss << "...";
     }
-    ss << ")\n```\n*C function*";
+    ss << ")\n```";
+    if (!func.doc.empty())
+        ss << "\n" << func.doc;
     return ss.str();
 }
 

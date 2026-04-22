@@ -336,7 +336,10 @@ SignatureInfo SignatureHelpProvider::buildFromCFunction(const CFunction& func) {
     for (size_t i = 0; i < func.paramTypes.size(); i++) {
         if (i > 0) label << ", ";
         std::string pType = func.paramTypes[i] ? func.paramTypes[i]->name : "void";
-        std::string pName = paramNameFromType(pType);
+        // Prefer actual parameter name from header; fall back to type-inferred
+        std::string pName = (i < func.paramNames.size() && !func.paramNames[i].empty())
+                            ? func.paramNames[i]
+                            : paramNameFromType(pType);
 
         std::string paramLabel = pType + " " + pName;
         label << paramLabel;
@@ -350,6 +353,9 @@ SignatureInfo SignatureHelpProvider::buildFromCFunction(const CFunction& func) {
 
     label << ")";
     sig.label = label.str();
+
+    if (!func.doc.empty())
+        sig.documentation = func.doc;
 
     return sig;
 }

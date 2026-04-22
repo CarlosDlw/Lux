@@ -12,9 +12,11 @@ struct CFunction {
     std::string                name;
     const TypeInfo*            returnType;
     std::vector<const TypeInfo*> paramTypes;
+    std::vector<std::string>   paramNames;  // Parallel to paramTypes
     bool                       isVariadic = false;
     std::string                sourceFile; // Absolute path of defining header
     unsigned                   line = 0;   // 0-based line in sourceFile
+    std::string                doc;        // Raw comment cleaned up for display
 };
 
 // Describes a C struct extracted from a parsed header.

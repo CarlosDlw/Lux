@@ -654,6 +654,74 @@ static std::string extractCursorSourceFile(CXCursor cursor,
     return path;
 }
 
+// Extract and clean up the doc comment for a cursor.
+// Tries brief first, then raw comment. Strips C comment syntax and trims.
+static std::string extractCursorDoc(CXCursor cursor) {
+    // Brief comment (single-line summary from @brief or first sentence)
+    CXString brief = clang_Cursor_getBriefCommentText(cursor);
+    const char* briefStr = clang_getCString(brief);
+    if (briefStr && briefStr[0] != '\0') {
+        std::string result = briefStr;
+        clang_disposeString(brief);
+        return result;
+    }
+    clang_disposeString(brief);
+
+    // Fall back to raw comment and clean it up
+    CXString raw = clang_Cursor_getRawCommentText(cursor);
+    const char* rawStr = clang_getCString(raw);
+    if (!rawStr || rawStr[0] == '\0') {
+        clang_disposeString(raw);
+        return {};
+    }
+
+    std::string text = rawStr;
+    clang_disposeString(raw);
+
+    // Strip comment delimiters and clean each line
+    std::string result;
+    std::istringstream ss(text);
+    std::string line;
+    while (std::getline(ss, line)) {
+        // Strip leading whitespace
+        size_t start = line.find_first_not_of(" \t");
+        if (start == std::string::npos) continue;
+        line = line.substr(start);
+
+        // Strip comment markers: /**, /*, */, //, leading *
+        if (line.substr(0, 3) == "/**") line = line.substr(3);
+        else if (line.substr(0, 2) == "/*") line = line.substr(2);
+        else if (line.substr(0, 2) == "//") line = line.substr(2);
+
+        if (!line.empty() && line.back() == '/') {
+            // trailing */ — remove it
+            size_t end = line.rfind("*/");
+            if (end != std::string::npos) line = line.substr(0, end);
+        }
+
+        // Strip leading " * " or " *"
+        start = line.find_first_not_of(" \t");
+        if (start != std::string::npos && line[start] == '*') {
+            line = line.substr(start + 1);
+            // strip single space after *
+            if (!line.empty() && line[0] == ' ') line = line.substr(1);
+        } else if (start != std::string::npos) {
+            line = line.substr(start);
+        } else {
+            continue;
+        }
+
+        // Strip trailing whitespace
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\t'))
+            line.pop_back();
+
+        if (!line.empty())
+            result += (result.empty() ? "" : " ") + line;
+    }
+
+    return result;
+}
+
 static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
                                          CXClientData clientData) {
     auto* data = static_cast<VisitorData*>(clientData);
@@ -686,6 +754,7 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
 
         int numArgs = clang_Cursor_getNumArguments(cursor);
         std::vector<const TypeInfo*> paramTypes;
+        std::vector<std::string> paramNames;
         bool allMapped = true;
 
         for (int i = 0; i < numArgs; i++) {
@@ -697,6 +766,12 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
                 break;
             }
             paramTypes.push_back(argTI);
+
+            // Extract parameter name
+            CXString argName = clang_getCursorSpelling(argCursor);
+            const char* argNameStr = clang_getCString(argName);
+            paramNames.push_back(argNameStr ? argNameStr : "");
+            clang_disposeString(argName);
         }
 
         if (!allMapped) return CXChildVisit_Continue;
@@ -704,11 +779,13 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         bool isVariadic = (clang_isFunctionTypeVariadic(funcType) != 0);
 
         CFunction cfunc;
-        cfunc.name       = std::move(name);
-        cfunc.returnType = retTI;
-        cfunc.paramTypes = std::move(paramTypes);
-        cfunc.isVariadic = isVariadic;
-        cfunc.sourceFile = extractCursorSourceFile(cursor, &cfunc.line);
+        cfunc.name        = std::move(name);
+        cfunc.returnType  = retTI;
+        cfunc.paramTypes  = std::move(paramTypes);
+        cfunc.paramNames  = std::move(paramNames);
+        cfunc.isVariadic  = isVariadic;
+        cfunc.sourceFile  = extractCursorSourceFile(cursor, &cfunc.line);
+        cfunc.doc         = extractCursorDoc(cursor);
         data->bindings->addFunction(std::move(cfunc));
     }
 

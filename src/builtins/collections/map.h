@@ -188,5 +188,8 @@ void   lux_map_get_str_raw(lux_map_header* m, lux_map_string key,
                             void* val_out);
 int    lux_map_has_str_raw(lux_map_header* m, lux_map_string key);
 void   lux_map_values_str_raw(lux_map_header* m, lux_map_vec_out* out);
+int    lux_map_isEmpty_str_raw(const lux_map_header* m);
+int    lux_map_remove_str_raw(lux_map_header* m, lux_map_string key);
+void   lux_map_clear_str_raw(lux_map_header* m);
 
 #endif // LUX_MAP_H

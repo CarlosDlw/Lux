@@ -354,3 +354,11 @@ void lux_set_values_raw(lux_set_header* s, lux_set_vec_out* out) {
     }
     out->ptr = arr; out->len = n; out->cap = n;
 }
+
+int lux_set_isEmpty_raw(const lux_set_header* s) {
+    return s->len == 0;
+}
+
+void lux_set_clear_raw(lux_set_header* s) {
+    set_core_clear(s);
+}

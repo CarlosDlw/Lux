@@ -182,6 +182,9 @@ void   lux_vec_push_raw(lux_vec_header* v, const void* elem, size_t elem_size);
 void   lux_vec_free_raw(lux_vec_header* v);
 size_t lux_vec_len_raw(const lux_vec_header* v);
 void*  lux_vec_ptr_raw(const lux_vec_header* v, size_t idx, size_t elem_size);
+int    lux_vec_isEmpty_raw(const lux_vec_header* v);
+size_t lux_vec_capacity_raw(const lux_vec_header* v);
+void   lux_vec_clear_raw(lux_vec_header* v);
 
 #ifdef __cplusplus
 }

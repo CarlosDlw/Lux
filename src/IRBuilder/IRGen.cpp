@@ -10347,6 +10347,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 builder_->CreateStore(argVal, tmp);
                 argVal = tmp;
             } else if (pt == "_self") {
+
                 // _self params expect a pointer to the struct, not the struct
                 // by value. Try to get the alloca from the argument expression.
                 if (auto* argList = ctx->argList()) {
@@ -10362,6 +10363,14 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                     argVal = builder_->CreateIntCast(argVal, paramTy, false);
             }
             callArgs.push_back(argVal);
+
+            // Vec.push_raw / Vec.init_cap_raw need elem_size after the raw ptr
+            if (isRawElem && receiverTI->extendedKind == "Vec") {
+                auto& dl    = module_->getDataLayout();
+                auto  sz    = dl.getTypeAllocSize(elemLLTy);
+                callArgs.push_back(llvm::ConstantInt::get(usizeTy, sz));
+                paramLLTypes.push_back(usizeTy);
+            }
         }
 
         auto callee = declareBuiltin(cFuncName, cRetTy, paramLLTypes);

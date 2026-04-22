@@ -604,3 +604,15 @@ void lux_map_values_str_raw(lux_map_header* m, lux_map_vec_out* out) {
     }
     out->ptr = arr; out->len = n; out->cap = n;
 }
+
+int lux_map_isEmpty_str_raw(const lux_map_header* m) {
+    return m->len == 0;
+}
+
+int lux_map_remove_str_raw(lux_map_header* m, lux_map_string key) {
+    return map_core_remove(m, &key, hash_key_str, eq_key_str);
+}
+
+void lux_map_clear_str_raw(lux_map_header* m) {
+    map_core_clear(m);
+}

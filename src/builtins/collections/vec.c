@@ -721,3 +721,15 @@ void* lux_vec_ptr_raw(const lux_vec_header* v, size_t idx, size_t elem_size) {
     }
     return (char*)v->ptr + idx * elem_size;
 }
+
+int lux_vec_isEmpty_raw(const lux_vec_header* v) {
+    return v->len == 0;
+}
+
+size_t lux_vec_capacity_raw(const lux_vec_header* v) {
+    return v->cap;
+}
+
+void lux_vec_clear_raw(lux_vec_header* v) {
+    v->len = 0;
+}

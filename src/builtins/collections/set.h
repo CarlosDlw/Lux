@@ -84,5 +84,7 @@ int    lux_set_add_raw(lux_set_header* s, const void* elem);
 int    lux_set_has_raw(lux_set_header* s, const void* elem);
 int    lux_set_remove_raw(lux_set_header* s, const void* elem);
 void   lux_set_values_raw(lux_set_header* s, lux_set_vec_out* out);
+int    lux_set_isEmpty_raw(const lux_set_header* s);
+void   lux_set_clear_raw(lux_set_header* s);
 
 #endif // LUX_SET_H

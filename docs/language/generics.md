@@ -223,6 +223,145 @@ int32 result = await t;
 
 ---
 
+## User-Defined Generics
+
+Beyond the built-in collection types, Lux supports user-defined generic structs, methods, and functions. Generics are resolved at compile time via **monomorphization** — each concrete instantiation (`Node<int32>`, `Node<string>`) becomes a fully independent type with no runtime overhead.
+
+---
+
+### Generic Structs
+
+Declare a struct with one or more type parameters in angle brackets:
+
+```lux
+struct Node<T> {
+    T value;
+}
+
+struct Pair<A, B> {
+    A first;
+    B second;
+}
+```
+
+Type parameters can be any identifier. They act as placeholders for concrete types supplied at the call site.
+
+---
+
+### Generic Methods
+
+Use `extend` with the same type parameter list to add methods to a generic struct:
+
+```lux
+extend Node<T> {
+    // Static factory method
+    Node<T> create(T val) {
+        ret Node<T> { value: val };
+    }
+
+    // Instance method (&self receiver)
+    T getValue(&self) {
+        ret self.value;
+    }
+}
+```
+
+- **Static methods** are called with `Node<int32>::create(42)` — the struct name first, then the concrete type args, then `::method()`.
+- **Instance methods** receive `&self` as the first parameter (pointer to the struct). Access fields directly with `self.field`.
+
+---
+
+### Generic Functions
+
+A standalone function can be parameterized with `<T>` after the function name:
+
+```lux
+T max<T>(T a, T b) {
+    ret a > b ? a : b;
+}
+
+T identity<T>(T x) {
+    ret x;
+}
+```
+
+The return type and parameter types use `T` as a placeholder. The concrete type is specified at the call site.
+
+---
+
+### Instantiation Syntax
+
+| Use case | Syntax |
+|---|---|
+| Declare a variable | `Node<int32> n = ...;` |
+| Static method call | `Node<int32>::create(42)` |
+| Struct literal | `Node<int32> { value: 42 }` |
+| Generic function call | `max<int32>(3, 7)` |
+| Instance method call | `n.getValue()` *(type inferred from `n`)* |
+
+```lux
+use std::log::println;
+
+struct Node<T> {
+    T value;
+}
+
+extend Node<T> {
+    Node<T> create(T val) {
+        ret Node<T> { value: val };
+    }
+
+    T getValue(&self) {
+        ret self.value;
+    }
+}
+
+T max<T>(T a, T b) {
+    ret a > b ? a : b;
+}
+
+int32 main() {
+    Node<int32> n = Node<int32>::create(42);
+    int32 val = n.getValue();   // 42
+
+    int32 m = max<int32>(3, 7); // 7
+
+    println(val);
+    println(m);
+    ret 0;
+}
+```
+
+---
+
+### Type Constraints
+
+Type parameters can be annotated with a constraint using the `:` syntax:
+
+```lux
+T clamp<T: numeric>(T val, T lo, T hi) {
+    ret val < lo ? lo : val > hi ? hi : val;
+}
+```
+
+The constraint name follows `:` and must be a known constraint identifier. The compiler verifies that the concrete type satisfies the constraint at instantiation time.
+
+Currently supported constraints:
+
+| Constraint | Accepted types |
+|---|---|
+| `numeric` | `int32`, `int64`, `uint32`, `uint64`, `usize`, `isize`, `float32`, `float64` |
+
+Unconstrained type parameters (`<T>`) accept any type.
+
+---
+
+### How Monomorphization Works
+
+Every concrete instantiation generates a distinct type and function set. `Node<int32>` and `Node<string>` become two completely separate structs in the compiled output — no boxing, no vtables, no runtime dispatch. The compiler mangles names as `Base__Type` (e.g. `Node__int32`, `max__int32`) and emits each specialization exactly once.
+
+---
+
 ## Memory Management
 
 `vec<T>`, `map<K, V>`, and `set<T>` are heap-allocated. They must be freed when no longer needed:

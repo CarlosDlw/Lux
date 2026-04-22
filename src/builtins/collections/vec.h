@@ -174,6 +174,15 @@ void lux_vec_clone_str(const lux_vec_header* src, lux_vec_header* dst);
 // Converts C main(argc, argv) into a Vec<string> for lux programs.
 void lux_args_init(lux_vec_header* out, int argc, const char** argv);
 
+// ── Raw (opaque struct) variant — used for vec<UserStruct> ──────────────────
+// Element type is opaque; functions take elem_size to handle arbitrary layouts.
+void   lux_vec_init_raw(lux_vec_header* v);
+void   lux_vec_init_cap_raw(lux_vec_header* v, size_t cap, size_t elem_size);
+void   lux_vec_push_raw(lux_vec_header* v, const void* elem, size_t elem_size);
+void   lux_vec_free_raw(lux_vec_header* v);
+size_t lux_vec_len_raw(const lux_vec_header* v);
+void*  lux_vec_ptr_raw(const lux_vec_header* v, size_t idx, size_t elem_size);
+
 #ifdef __cplusplus
 }
 #endif

@@ -74,4 +74,15 @@ LUX_SET_DECL_INT(uint64_t, u64)
 // String element type
 LUX_SET_DECL_STR()
 
+// ── Raw (opaque struct) element variant ───────────────────────────────
+// Used when element is a user-defined struct (builtinSuffix == "raw").
+// Hashing is byte-level FNV-1a; equality is bitwise memcmp.
+void   lux_set_init_raw(lux_set_header* s, size_t elem_size);
+void   lux_set_free_raw(lux_set_header* s);
+size_t lux_set_len_raw(const lux_set_header* s);
+int    lux_set_add_raw(lux_set_header* s, const void* elem);
+int    lux_set_has_raw(lux_set_header* s, const void* elem);
+int    lux_set_remove_raw(lux_set_header* s, const void* elem);
+void   lux_set_values_raw(lux_set_header* s, lux_set_vec_out* out);
+
 #endif // LUX_SET_H

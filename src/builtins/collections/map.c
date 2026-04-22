@@ -557,3 +557,50 @@ LUX_MAP_IMPL_INT(uint64_t, u64, uint64_t, u64, hash_key_u64, eq_key_u64)
 LUX_MAP_IMPL_INT(uint64_t, u64, float,    f32, hash_key_u64, eq_key_u64)
 LUX_MAP_IMPL_INT(uint64_t, u64, double,   f64, hash_key_u64, eq_key_u64)
 LUX_MAP_IMPL_INT_STR(uint64_t, u64, hash_key_u64, eq_key_u64)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Raw (opaque struct) value — str key, struct val of runtime-known size
+// ═══════════════════════════════════════════════════════════════════════════
+
+void lux_map_init_str_raw(lux_map_header* m, size_t val_size) {
+    map_core_init(m, sizeof(lux_map_string), val_size);
+}
+
+void lux_map_free_str_raw(lux_map_header* m) {
+    map_core_free(m);
+}
+
+size_t lux_map_len_str_raw(const lux_map_header* m) {
+    return m->len;
+}
+
+void lux_map_set_str_raw(lux_map_header* m, lux_map_string key,
+                          const void* val) {
+    map_core_set(m, &key, val, hash_key_str, eq_key_str);
+}
+
+void lux_map_get_str_raw(lux_map_header* m, lux_map_string key,
+                          void* val_out) {
+    if (!map_core_get(m, &key, val_out, hash_key_str, eq_key_str)) {
+        fprintf(stderr, "lux panic: Map::get key not found\n");
+        abort();
+    }
+}
+
+int lux_map_has_str_raw(lux_map_header* m, lux_map_string key) {
+    return map_core_has(m, &key, hash_key_str, eq_key_str);
+}
+
+void lux_map_values_str_raw(lux_map_header* m, lux_map_vec_out* out) {
+    char* arr = (char*)malloc(m->len * m->val_size);
+    size_t n = 0;
+    for (size_t i = 0; i < m->cap; i++) {
+        if (m->states[i] == MAP_STATE_OCCUPIED) {
+            memcpy(arr + n * m->val_size,
+                   (uint8_t*)m->values + i * m->val_size,
+                   m->val_size);
+            n++;
+        }
+    }
+    out->ptr = arr; out->len = n; out->cap = n;
+}

@@ -115,6 +115,14 @@ ImportResolver::knownModules_ = {
     { "std::thread", { "cpuCount", "threadId", "yield", "Task", "Mutex" } },
 };
 
+std::string ImportResolver::suggestImport(const std::string& symbol) {
+    for (auto& [mod, syms] : knownModules_) {
+        if (syms.count(symbol))
+            return "use " + mod + "::" + symbol + ";";
+    }
+    return "";
+}
+
 void ImportResolver::addImport(const std::string& modulePath,
                                const std::string& symbol) {
     // Validate against known modules

@@ -673,3 +673,51 @@ void lux_args_init(lux_vec_header* out, int argc, const char** argv) {
         lux_vec_push_str(out, s);
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Raw (opaque struct) vec — for vec<UserStruct> and other non-primitive types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#define LUX_VEC_RAW_INITIAL_CAP 8
+#define LUX_VEC_RAW_GROWTH 2
+
+void lux_vec_init_raw(lux_vec_header* v) {
+    v->ptr = NULL;
+    v->len = 0;
+    v->cap = 0;
+}
+
+void lux_vec_init_cap_raw(lux_vec_header* v, size_t cap, size_t elem_size) {
+    v->ptr = malloc(cap * elem_size);
+    v->len = 0;
+    v->cap = cap;
+}
+
+void lux_vec_push_raw(lux_vec_header* v, const void* elem, size_t elem_size) {
+    if (v->len >= v->cap) {
+        size_t new_cap = v->cap ? v->cap * LUX_VEC_RAW_GROWTH : LUX_VEC_RAW_INITIAL_CAP;
+        v->ptr = realloc(v->ptr, new_cap * elem_size);
+        v->cap = new_cap;
+    }
+    memcpy((char*)v->ptr + v->len * elem_size, elem, elem_size);
+    v->len++;
+}
+
+void lux_vec_free_raw(lux_vec_header* v) {
+    free(v->ptr);
+    v->ptr = NULL;
+    v->len = 0;
+    v->cap = 0;
+}
+
+size_t lux_vec_len_raw(const lux_vec_header* v) {
+    return v->len;
+}
+
+void* lux_vec_ptr_raw(const lux_vec_header* v, size_t idx, size_t elem_size) {
+    if (idx >= v->len) {
+        fprintf(stderr, "lux: vec index out of bounds: %zu >= %zu\n", idx, v->len);
+        exit(1);
+    }
+    return (char*)v->ptr + idx * elem_size;
+}

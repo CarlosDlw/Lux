@@ -176,4 +176,17 @@ LUX_MAP_DECL_INT_KEY(uint64_t, u64, float,    f32)
 LUX_MAP_DECL_INT_KEY(uint64_t, u64, double,   f64)
 LUX_MAP_DECL_INT_KEY_STR_VAL(uint64_t, u64)
 
+// ── Raw (opaque struct) value variants ─────────────────────────────────
+// Used when value is a user-defined struct (builtinSuffix == "raw").
+// val_size is passed explicitly to init; stored in m->val_size afterward.
+void   lux_map_init_str_raw(lux_map_header* m, size_t val_size);
+void   lux_map_free_str_raw(lux_map_header* m);
+size_t lux_map_len_str_raw(const lux_map_header* m);
+void   lux_map_set_str_raw(lux_map_header* m, lux_map_string key,
+                            const void* val);
+void   lux_map_get_str_raw(lux_map_header* m, lux_map_string key,
+                            void* val_out);
+int    lux_map_has_str_raw(lux_map_header* m, lux_map_string key);
+void   lux_map_values_str_raw(lux_map_header* m, lux_map_vec_out* out);
+
 #endif // LUX_MAP_H

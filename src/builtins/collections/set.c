@@ -293,3 +293,64 @@ void lux_set_values_str(lux_set_header* s, lux_set_vec_out* out) {
     }
     out->ptr = arr; out->len = n; out->cap = n;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Raw (opaque struct) element — byte-level FNV-1a hash + memcmp equality
+// ═══════════════════════════════════════════════════════════════════════════
+
+static size_t raw_key_size_ctx;  // thread-unsafe but Lux is single-threaded for now
+
+static uint64_t hash_raw(const void* key) {
+    const uint8_t* b = (const uint8_t*)key;
+    uint64_t h = 14695981039346656037ULL;
+    for (size_t i = 0; i < raw_key_size_ctx; i++) {
+        h ^= b[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+static int eq_raw(const void* a, const void* b) {
+    return memcmp(a, b, raw_key_size_ctx) == 0;
+}
+
+void lux_set_init_raw(lux_set_header* s, size_t elem_size) {
+    set_core_init(s, elem_size);
+}
+
+void lux_set_free_raw(lux_set_header* s) {
+    set_core_free(s);
+}
+
+size_t lux_set_len_raw(const lux_set_header* s) {
+    return s->len;
+}
+
+int lux_set_add_raw(lux_set_header* s, const void* elem) {
+    raw_key_size_ctx = s->key_size;
+    return set_core_add(s, elem, hash_raw, eq_raw);
+}
+
+int lux_set_has_raw(lux_set_header* s, const void* elem) {
+    raw_key_size_ctx = s->key_size;
+    return set_core_has(s, elem, hash_raw, eq_raw);
+}
+
+int lux_set_remove_raw(lux_set_header* s, const void* elem) {
+    raw_key_size_ctx = s->key_size;
+    return set_core_remove(s, elem, hash_raw, eq_raw);
+}
+
+void lux_set_values_raw(lux_set_header* s, lux_set_vec_out* out) {
+    char* arr = (char*)malloc(s->len * s->key_size);
+    size_t n = 0;
+    for (size_t i = 0; i < s->cap; i++) {
+        if (s->states[i] == SET_STATE_OCCUPIED) {
+            memcpy(arr + n * s->key_size,
+                   (uint8_t*)s->keys + i * s->key_size,
+                   s->key_size);
+            n++;
+        }
+    }
+    out->ptr = arr; out->len = n; out->cap = n;
+}

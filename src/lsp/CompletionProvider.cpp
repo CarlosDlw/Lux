@@ -2097,6 +2097,26 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem>& items,
         items.push_back(std::move(ci));
     }
 
+    // Collection / generic types (vec, map, set)
+    {
+        struct GenericType { const char* lower; const char* snippet; const char* detail; };
+        static const GenericType generics[] = {
+            { "vec", "vec<${1:T}>",       "generic collection — dynamic array" },
+            { "map", "map<${1:K}, ${2:V}>", "generic collection — hash map" },
+            { "set", "set<${1:T}>",       "generic collection — hash set" },
+        };
+        for (auto& g : generics) {
+            if (!matchesPrefix(g.lower, prefix)) continue;
+            CompletionItem ci;
+            ci.label = g.lower;
+            ci.kind = CompletionKind::Class;
+            ci.detail = g.detail;
+            ci.insertText = g.snippet;
+            ci.insertTextFormat = InsertTextFormat::Snippet;
+            items.push_back(std::move(ci));
+        }
+    }
+
     // Same-file structs, enums, unions, type aliases
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {

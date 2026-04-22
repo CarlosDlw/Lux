@@ -3670,8 +3670,11 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
 
     if (!isKnownFunction(name)) {
-        error(stmt, "call to undeclared function '" + name +
-                         "'. Did you forget 'use std::log::" + name + ";'?");
+        std::string hint = ImportResolver::suggestImport(name);
+        std::string msg = "call to undeclared function '" + name + "'";
+        if (!hint.empty())
+            msg += ". Did you forget '" + hint + "'?";
+        error(stmt, msg);
         return;
     }
 

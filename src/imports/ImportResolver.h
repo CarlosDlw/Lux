@@ -30,6 +30,10 @@ public:
     // Returns all registered imports (mainly for the checker).
     const std::vector<ImportedSymbol>& imports() const { return imports_; }
 
+    // Returns a "use std::module::symbol;" hint string if the symbol is
+    // exported by any known module, or an empty string otherwise.
+    static std::string suggestImport(const std::string& symbol);
+
 private:
     std::vector<ImportedSymbol>        imports_;
     std::unordered_set<std::string>    symbols_;  // fast lookup

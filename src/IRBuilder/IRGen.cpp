@@ -1264,11 +1264,27 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
             auto* alloca = builder_->CreateAlloca(mapTy, nullptr, name);
             locals_[name] = { alloca, ti, 0 };
 
-            auto initFn = declareBuiltin(
-                "lux_map_init_" + suffix,
-                llvm::Type::getVoidTy(*context_),
-                { ptrTy });
-            builder_->CreateCall(initFn, { alloca });
+            if (suffix.size() > 4 &&
+                suffix.substr(suffix.size() - 3) == "raw") {
+                // Raw val: lux_map_init_<ks>_raw needs val_size
+                auto* valLLTy = ti->valueType->toLLVMType(
+                    *context_, module_->getDataLayout());
+                auto valSz = module_->getDataLayout().getTypeAllocSize(valLLTy);
+                auto initFn = declareBuiltin(
+                    "lux_map_init_" + suffix,
+                    llvm::Type::getVoidTy(*context_),
+                    { ptrTy, usizeTy });
+                builder_->CreateCall(initFn, {
+                    alloca,
+                    llvm::ConstantInt::get(usizeTy, valSz)
+                });
+            } else {
+                auto initFn = declareBuiltin(
+                    "lux_map_init_" + suffix,
+                    llvm::Type::getVoidTy(*context_),
+                    { ptrTy });
+                builder_->CreateCall(initFn, { alloca });
+            }
             return {};
         }
 
@@ -1279,35 +1295,57 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
                 std::cerr << "lux: internal error: Set missing elementType\n";
                 return {};
             }
-            auto  suffix = ti->elementType->builtinSuffix;
+            auto  suffix = ti->elementType->builtinSuffix.empty()
+                               ? "raw" : ti->elementType->builtinSuffix;
             auto* alloca = builder_->CreateAlloca(setTy, nullptr, name);
             locals_[name] = { alloca, ti, 0 };
 
-            auto initFn = declareBuiltin(
-                "lux_set_init_" + suffix,
-                llvm::Type::getVoidTy(*context_),
-                { ptrTy });
-            builder_->CreateCall(initFn, { alloca });
+            auto* elemLLTy = ti->elementType->toLLVMType(
+                *context_, module_->getDataLayout());
+            if (suffix == "raw") {
+                auto elemSz = module_->getDataLayout().getTypeAllocSize(elemLLTy);
+                auto initFn = declareBuiltin("lux_set_init_raw",
+                    llvm::Type::getVoidTy(*context_), { ptrTy, usizeTy });
+                builder_->CreateCall(initFn, {
+                    alloca, llvm::ConstantInt::get(usizeTy, elemSz)
+                });
+            } else {
+                auto initFn = declareBuiltin(
+                    "lux_set_init_" + suffix,
+                    llvm::Type::getVoidTy(*context_),
+                    { ptrTy });
+                builder_->CreateCall(initFn, { alloca });
+            }
 
             // If initializer is an array literal, add each element
             if (ctx->expression()) {
                 auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(
                     ctx->expression());
                 if (arrLit && !arrLit->expression().empty()) {
-                    auto* elemLLTy = ti->elementType->toLLVMType(
-                        *context_, module_->getDataLayout());
-                    auto addFn = declareBuiltin(
-                        "lux_set_add_" + suffix,
-                        llvm::Type::getInt32Ty(*context_),
-                        { ptrTy, elemLLTy });
-                    for (auto* e : arrLit->expression()) {
-                        auto* val = castValue(visit(e));
-                        if (val->getType() != elemLLTy) {
-                            if (val->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
-                                val = builder_->CreateIntCast(val, elemLLTy,
-                                                              ti->elementType->isSigned);
+                    if (suffix == "raw") {
+                        auto addFn = declareBuiltin("lux_set_add_raw",
+                            llvm::Type::getInt32Ty(*context_),
+                            { ptrTy, ptrTy });
+                        for (auto* e : arrLit->expression()) {
+                            auto* val = castValue(visit(e));
+                            auto* tmp = builder_->CreateAlloca(elemLLTy);
+                            builder_->CreateStore(val, tmp);
+                            builder_->CreateCall(addFn, { alloca, tmp });
                         }
-                        builder_->CreateCall(addFn, { alloca, val });
+                    } else {
+                        auto addFn = declareBuiltin(
+                            "lux_set_add_" + suffix,
+                            llvm::Type::getInt32Ty(*context_),
+                            { ptrTy, elemLLTy });
+                        for (auto* e : arrLit->expression()) {
+                            auto* val = castValue(visit(e));
+                            if (val->getType() != elemLLTy) {
+                                if (val->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
+                                    val = builder_->CreateIntCast(val, elemLLTy,
+                                                                  ti->elementType->isSigned);
+                            }
+                            builder_->CreateCall(addFn, { alloca, val });
+                        }
                     }
                 }
             }
@@ -1357,26 +1395,52 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
                 builder_->CreateCall(initFn, { alloca });
             } else {
                 // Non-empty vec: init with capacity, then push each
-                auto initCapFn = declareBuiltin(
-                    "lux_vec_init_cap_" + suffix,
-                    llvm::Type::getVoidTy(*context_),
-                    { ptrTy, usizeTy });
-                builder_->CreateCall(initCapFn, {
-                    alloca,
-                    llvm::ConstantInt::get(usizeTy, vals.size())
-                });
+                if (suffix == "raw") {
+                    auto& dl       = module_->getDataLayout();
+                    auto  elemSz   = dl.getTypeAllocSize(elemLLTy);
+                    auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
 
-                auto pushFn = declareBuiltin(
-                    "lux_vec_push_" + suffix,
-                    llvm::Type::getVoidTy(*context_),
-                    { ptrTy, elemLLTy });
-                for (auto* v : vals) {
-                    if (v->getType() != elemLLTy) {
-                        if (v->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
-                            v = builder_->CreateIntCast(v, elemLLTy,
-                                                        ti->elementType->isSigned);
+                    auto initCapFn = declareBuiltin(
+                        "lux_vec_init_cap_raw",
+                        llvm::Type::getVoidTy(*context_),
+                        { ptrTy, usizeTy, usizeTy });
+                    builder_->CreateCall(initCapFn, {
+                        alloca,
+                        llvm::ConstantInt::get(usizeTy, vals.size()),
+                        elemSzVal
+                    });
+
+                    auto pushFn = declareBuiltin(
+                        "lux_vec_push_raw",
+                        llvm::Type::getVoidTy(*context_),
+                        { ptrTy, ptrTy, usizeTy });
+                    for (auto* v : vals) {
+                        auto* tmp = builder_->CreateAlloca(elemLLTy);
+                        builder_->CreateStore(v, tmp);
+                        builder_->CreateCall(pushFn, { alloca, tmp, elemSzVal });
                     }
-                    builder_->CreateCall(pushFn, { alloca, v });
+                } else {
+                    auto initCapFn = declareBuiltin(
+                        "lux_vec_init_cap_" + suffix,
+                        llvm::Type::getVoidTy(*context_),
+                        { ptrTy, usizeTy });
+                    builder_->CreateCall(initCapFn, {
+                        alloca,
+                        llvm::ConstantInt::get(usizeTy, vals.size())
+                    });
+
+                    auto pushFn = declareBuiltin(
+                        "lux_vec_push_" + suffix,
+                        llvm::Type::getVoidTy(*context_),
+                        { ptrTy, elemLLTy });
+                    for (auto* v : vals) {
+                        if (v->getType() != elemLLTy) {
+                            if (v->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
+                                v = builder_->CreateIntCast(v, elemLLTy,
+                                                            ti->elementType->isSigned);
+                        }
+                        builder_->CreateCall(pushFn, { alloca, v });
+                    }
                 }
             }
         } else {
@@ -3423,7 +3487,7 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
             if (iterableTI->elementType)
                 suffix = getVecSuffix(iterableTI->elementType);
             else
-                suffix = typeInfo->builtinSuffix;
+                suffix = typeInfo->builtinSuffix.empty() ? "raw" : typeInfo->builtinSuffix;
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
 
@@ -3456,9 +3520,22 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
             // Body: elem = lux_vec_at_<suffix>(&vec, idx)
             builder_->SetInsertPoint(bodyBB);
             auto* curIdx = builder_->CreateLoad(idxType, idxAlloca, "idx");
-            auto atCallee = declareBuiltin("lux_vec_at_" + suffix, varType, {ptrTy, usizeTy});
-            auto* elem = builder_->CreateCall(atCallee, {vecAlloca, curIdx}, "elem");
-            builder_->CreateStore(elem, elemAlloca);
+            if (suffix == "raw") {
+                // lux_vec_ptr_raw returns void* pointing to element; load from it
+                auto& dl     = module_->getDataLayout();
+                auto  elemSz = dl.getTypeAllocSize(varType);
+                auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+                auto ptrCallee = declareBuiltin("lux_vec_ptr_raw", ptrTy,
+                                               {ptrTy, usizeTy, usizeTy});
+                auto* elemPtr = builder_->CreateCall(ptrCallee,
+                                                     {vecAlloca, curIdx, elemSzVal}, "elem_ptr");
+                auto* elem = builder_->CreateLoad(varType, elemPtr, "elem");
+                builder_->CreateStore(elem, elemAlloca);
+            } else {
+                auto atCallee = declareBuiltin("lux_vec_at_" + suffix, varType, {ptrTy, usizeTy});
+                auto* elem = builder_->CreateCall(atCallee, {vecAlloca, curIdx}, "elem");
+                builder_->CreateStore(elem, elemAlloca);
+            }
 
             for (auto* stmt : ctx->block()->statement())
                 visit(stmt);
@@ -9159,7 +9236,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
             ti.kind = TypeKind::Extended;
             ti.bitWidth = 0;
             ti.isSigned = false;
-            ti.builtinSuffix = elemTI->builtinSuffix;
+            ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
             ti.elementType = elemTI;
             ti.extendedKind = nativeBaseName;
             typeRegistry_.registerType(std::move(ti));
@@ -9177,7 +9254,8 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
             ti.kind = TypeKind::Extended;
             ti.bitWidth = 0;
             ti.isSigned = false;
-            ti.builtinSuffix = keyTI->builtinSuffix + "_" + valTI->builtinSuffix;
+            auto valSuffix = valTI->builtinSuffix.empty() ? "raw" : valTI->builtinSuffix;
+            ti.builtinSuffix = keyTI->builtinSuffix + "_" + valSuffix;
             ti.keyType = keyTI;
             ti.valueType = valTI;
             ti.extendedKind = nativeBaseName;
@@ -9245,7 +9323,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
             ti.kind = TypeKind::Extended;
             ti.bitWidth = 0;
             ti.isSigned = false;
-            ti.builtinSuffix = elemTI->builtinSuffix;
+            ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
             ti.elementType = elemTI;
             ti.extendedKind = baseName;
             typeRegistry_.registerType(std::move(ti));
@@ -9898,6 +9976,7 @@ llvm::StructType* IRGen::getOrCreateSetStructType() {
 
 std::string IRGen::getVecSuffix(const TypeInfo* elemTI) {
     if (!elemTI) return "i32";
+    if (elemTI->builtinSuffix.empty()) return "raw";
     return elemTI->builtinSuffix;
 }
 
@@ -10011,15 +10090,16 @@ void IRGen::emitAutoCleanups(const std::string& skipVar) {
 
         std::string freeFuncName;
         if (info.typeInfo->extendedKind == "Vec") {
-            auto suffix = info.typeInfo->elementType
-                              ? info.typeInfo->elementType->builtinSuffix
-                              : info.typeInfo->builtinSuffix;
+            auto suffix = getVecSuffix(info.typeInfo->elementType
+                              ? info.typeInfo->elementType
+                              : info.typeInfo);
             freeFuncName = "lux_vec_free_" + suffix;
         } else if (info.typeInfo->extendedKind == "Map") {
             freeFuncName = "lux_map_free_" + info.typeInfo->builtinSuffix;
         } else if (info.typeInfo->extendedKind == "Set") {
             auto suffix = info.typeInfo->elementType
-                              ? info.typeInfo->elementType->builtinSuffix
+                              ? (info.typeInfo->elementType->builtinSuffix.empty()
+                                     ? "raw" : info.typeInfo->elementType->builtinSuffix)
                               : info.typeInfo->builtinSuffix;
             freeFuncName = "lux_set_free_" + suffix;
         } else {
@@ -10118,14 +10198,23 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
             suffix = receiverTI->builtinSuffix; // "keySuffix_valSuffix"
         } else if (receiverTI->extendedKind == "Set") {
             extStructTy = getOrCreateSetStructType();
-            suffix = receiverTI->elementType
-                         ? receiverTI->elementType->builtinSuffix
-                         : receiverTI->builtinSuffix;
+            // Prefer ti->builtinSuffix (already has "raw" fallback applied)
+            // but fall back to elementType suffix with raw correction
+            if (!receiverTI->builtinSuffix.empty())
+                suffix = receiverTI->builtinSuffix;
+            else if (receiverTI->elementType)
+                suffix = receiverTI->elementType->builtinSuffix.empty()
+                             ? "raw" : receiverTI->elementType->builtinSuffix;
+            else
+                suffix = "raw";
         } else {
             extStructTy = getOrCreateVecStructType();
-            suffix = receiverTI->elementType
-                         ? receiverTI->elementType->builtinSuffix
-                         : receiverTI->builtinSuffix;
+            if (!receiverTI->builtinSuffix.empty())
+                suffix = receiverTI->builtinSuffix;
+            else if (receiverTI->elementType)
+                suffix = getVecSuffix(receiverTI->elementType);
+            else
+                suffix = "raw";
         }
         // Map Lux method names to C runtime function names
         auto cMethodName = methodName;
@@ -10227,7 +10316,13 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         for (size_t i = 0; i < desc->paramTypes.size(); i++) {
             auto& pt = desc->paramTypes[i];
             llvm::Type* paramTy;
-            if (pt == "_elem")       paramTy = elemLLTy;
+            // For raw element/value types, C function expects const void*
+            bool isRawElem = (pt == "_elem" && suffix == "raw");
+            bool isRawVal  = (pt == "_val"  && suffix.size() >= 4 &&
+                              suffix.substr(suffix.size() - 3) == "raw");
+            if (isRawElem || isRawVal)
+                paramTy = ptrTy;
+            else if (pt == "_elem")       paramTy = elemLLTy;
             else if (pt == "_key")   paramTy = keyLLTy;
             else if (pt == "_val")   paramTy = valLLTy;
             else if (pt == "_self")  paramTy = ptrTy;
@@ -10245,7 +10340,13 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
 
             // Cast argument if needed
             llvm::Value* argVal = args[i];
-            if (pt == "_self") {
+            if (isRawElem || isRawVal) {
+                // Raw struct: alloca, store value, pass pointer
+                llvm::Type* rawTy = isRawElem ? elemLLTy : valLLTy;
+                auto* tmp = builder_->CreateAlloca(rawTy);
+                builder_->CreateStore(argVal, tmp);
+                argVal = tmp;
+            } else if (pt == "_self") {
                 // _self params expect a pointer to the struct, not the struct
                 // by value. Try to get the alloca from the argument expression.
                 if (auto* argList = ctx->argList()) {

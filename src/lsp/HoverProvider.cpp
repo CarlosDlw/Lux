@@ -672,8 +672,8 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         return makeResult(token, withDoc(md, aliasDecl->getStart()->getLine() - 1));
     }
 
-    // 16) Extended type base name (Vec, Map, Set, Task)
-    auto* extDesc = extTypeRegistry_.lookup(name);
+    // 16) Extended type base name (Vec, Map, Set, Task) — normalize lowercase keywords
+    auto* extDesc = extTypeRegistry_.lookup(normalizeExtBaseName(name));
     if (extDesc) {
         std::ostringstream ss;
         ss << "```lux\n(type) " << name;

@@ -55,6 +55,7 @@ static bool isKeyword(size_t tokenType) {
         case LuxLexer::EXTEND: case LuxLexer::TRY: case LuxLexer::CATCH:
         case LuxLexer::FINALLY: case LuxLexer::THROW: case LuxLexer::DEFER:
         case LuxLexer::EXTERN: case LuxLexer::AUTO: case LuxLexer::NULL_LIT:
+        case LuxLexer::INLINE_BLOCK: case LuxLexer::SCOPE_BLOCK:
             return true;
         default:
             return false;

@@ -1577,6 +1577,48 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
         }
     }
 
+    // Naked block { ... } — recurse into body (own scope, no keyword to hover)
+    if (auto* nb = stmt->nakedBlockStmt()) {
+        for (auto* s : nb->statement()) {
+            auto r = walkStmtForHover(s, hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+    }
+
+    // Inline block #inline { ... } — recurse into body (injects into parent scope)
+    if (auto* ib = stmt->inlineBlockStmt()) {
+        for (auto* s : ib->statement()) {
+            auto r = walkStmtForHover(s, hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+    }
+
+    // Scope block #scope (callbacks) { ... } — hover callbacks + recurse into body
+    if (auto* sb = stmt->scopeBlockStmt()) {
+        if (sb->scopeCallbackList()) {
+            for (auto* cb : sb->scopeCallbackList()->scopeCallback()) {
+                if (cb->IDENTIFIER() && cb->IDENTIFIER()->getSymbol() == hoveredToken) {
+                    return hoverIdent(tokenText, hoveredToken, tree,
+                                       bindings, cursorLine, project);
+                }
+                if (auto* al = cb->argList()) {
+                    for (auto* a : al->expression()) {
+                        auto r = walkExprForHover(a, hoveredToken, tokenText,
+                                                   tree, bindings, cursorLine, project);
+                        if (r) return r;
+                    }
+                }
+            }
+        }
+        for (auto* s : sb->statement()) {
+            auto r = walkStmtForHover(s, hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+    }
+
     return std::nullopt;
 }
 
@@ -2880,6 +2922,13 @@ static void collectLocalsFromStmts(
             if (tc->finallyClause())
                 collectLocalsFromBlock(tc->finallyClause()->block(), beforeLine, out, flc);
         }
+        // Structural blocks — recurse into body to collect visible locals
+        if (auto* nb = stmt->nakedBlockStmt())
+            collectLocalsFromStmts(nb->statement(), beforeLine, out, flc);
+        if (auto* ib = stmt->inlineBlockStmt())
+            collectLocalsFromStmts(ib->statement(), beforeLine, out, flc);
+        if (auto* sb = stmt->scopeBlockStmt())
+            collectLocalsFromStmts(sb->statement(), beforeLine, out, flc);
     }
 }
 

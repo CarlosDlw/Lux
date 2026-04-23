@@ -47,6 +47,91 @@ defer println("cleanup done");
 
 ---
 
+## Structural Blocks
+
+Structural blocks are special block constructs for scope isolation, code injection, and RAII-style cleanup. There are three forms: **naked block** `{}`, **inline block** `#inline {}`, and **scope block** `#scope (...) {}`.
+
+---
+
+### Naked Block `{}`
+
+A pair of braces creates a new lexical scope. Variables declared inside are not visible outside.
+
+```lux
+int32 main() {
+    int32 x = 1;
+    {
+        int32 y = 2;    // y is local to this block
+        x = x + y;
+    }
+    // y is not accessible here
+    println(x);         // 3
+    ret 0;
+}
+```
+
+Use naked blocks to limit variable lifetime or to avoid name collisions.
+
+---
+
+### Inline Block `#inline {}`
+
+`#inline {}` injects the block's body into the enclosing scope. Variables declared inside become visible in the surrounding scope, as if written inline. This is useful for grouping logically related setup code without introducing a new scope.
+
+```lux
+int32 main() {
+    #inline {
+        int32 result = compute();
+        bool valid = result > 0;
+    }
+    // result and valid are visible here
+    if valid {
+        println(result);
+    }
+    ret 0;
+}
+```
+
+---
+
+### Scope Block `#scope (...) {}`
+
+`#scope (callbacks...) {}` registers one or more cleanup callbacks that run automatically when the block exits, in **LIFO order**. This enables RAII-style resource management scoped to a block rather than a full function.
+
+```lux
+#include <raylib.h>
+
+int32 main() {
+    InitWindow(800, 600, c"Demo");
+    SetTargetFPS(60);
+
+    while !WindowShouldClose() {
+        #scope (EndDrawing()) {
+            BeginDrawing();
+            ClearBackground(RAYWHITE);
+            DrawText(c"Hello!", 10, 10, 20, DARKGRAY);
+        }
+        // EndDrawing() is always called here, even if the body returns early
+    }
+    ret 0;
+}
+```
+
+Multiple callbacks run in reverse order (LIFO):
+
+```lux
+#scope (releaseB(), releaseA()) {
+    acquireA();
+    acquireB();
+    // ... work ...
+}
+// releaseB() runs first, then releaseA()
+```
+
+`#scope` complements `defer` when cleanup should be bound to a specific block rather than function exit.
+
+---
+
 ## Automatic Cleanup for Collections
 
 `vec<T>`, `map<K, V>`, and `set<T>` are automatically freed when the function they're declared in exits. This prevents memory leaks for the common case of local collections.
@@ -201,6 +286,9 @@ extern void free(*void ptr);
 |-----------|----------|
 | Auto-cleanup | Local `Vec`, `Map`, `Set` — no action needed |
 | `defer` | Explicit cleanup of raw pointers, file handles, etc. |
+| `{}` naked block | Isolate variable scope within a function |
+| `#inline {}` | Inject code into parent scope (no scope boundary) |
+| `#scope (...) {}` | RAII-style cleanup bound to a specific block |
 | `v.free()` | Manual early cleanup of collections |
 | `std::mem` | Low-level allocation, copy, compare |
 | C `malloc`/`free` | Direct C interop |

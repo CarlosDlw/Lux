@@ -2210,6 +2210,36 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem>& items,
         ci.filterText = "#include";
         items.push_back(std::move(ci));
     }
+
+    // #inline block
+    bool matchInline = (!prefix.empty() && prefix[0] == '#'
+                        && matchesPrefix("inline", prefix.substr(1)))
+                       || matchesPrefix("#inline", prefix);
+    if (matchInline) {
+        CompletionItem ci;
+        ci.label = "#inline";
+        ci.kind = CompletionKind::Snippet;
+        ci.detail = "Inline scope block (injects into parent scope)";
+        ci.insertText = "#inline {\n\t$0\n}";
+        ci.insertTextFormat = InsertTextFormat::Snippet;
+        ci.filterText = "#inline";
+        items.push_back(std::move(ci));
+    }
+
+    // #scope block
+    bool matchScope = (!prefix.empty() && prefix[0] == '#'
+                       && matchesPrefix("scope", prefix.substr(1)))
+                      || matchesPrefix("#scope", prefix);
+    if (matchScope) {
+        CompletionItem ci;
+        ci.label = "#scope";
+        ci.kind = CompletionKind::Snippet;
+        ci.detail = "RAII scope block — callbacks run on exit (LIFO)";
+        ci.insertText = "#scope (${1:fn()}) {\n\t$0\n}";
+        ci.insertTextFormat = InsertTextFormat::Snippet;
+        ci.filterText = "#scope";
+        items.push_back(std::move(ci));
+    }
 }
 
 void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem>& items,

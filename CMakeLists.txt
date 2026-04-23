@@ -180,11 +180,16 @@ if(LLVM_VERSION_MAJOR GREATER_EQUAL 18)
 endif()
 
 target_link_libraries(lux PRIVATE
-    lux_builtins
+    # --whole-archive forces ALL symbols from lux_builtins into the binary so that
+    # LLVM MCJIT can resolve them at JIT runtime via dlsym (lux run command).
+    -Wl,--whole-archive lux_builtins -Wl,--no-whole-archive
     ${ANTLR4_LIB}
     ${LLVM_LIBS}
     ${LIBCLANG_LIB}
 )
+
+# Export all symbols so LLVM MCJIT can resolve builtins via dlsym (lux run command).
+target_link_options(lux PRIVATE -rdynamic)
 
 # ─── Build instructions ───────────────────────────────────────────────────────
 # mkdir build && cd build && cmake .. && make -j$(nproc)

@@ -311,6 +311,28 @@ static void collectLocalsFromStmts(
             out[vd->IDENTIFIER(0)->getText()] = {typeName, 0};
         }
 
+        // Structural blocks
+        if (auto* nb = stmt->nakedBlockStmt()) {
+            // Lexical scope: only visible while cursor is inside the block.
+            if (cursorInsideNode(nb, beforeLine)) {
+                auto scoped = out;
+                collectLocalsFromStmts(nb->statement(), beforeLine, scoped, flc);
+                out = std::move(scoped);
+            }
+        }
+        if (auto* ib = stmt->inlineBlockStmt()) {
+            // Inline block injects declarations into parent scope.
+            collectLocalsFromStmts(ib->statement(), beforeLine, out, flc);
+        }
+        if (auto* sb = stmt->scopeBlockStmt()) {
+            // Scope block is lexical: descend only when cursor is inside.
+            if (cursorInsideNode(sb, beforeLine)) {
+                auto scoped = out;
+                collectLocalsFromStmts(sb->statement(), beforeLine, scoped, flc);
+                out = std::move(scoped);
+            }
+        }
+
         if (auto* ifS = stmt->ifStmt()) {
             if (auto* body = ifS->ifBody()) {
                 if (auto* b = body->block()) {

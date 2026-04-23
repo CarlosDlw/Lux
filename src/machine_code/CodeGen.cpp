@@ -39,17 +39,21 @@ static bool tryLink(const char*        linker,
 
     if (pid == 0) {
         // Child process
-        const char* args[] = {
-            linker,
-            objectPath.c_str(),
-            builtinsPath.c_str(),
-            "-lm",
-            "-lz",
-            "-lpthread",
-            "-o", outputPath.c_str(),
-            nullptr
-        };
-        ::execvp(linker, const_cast<char**>(args));
+        std::vector<const char*> argv;
+        argv.push_back(linker);
+        argv.push_back(objectPath.c_str());
+        argv.push_back(builtinsPath.c_str());
+#ifdef LUX_RUNTIME_DIAGNOSTICS
+        argv.push_back("-fsanitize=address,undefined");
+        argv.push_back("-fno-omit-frame-pointer");
+#endif
+        argv.push_back("-lm");
+        argv.push_back("-lz");
+        argv.push_back("-lpthread");
+        argv.push_back("-o");
+        argv.push_back(outputPath.c_str());
+        argv.push_back(nullptr);
+        ::execvp(linker, const_cast<char**>(argv.data()));
         ::_exit(127); // exec failed
     }
 
@@ -75,6 +79,10 @@ static bool tryLinkMulti(const char*                      linker,
         for (auto& obj : objectPaths)
             argv.push_back(obj.c_str());
         argv.push_back(builtinsPath.c_str());
+#ifdef LUX_RUNTIME_DIAGNOSTICS
+        argv.push_back("-fsanitize=address,undefined");
+        argv.push_back("-fno-omit-frame-pointer");
+#endif
         for (auto& lp : extraLibPaths)
             argv.push_back(lp.c_str());
         argv.push_back("-lm");

@@ -4980,6 +4980,12 @@ std::any IRGen::visitEnumAccessExpr(LuxParser::EnumAccessExprContext* ctx) {
 
     auto* ti = typeRegistry_.lookup(enumName);
     if (!ti || ti->kind != TypeKind::Enum) {
+        // Check if it's a C enum — constants are stored in cEnumConstants_
+        auto it = cEnumConstants_.find(variantName);
+        if (it != cEnumConstants_.end()) {
+            return static_cast<llvm::Value*>(
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_), it->second));
+        }
         std::cerr << "lux: unknown enum type '" << enumName << "'\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));

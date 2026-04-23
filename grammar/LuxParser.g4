@@ -181,7 +181,7 @@ inlineBlockStmt
 
 // #scope (callback, ...) { statements }  — scoped RAII block with exit callbacks
 scopeBlockStmt
-    : SCOPE_BLOCK LPAREN scopeCallbackList RPAREN LBRACE statement* RBRACE
+    : SCOPE_BLOCK LPAREN scopeCallbackList? RPAREN LBRACE statement* RBRACE
     ;
 
 scopeCallbackList

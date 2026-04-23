@@ -670,10 +670,10 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *SCOPE_BLOCK();
     antlr4::tree::TerminalNode *LPAREN();
-    ScopeCallbackListContext *scopeCallbackList();
     antlr4::tree::TerminalNode *RPAREN();
     antlr4::tree::TerminalNode *LBRACE();
     antlr4::tree::TerminalNode *RBRACE();
+    ScopeCallbackListContext *scopeCallbackList();
     std::vector<StatementContext *> statement();
     StatementContext* statement(size_t i);
 

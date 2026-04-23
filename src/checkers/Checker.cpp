@@ -3163,13 +3163,15 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
             checkStmt(inner, retType, innerTerminated);
         }
         // Validate callbacks with body locals in scope
-        for (auto* cb : sb->scopeCallbackList()->scopeCallback()) {
-            auto funcName = cb->IDENTIFIER()->getText();
-            if (!isKnownFunction(funcName) && !(cBindings_ && cBindings_->findFunction(funcName)))
-                warning(cb, "unknown function '" + funcName + "' in #scope callback");
-            if (cb->argList())
-                for (auto* arg : cb->argList()->expression())
-                    resolveExprType(arg);
+        if (auto* cbs = sb->scopeCallbackList()) {
+            for (auto* cb : cbs->scopeCallback()) {
+                auto funcName = cb->IDENTIFIER()->getText();
+                if (!isKnownFunction(funcName) && !(cBindings_ && cBindings_->findFunction(funcName)))
+                    warning(cb, "unknown function '" + funcName + "' in #scope callback");
+                if (cb->argList())
+                    for (auto* arg : cb->argList()->expression())
+                        resolveExprType(arg);
+            }
         }
         --scopeDepth_;
         for (auto& [name, info] : savedLocals) {

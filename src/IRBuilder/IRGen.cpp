@@ -10148,10 +10148,12 @@ std::any IRGen::visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext* ctx) {
     size_t deferBase = deferStack_.size();
 
     // Push callbacks in declaration order; LIFO emission gives reverse execution.
-    for (auto* cb : ctx->scopeCallbackList()->scopeCallback()) {
-        DeferredStmt ds;
-        ds.scopeCbCtx = cb;
-        deferStack_.push_back(ds);
+    if (auto* cbs = ctx->scopeCallbackList()) {
+        for (auto* cb : cbs->scopeCallback()) {
+            DeferredStmt ds;
+            ds.scopeCbCtx = cb;
+            deferStack_.push_back(ds);
+        }
     }
 
     // Visit block body.

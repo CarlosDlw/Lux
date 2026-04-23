@@ -3,6 +3,7 @@
   "displayName": "Lux Language",
   "description": "Language support for the Lux language (.lx files)",
   "version": "0.4.0",
+  "icon": "icons/lux-ext.png",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -17,7 +18,11 @@
         "id": "lux",
         "aliases": ["Lux", "lux"],
         "extensions": [".lx"],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/lux-file.svg",
+          "dark": "./icons/lux-file.svg"
+        }
       }
     ],
     "grammars": [

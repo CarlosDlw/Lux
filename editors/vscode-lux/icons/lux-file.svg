@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c0e1a"/>
+      <stop offset="100%" stop-color="#161928"/>
+    </linearGradient>
+
+    <!-- Crystal top-half gradient -->
+    <linearGradient id="crystalTop" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFE566"/>
+      <stop offset="100%" stop-color="#E09A10"/>
+    </linearGradient>
+
+    <!-- Glow on rays / edges -->
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Strong glow for center light point -->
+    <filter id="centerGlow" x="-200%" y="-200%" width="500%" height="500%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Background ambient radial -->
+    <radialGradient id="bgGlow" cx="50%" cy="47%" r="38%">
+      <stop offset="0%" stop-color="#FFB800" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#FFB800" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ─── Light rays right ─── -->
+  <line x1="128" y1="84"  x2="155" y2="65"  stroke="#FFD966" stroke-width="2.2" stroke-linecap="round" opacity="0.60" filter="url(#glow)"/>
+  <line x1="130" y1="97"  x2="158" y2="97"  stroke="#FFD966" stroke-width="2.8" stroke-linecap="round" opacity="0.70" filter="url(#glow)"/>
+  <line x1="128" y1="110" x2="155" y2="129" stroke="#FFD966" stroke-width="2.2" stroke-linecap="round" opacity="0.60" filter="url(#glow)"/>
+
+  <!-- ─── Light rays left (mirrored) ─── -->
+  <line x1="72"  y1="84"  x2="45"  y2="65"  stroke="#FFD966" stroke-width="2.2" stroke-linecap="round" opacity="0.60" filter="url(#glow)"/>
+  <line x1="70"  y1="97"  x2="42"  y2="97"  stroke="#FFD966" stroke-width="2.8" stroke-linecap="round" opacity="0.70" filter="url(#glow)"/>
+  <line x1="72"  y1="110" x2="45"  y2="129" stroke="#FFD966" stroke-width="2.2" stroke-linecap="round" opacity="0.60" filter="url(#glow)"/>
+
+  <!-- ─── Crystal / prism ─── -->
+  <!-- Diamond outline: apex(100,48) right(130,97) bottom(100,148) left(70,97) -->
+
+  <!-- Bottom half — shadow face -->
+  <polygon points="70,97 130,97 100,148" fill="#9A6010"/>
+
+  <!-- Top half — lit face (gradient) -->
+  <polygon points="70,97 130,97 100,48" fill="url(#crystalTop)"/>
+
+  <!-- Internal left facet highlight -->
+  <polygon points="70,97 100,48 100,97" fill="#FFED99" opacity="0.35"/>
+
+  <!-- Internal right facet shadow -->
+  <polygon points="130,97 100,48 100,97" fill="#7A4C08" opacity="0.35"/>
+
+  <!-- Crystal edge lines (crystalline look) -->
+  <polyline points="100,48 70,97 100,148 130,97 100,48"
+            fill="none" stroke="#FFE566" stroke-width="1.2" opacity="0.55"/>
+  <!-- Vertical axis line -->
+  <line x1="100" y1="48" x2="100" y2="148" stroke="#FFE566" stroke-width="0.8" opacity="0.28"/>
+  <!-- Horizontal axis line -->
+  <line x1="70"  y1="97" x2="130" y2="97"  stroke="#FFE566" stroke-width="0.8" opacity="0.28"/>
+
+  <!-- Center light source point -->
+  <circle cx="100" cy="97" r="5" fill="#FFFDE7" filter="url(#centerGlow)"/>
+
+</svg>

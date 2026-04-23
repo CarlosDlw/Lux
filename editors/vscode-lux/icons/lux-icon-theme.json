@@ -1,0 +1,13 @@
+{
+  "iconDefinitions": {
+    "_lux_file": {
+      "iconPath": "../icons/lux-file.png"
+    }
+  },
+  "languageIds": {
+    "lux": "_lux_file"
+  },
+  "fileExtensions": {
+    "lx": "_lux_file"
+  }
+}

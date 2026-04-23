@@ -207,6 +207,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitIfBody(LuxParser::IfBodyContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitForInStmt(LuxParser::ForInStmtContext *ctx) override {
     return visitChildren(ctx);
   }

@@ -270,17 +270,22 @@ returnStmt
 // if (cond) { ... } else if (cond) { ... } else { ... }
 // parentheses are optional: if cond { ... } is also valid
 ifStmt
-    : IF LPAREN expression RPAREN block elseIfClause* elseClause?
-    | IF expression block elseIfClause* elseClause?
+    : IF LPAREN expression RPAREN ifBody elseIfClause* elseClause?
+    | IF expression ifBody elseIfClause* elseClause?
     ;
 
 elseIfClause
-    : ELSE IF LPAREN expression RPAREN block
-    | ELSE IF expression block
+    : ELSE IF LPAREN expression RPAREN ifBody
+    | ELSE IF expression ifBody
     ;
 
 elseClause
-    : ELSE block
+    : ELSE ifBody
+    ;
+
+ifBody
+    : block
+    | statement
     ;
 
 // for int32 x in arr {}

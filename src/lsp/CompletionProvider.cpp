@@ -312,14 +312,37 @@ static void collectLocalsFromStmts(
         }
 
         if (auto* ifS = stmt->ifStmt()) {
-            if (cursorInsideNode(ifS->block(), beforeLine))
-                collectLocalsFromBlock(ifS->block(), beforeLine, out, flc);
-            for (auto* elif : ifS->elseIfClause())
-                if (cursorInsideNode(elif->block(), beforeLine))
-                    collectLocalsFromBlock(elif->block(), beforeLine, out, flc);
-            if (ifS->elseClause())
-                if (cursorInsideNode(ifS->elseClause()->block(), beforeLine))
-                    collectLocalsFromBlock(ifS->elseClause()->block(), beforeLine, out, flc);
+            if (auto* body = ifS->ifBody()) {
+                if (auto* b = body->block()) {
+                    if (cursorInsideNode(b, beforeLine))
+                        collectLocalsFromBlock(b, beforeLine, out, flc);
+                } else if (auto* s = body->statement()) {
+                    if (cursorInsideNode(s, beforeLine))
+                        collectLocalsFromStmts({s}, beforeLine, out, flc);
+                }
+            }
+            for (auto* elif : ifS->elseIfClause()) {
+                if (auto* body = elif->ifBody()) {
+                    if (auto* b = body->block()) {
+                        if (cursorInsideNode(b, beforeLine))
+                            collectLocalsFromBlock(b, beforeLine, out, flc);
+                    } else if (auto* s = body->statement()) {
+                        if (cursorInsideNode(s, beforeLine))
+                            collectLocalsFromStmts({s}, beforeLine, out, flc);
+                    }
+                }
+            }
+            if (ifS->elseClause()) {
+                if (auto* body = ifS->elseClause()->ifBody()) {
+                    if (auto* b = body->block()) {
+                        if (cursorInsideNode(b, beforeLine))
+                            collectLocalsFromBlock(b, beforeLine, out, flc);
+                    } else if (auto* s = body->statement()) {
+                        if (cursorInsideNode(s, beforeLine))
+                            collectLocalsFromStmts({s}, beforeLine, out, flc);
+                    }
+                }
+            }
         }
         if (auto* forS = stmt->forStmt()) {
             if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forS)) {

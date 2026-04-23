@@ -1,6 +1,7 @@
 #include "checkers/Checker.h"
 #include "generated/LuxLexer.h"
 #include "ffi/CBindings.h"
+#include <functional>
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Error helpers — attach line:col and full range to every diagnostic
@@ -2887,6 +2888,29 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
 }
 
 bool Checker::blockAlwaysReturns(LuxParser::BlockContext* block) {
+    std::function<bool(LuxParser::IfBodyContext*)> ifBodyAlwaysReturns =
+    [&](LuxParser::IfBodyContext* body) -> bool {
+        if (!body) return false;
+        if (auto* b = body->block())
+            return blockAlwaysReturns(b);
+        if (auto* s = body->statement()) {
+            if (s->returnStmt() || s->throwStmt())
+                return true;
+            if (auto* ls = s->loopStmt())
+                return blockAlwaysReturns(ls->block());
+            if (auto* nestedIf = s->ifStmt()) {
+                if (!nestedIf->elseClause()) return false;
+                if (!ifBodyAlwaysReturns(nestedIf->ifBody())) return false;
+                for (auto* eif : nestedIf->elseIfClause()) {
+                    if (!ifBodyAlwaysReturns(eif->ifBody()))
+                        return false;
+                }
+                return ifBodyAlwaysReturns(nestedIf->elseClause()->ifBody());
+            }
+        }
+        return false;
+    };
+
     auto stmts = block->statement();
     for (auto* stmt : stmts) {
         if (stmt->returnStmt()) {
@@ -2924,19 +2948,19 @@ bool Checker::blockAlwaysReturns(LuxParser::BlockContext* block) {
             // if/else-if/else chain: all branches must return
             if (!ifS->elseClause()) continue;
 
-            bool ifReturns = blockAlwaysReturns(ifS->block());
+            bool ifReturns = ifBodyAlwaysReturns(ifS->ifBody());
             if (!ifReturns) continue;
 
             bool allElseIfsReturn = true;
             for (auto* elseIf : ifS->elseIfClause()) {
-                if (!blockAlwaysReturns(elseIf->block())) {
+                if (!ifBodyAlwaysReturns(elseIf->ifBody())) {
                     allElseIfsReturn = false;
                     break;
                 }
             }
             if (!allElseIfsReturn) continue;
 
-            if (blockAlwaysReturns(ifS->elseClause()->block()))
+            if (ifBodyAlwaysReturns(ifS->elseClause()->ifBody()))
                 return true;
         }
 
@@ -3241,6 +3265,27 @@ void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
 
 void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
                            const TypeInfo* retType) {
+    auto checkIfBody = [&](LuxParser::IfBodyContext* body) {
+        if (!body) return;
+        if (auto* b = body->block()) {
+            checkBlock(b, retType);
+            return;
+        }
+        if (auto* s = body->statement()) {
+            auto savedLocals = locals_;
+            ++scopeDepth_;
+            bool branchTerminated = false;
+            checkStmt(s, retType, branchTerminated);
+            --scopeDepth_;
+            for (auto& [name, info] : savedLocals) {
+                auto it = locals_.find(name);
+                if (it != locals_.end())
+                    info.used = info.used || it->second.used;
+            }
+            locals_ = savedLocals;
+        }
+    };
+
     // Check the if condition
     auto* condType = resolveExprType(stmt->expression());
     if (condType && !isConditionType(condType))
@@ -3248,7 +3293,7 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
                     "', expected 'bool' or numeric type");
 
     // Check the if body
-    checkBlock(stmt->block(), retType);
+    checkIfBody(stmt->ifBody());
 
     // Check else-if clauses
     for (auto* elseIf : stmt->elseIfClause()) {
@@ -3256,12 +3301,12 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
         if (eifCondType && !isConditionType(eifCondType))
             error(elseIf, "condition has type '" + eifCondType->name +
                           "', expected 'bool' or numeric type");
-        checkBlock(elseIf->block(), retType);
+        checkIfBody(elseIf->ifBody());
     }
 
     // Check else clause
     if (auto* elseC = stmt->elseClause()) {
-        checkBlock(elseC->block(), retType);
+        checkIfBody(elseC->ifBody());
     }
 }
 

@@ -1435,8 +1435,16 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                                        tree, bindings, cursorLine, project);
             if (r) return r;
         }
-        auto r = walkBlockForHover(ifS->block(), hoveredToken, tokenText,
-                                    tree, bindings, cursorLine, project);
+        std::optional<HoverResult> r;
+        if (auto* body = ifS->ifBody()) {
+            if (auto* b = body->block()) {
+                r = walkBlockForHover(b, hoveredToken, tokenText,
+                                      tree, bindings, cursorLine, project);
+            } else if (auto* s = body->statement()) {
+                r = walkStmtForHover(s, hoveredToken, tokenText,
+                                     tree, bindings, cursorLine, project);
+            }
+        }
         if (r) return r;
         for (auto* elif : ifS->elseIfClause()) {
             if (auto* ec = elif->expression()) {
@@ -1444,13 +1452,27 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                                       tree, bindings, cursorLine, project);
                 if (r) return r;
             }
-            r = walkBlockForHover(elif->block(), hoveredToken, tokenText,
-                                   tree, bindings, cursorLine, project);
+            if (auto* body = elif->ifBody()) {
+                if (auto* b = body->block()) {
+                    r = walkBlockForHover(b, hoveredToken, tokenText,
+                                          tree, bindings, cursorLine, project);
+                } else if (auto* s = body->statement()) {
+                    r = walkStmtForHover(s, hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, project);
+                }
+            }
             if (r) return r;
         }
         if (auto* el = ifS->elseClause()) {
-            r = walkBlockForHover(el->block(), hoveredToken, tokenText,
-                                   tree, bindings, cursorLine, project);
+            if (auto* body = el->ifBody()) {
+                if (auto* b = body->block()) {
+                    r = walkBlockForHover(b, hoveredToken, tokenText,
+                                          tree, bindings, cursorLine, project);
+                } else if (auto* s = body->statement()) {
+                    r = walkStmtForHover(s, hoveredToken, tokenText,
+                                         tree, bindings, cursorLine, project);
+                }
+            }
             if (r) return r;
         }
     }
@@ -2897,11 +2919,28 @@ static void collectLocalsFromStmts(
 
         // Recurse into nested blocks
         if (auto* ifS = stmt->ifStmt()) {
-            collectLocalsFromBlock(ifS->block(), beforeLine, out, flc);
-            for (auto* elif : ifS->elseIfClause())
-                collectLocalsFromBlock(elif->block(), beforeLine, out, flc);
-            if (ifS->elseClause())
-                collectLocalsFromBlock(ifS->elseClause()->block(), beforeLine, out, flc);
+            if (auto* body = ifS->ifBody()) {
+                if (auto* b = body->block())
+                    collectLocalsFromBlock(b, beforeLine, out, flc);
+                else if (auto* s = body->statement())
+                    collectLocalsFromStmts({s}, beforeLine, out, flc);
+            }
+            for (auto* elif : ifS->elseIfClause()) {
+                if (auto* body = elif->ifBody()) {
+                    if (auto* b = body->block())
+                        collectLocalsFromBlock(b, beforeLine, out, flc);
+                    else if (auto* s = body->statement())
+                        collectLocalsFromStmts({s}, beforeLine, out, flc);
+                }
+            }
+            if (ifS->elseClause()) {
+                if (auto* body = ifS->elseClause()->ifBody()) {
+                    if (auto* b = body->block())
+                        collectLocalsFromBlock(b, beforeLine, out, flc);
+                    else if (auto* s = body->statement())
+                        collectLocalsFromStmts({s}, beforeLine, out, flc);
+                }
+            }
         }
         if (auto* forIn = stmt->forStmt()) {
             if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forIn)) {

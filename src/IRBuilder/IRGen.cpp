@@ -3277,6 +3277,18 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
     auto elseIfs = ctx->elseIfClause();
     auto* elseClause = ctx->elseClause();
 
+    auto emitIfBody = [&](LuxParser::IfBodyContext* body) {
+        if (!body) return;
+        auto savedLocals = locals_;
+        if (auto* b = body->block()) {
+            for (auto* stmt : b->statement())
+                visit(stmt);
+        } else if (auto* s = body->statement()) {
+            visit(s);
+        }
+        locals_ = savedLocals;
+    };
+
     // Total branches: 1 (if) + N (else if) + optional else
     size_t totalBranches = 1 + elseIfs.size();
 
@@ -3316,12 +3328,7 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
 
     // ── Emit the if-body ───────────────────────────────────────────
     builder_->SetInsertPoint(bodyBlocks[0]);
-    {
-        auto savedLocals = locals_;
-        for (auto* stmt : ctx->block()->statement())
-            visit(stmt);
-        locals_ = savedLocals;
-    }
+    emitIfBody(ctx->ifBody());
     if (!builder_->GetInsertBlock()->getTerminator())
         builder_->CreateBr(mergeBlock);
 
@@ -3342,12 +3349,7 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
 
         // Body
         builder_->SetInsertPoint(bodyBlocks[i + 1]);
-        {
-            auto savedLocals = locals_;
-            for (auto* stmt : elseIfs[i]->block()->statement())
-                visit(stmt);
-            locals_ = savedLocals;
-        }
+        emitIfBody(elseIfs[i]->ifBody());
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateBr(mergeBlock);
     }
@@ -3355,12 +3357,7 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
     // ── Emit else body ─────────────────────────────────────────────
     if (elseBlock) {
         builder_->SetInsertPoint(elseBlock);
-        {
-            auto savedLocals = locals_;
-            for (auto* stmt : elseClause->block()->statement())
-                visit(stmt);
-            locals_ = savedLocals;
-        }
+        emitIfBody(elseClause->ifBody());
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateBr(mergeBlock);
     }

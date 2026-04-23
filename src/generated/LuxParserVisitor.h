@@ -115,6 +115,8 @@ public:
 
     virtual std::any visitElseClause(LuxParser::ElseClauseContext *context) = 0;
 
+    virtual std::any visitIfBody(LuxParser::IfBodyContext *context) = 0;
+
     virtual std::any visitForInStmt(LuxParser::ForInStmtContext *context) = 0;
 
     virtual std::any visitForClassicStmt(LuxParser::ForClassicStmtContext *context) = 0;

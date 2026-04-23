@@ -42,11 +42,28 @@ static void collectLocalsFromStmts(
 
         // Recurse into nested blocks
         if (auto* ifS = stmt->ifStmt()) {
-            collectLocalsFromBlock(ifS->block(), beforeLine, out);
-            for (auto* elif : ifS->elseIfClause())
-                collectLocalsFromBlock(elif->block(), beforeLine, out);
-            if (ifS->elseClause())
-                collectLocalsFromBlock(ifS->elseClause()->block(), beforeLine, out);
+            if (auto* body = ifS->ifBody()) {
+                if (auto* b = body->block())
+                    collectLocalsFromBlock(b, beforeLine, out);
+                else if (auto* s = body->statement())
+                    collectLocalsFromStmts({s}, beforeLine, out);
+            }
+            for (auto* elif : ifS->elseIfClause()) {
+                if (auto* body = elif->ifBody()) {
+                    if (auto* b = body->block())
+                        collectLocalsFromBlock(b, beforeLine, out);
+                    else if (auto* s = body->statement())
+                        collectLocalsFromStmts({s}, beforeLine, out);
+                }
+            }
+            if (ifS->elseClause()) {
+                if (auto* body = ifS->elseClause()->ifBody()) {
+                    if (auto* b = body->block())
+                        collectLocalsFromBlock(b, beforeLine, out);
+                    else if (auto* s = body->statement())
+                        collectLocalsFromStmts({s}, beforeLine, out);
+                }
+            }
         }
         if (auto* forIn = stmt->forStmt()) {
             if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forIn)) {
@@ -1137,23 +1154,47 @@ std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
                                         bindings, cursorLine, filePath, project))
                 return r;
         }
-        if (auto r = walkBlockForDef(ifS->block(), hoveredToken, tokenText,
-                                     tree, bindings, cursorLine, filePath, project))
-            return r;
+        if (auto* body = ifS->ifBody()) {
+            if (auto* b = body->block()) {
+                if (auto r = walkBlockForDef(b, hoveredToken, tokenText,
+                                             tree, bindings, cursorLine, filePath, project))
+                    return r;
+            } else if (auto* s = body->statement()) {
+                if (auto r = walkStmtForDef(s, hoveredToken, tokenText,
+                                            tree, bindings, cursorLine, filePath, project))
+                    return r;
+            }
+        }
         for (auto* elif : ifS->elseIfClause()) {
             if (auto* cond = elif->expression()) {
                 if (auto r = walkExprForDef(cond, hoveredToken, tokenText, tree,
                                             bindings, cursorLine, filePath, project))
                     return r;
             }
-            if (auto r = walkBlockForDef(elif->block(), hoveredToken, tokenText,
-                                         tree, bindings, cursorLine, filePath, project))
-                return r;
+            if (auto* body = elif->ifBody()) {
+                if (auto* b = body->block()) {
+                    if (auto r = walkBlockForDef(b, hoveredToken, tokenText,
+                                                 tree, bindings, cursorLine, filePath, project))
+                        return r;
+                } else if (auto* s = body->statement()) {
+                    if (auto r = walkStmtForDef(s, hoveredToken, tokenText,
+                                                tree, bindings, cursorLine, filePath, project))
+                        return r;
+                }
+            }
         }
         if (auto* els = ifS->elseClause()) {
-            if (auto r = walkBlockForDef(els->block(), hoveredToken, tokenText,
-                                         tree, bindings, cursorLine, filePath, project))
-                return r;
+            if (auto* body = els->ifBody()) {
+                if (auto* b = body->block()) {
+                    if (auto r = walkBlockForDef(b, hoveredToken, tokenText,
+                                                 tree, bindings, cursorLine, filePath, project))
+                        return r;
+                } else if (auto* s = body->statement()) {
+                    if (auto r = walkStmtForDef(s, hoveredToken, tokenText,
+                                                tree, bindings, cursorLine, filePath, project))
+                        return r;
+                }
+            }
         }
         return std::nullopt;
     }

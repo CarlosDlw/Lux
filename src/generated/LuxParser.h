@@ -52,11 +52,11 @@ public:
     RuleIndexFieldAssignStmt = 37, RuleDerefAssignStmt = 38, RuleArrowAssignStmt = 39, 
     RuleArrowCompoundAssignStmt = 40, RuleCallStmt = 41, RuleArgList = 42, 
     RuleReturnStmt = 43, RuleIfStmt = 44, RuleElseIfClause = 45, RuleElseClause = 46, 
-    RuleForStmt = 47, RuleBreakStmt = 48, RuleContinueStmt = 49, RuleLoopStmt = 50, 
-    RuleWhileStmt = 51, RuleDoWhileStmt = 52, RuleLockStmt = 53, RuleTryCatchStmt = 54, 
-    RuleCatchClause = 55, RuleFinallyClause = 56, RuleThrowStmt = 57, RuleSwitchStmt = 58, 
-    RuleCaseClause = 59, RuleDefaultClause = 60, RuleExpression = 61, RuleTypeSpec = 62, 
-    RuleFnTypeSpec = 63, RulePrimitiveType = 64
+    RuleIfBody = 47, RuleForStmt = 48, RuleBreakStmt = 49, RuleContinueStmt = 50, 
+    RuleLoopStmt = 51, RuleWhileStmt = 52, RuleDoWhileStmt = 53, RuleLockStmt = 54, 
+    RuleTryCatchStmt = 55, RuleCatchClause = 56, RuleFinallyClause = 57, 
+    RuleThrowStmt = 58, RuleSwitchStmt = 59, RuleCaseClause = 60, RuleDefaultClause = 61, 
+    RuleExpression = 62, RuleTypeSpec = 63, RuleFnTypeSpec = 64, RulePrimitiveType = 65
   };
 
   explicit LuxParser(antlr4::TokenStream *input);
@@ -123,6 +123,7 @@ public:
   class IfStmtContext;
   class ElseIfClauseContext;
   class ElseClauseContext;
+  class IfBodyContext;
   class ForStmtContext;
   class BreakStmtContext;
   class ContinueStmtContext;
@@ -996,7 +997,7 @@ public:
     antlr4::tree::TerminalNode *LPAREN();
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *RPAREN();
-    BlockContext *block();
+    IfBodyContext *ifBody();
     std::vector<ElseIfClauseContext *> elseIfClause();
     ElseIfClauseContext* elseIfClause(size_t i);
     ElseClauseContext *elseClause();
@@ -1017,7 +1018,7 @@ public:
     antlr4::tree::TerminalNode *LPAREN();
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *RPAREN();
-    BlockContext *block();
+    IfBodyContext *ifBody();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -1031,7 +1032,7 @@ public:
     ElseClauseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ELSE();
-    BlockContext *block();
+    IfBodyContext *ifBody();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -1039,6 +1040,20 @@ public:
   };
 
   ElseClauseContext* elseClause();
+
+  class  IfBodyContext : public antlr4::ParserRuleContext {
+  public:
+    IfBodyContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    BlockContext *block();
+    StatementContext *statement();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  IfBodyContext* ifBody();
 
   class  ForStmtContext : public antlr4::ParserRuleContext {
   public:

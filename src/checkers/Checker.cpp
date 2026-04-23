@@ -334,10 +334,10 @@ void Checker::analyzeUnsafeCBufferCall(const std::string& funcName,
     };
 
     const std::vector<std::string> destHints = {
-        "dst", "dest", "out", "buf", "buffer", "str", "target"
+        "dst", "dest", "out", "buf", "buffer"
     };
     const std::vector<std::string> sizeHints = {
-        "n", "len", "size", "count", "cap", "bytes", "max"
+        "n", "len", "size", "count", "cap", "bytes"
     };
     const std::vector<std::string> srcHints = {
         "src", "source", "from", "input", "in"
@@ -356,6 +356,9 @@ void Checker::analyzeUnsafeCBufferCall(const std::string& funcName,
     }
 
     if (pointerIdx.empty()) return;
+    // Robustness: reject overly complex signatures
+    if (cfunc->paramTypes.size() > 6) return;
+    if (integerIdx.size() > 1) return;  // Ambiguity: multiple size candidates
 
     for (size_t idx : pointerIdx) {
         if (idx >= args.size()) continue;
@@ -384,13 +387,15 @@ void Checker::analyzeUnsafeCBufferCall(const std::string& funcName,
     };
 
     auto destIdx = pickByHint(pointerIdx, destHints, 0, false);
-    if (!destIdx) return;
+    if (!destIdx || *destIdx > 2) return;  // Dest must be in first 3 params
 
     auto* dest = resolveTrackedVarFromExpr(args[*destIdx]);
     if (!dest || !dest->hasBufferCapacity) return;
 
     auto sizeIdx = pickByHint(integerIdx, sizeHints, *destIdx, true);
-    if (sizeIdx) {
+    if (sizeIdx && integerIdx.size() == 1) {
+        // Robustness: size must come AFTER dest and be reasonably close
+        if (*sizeIdx <= *destIdx || (*sizeIdx - *destIdx) > 2) return;
         auto nRange = tryEvalUSizeRangeExpr(args[*sizeIdx]);
         if (nRange && nRange->first > dest->bufferCapacity) {
             std::string pname = (*sizeIdx < cfunc->paramNames.size() &&

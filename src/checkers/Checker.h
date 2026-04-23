@@ -67,6 +67,28 @@ private:
     std::unordered_map<std::string, VarInfo> locals_;
     unsigned scopeDepth_ = 0;     // current block nesting depth
 
+    // Phase 3 (Guard Analysis): Track conditional guards to suppress false positives
+    // When code has `if (n <= cap)`, we suppress buffer overflow warnings for calls
+    // to unsafe functions within that if body that would use n as a bound.
+    struct Guard {
+        std::string varName;       // variable being checked, e.g. "n"
+        std::string op;            // "<=", "<", ">=", ">"
+        uint64_t threshold;        // the capacity/limit value
+        
+        Guard() = default;
+        Guard(const std::string& vn, const std::string& o, uint64_t t)
+            : varName(vn), op(o), threshold(t) {}
+    };
+    std::vector<std::vector<Guard>> guardStack_;  // stack of guard sets per scope
+
+    // Extract comparison guards from an if condition expression
+    // e.g. `n <= 100` → Guard{"n", "<=", 100}
+    // Returns all guards found (may be multiple in && chains)
+    std::vector<Guard> extractGuardsFromExpr(LuxParser::ExpressionContext* expr);
+
+    // Query: does any active guard prove that value <= targetCapacity?
+    bool queryGuard(const std::string& varName, uint64_t targetCapacity) const;
+
     // Module-level function signatures (name → function TypeInfo)
     std::unordered_map<std::string, const TypeInfo*> functions_;
 

@@ -1,7 +1,9 @@
 #include "checkers/Checker.h"
 #include "generated/LuxLexer.h"
 #include "ffi/CBindings.h"
+#include <cctype>
 #include <functional>
+#include <limits>
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Error helpers — attach line:col and full range to every diagnostic
@@ -71,6 +73,365 @@ void Checker::errorToken(antlr4::Token* start, antlr4::Token* stop,
 void Checker::warningToken(antlr4::Token* start, antlr4::Token* stop,
                             const std::string& msg) {
     emitDiag(start, stop, Diagnostic::Warning, msg);
+}
+
+std::optional<uint64_t> Checker::tryEvalUSizeExpr(LuxParser::ExpressionContext* expr) const {
+    auto range = tryEvalUSizeRangeExpr(expr);
+    if (!range) return std::nullopt;
+    if (range->first != range->second) return std::nullopt;
+    return range->first;
+}
+
+std::optional<std::pair<uint64_t, uint64_t>>
+Checker::tryEvalUSizeRangeExpr(LuxParser::ExpressionContext* expr) const {
+    if (!expr) return std::nullopt;
+
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+        return tryEvalUSizeRangeExpr(cast->expression());
+
+    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+        return tryEvalUSizeRangeExpr(paren->expression());
+
+    if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(expr)) {
+        try {
+            auto s = intLit->INT_LIT()->getText();
+            if (s.empty() || s[0] == '-') return std::nullopt;
+            auto v = static_cast<uint64_t>(std::stoull(s));
+            return std::make_pair(v, v);
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto it = locals_.find(id->IDENTIFIER()->getText());
+        if (it != locals_.end() && it->second.hasKnownUSizeRange)
+            return std::make_pair(it->second.minUSize, it->second.maxUSize);
+        return std::nullopt;
+    }
+
+    if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(expr)) {
+        auto exprs = add->expression();
+        if (exprs.size() != 2) return std::nullopt;
+
+        auto lhs = tryEvalUSizeRangeExpr(exprs[0]);
+        auto rhs = tryEvalUSizeRangeExpr(exprs[1]);
+        if (!lhs || !rhs) return std::nullopt;
+
+        auto opText = add->op->getText();
+        if (opText == "+") {
+            if (lhs->first > std::numeric_limits<uint64_t>::max() - rhs->first) return std::nullopt;
+            if (lhs->second > std::numeric_limits<uint64_t>::max() - rhs->second) return std::nullopt;
+            return std::make_pair(lhs->first + rhs->first, lhs->second + rhs->second);
+        }
+
+        if (opText == "-") {
+            if (lhs->first < rhs->second) return std::nullopt;
+            return std::make_pair(lhs->first - rhs->second, lhs->second - rhs->first);
+        }
+
+        return std::nullopt;
+    }
+
+    if (auto* mul = dynamic_cast<LuxParser::MulExprContext*>(expr)) {
+        auto exprs = mul->expression();
+        if (exprs.size() != 2) return std::nullopt;
+        if (mul->op->getText() != "*") return std::nullopt;
+
+        auto lhs = tryEvalUSizeRangeExpr(exprs[0]);
+        auto rhs = tryEvalUSizeRangeExpr(exprs[1]);
+        if (!lhs || !rhs) return std::nullopt;
+
+        if (lhs->first > 0 && rhs->first > std::numeric_limits<uint64_t>::max() / lhs->first)
+            return std::nullopt;
+        if (lhs->second > 0 && rhs->second > std::numeric_limits<uint64_t>::max() / lhs->second)
+            return std::nullopt;
+
+        return std::make_pair(lhs->first * rhs->first, lhs->second * rhs->second);
+    }
+
+    return std::nullopt;
+}
+
+std::optional<uint64_t> Checker::tryGetCStringLiteralLen(LuxParser::ExpressionContext* expr) const {
+    if (!expr) return std::nullopt;
+
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+        return tryGetCStringLiteralLen(cast->expression());
+
+    auto decodeLen = [](const std::string& tok, const std::string& prefix) -> std::optional<uint64_t> {
+        if (tok.size() < prefix.size() + 2) return std::nullopt;
+        if (tok.rfind(prefix, 0) != 0) return std::nullopt;
+        if (tok.back() != '"') return std::nullopt;
+
+        uint64_t len = 0;
+        for (size_t i = prefix.size() + 1; i + 1 < tok.size();) {
+            if (tok[i] == '\\') {
+                if (i + 1 >= tok.size() - 1) return std::nullopt;
+                len += 1;
+                i += 2;
+            } else {
+                len += 1;
+                i += 1;
+            }
+        }
+        return len;
+    };
+
+    if (auto* cstr = dynamic_cast<LuxParser::CStrLitExprContext*>(expr))
+        return decodeLen(cstr->C_STR_LIT()->getText(), "c");
+
+    if (auto* str = dynamic_cast<LuxParser::StrLitExprContext*>(expr))
+        return decodeLen(str->STR_LIT()->getText(), "");
+
+    return std::nullopt;
+}
+
+Checker::VarInfo* Checker::resolveTrackedVarFromExpr(LuxParser::ExpressionContext* expr) {
+    if (!expr) return nullptr;
+
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+        return resolveTrackedVarFromExpr(cast->expression());
+
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto it = locals_.find(id->IDENTIFIER()->getText());
+        if (it != locals_.end()) return &it->second;
+    }
+
+    return nullptr;
+}
+
+void Checker::resetTrackedBufferInfo(VarInfo& vi) {
+    vi.hasBufferCapacity = false;
+    vi.bufferCapacity = 0;
+    vi.hasKnownCStringLen = false;
+    vi.cstringLen = 0;
+    vi.pointerEscaped = false;
+}
+
+void Checker::resetTrackedNumericInfo(VarInfo& vi) {
+    vi.hasKnownUSizeRange = false;
+    vi.minUSize = 0;
+    vi.maxUSize = 0;
+}
+
+void Checker::trackVarBufferFromExpr(const std::string& varName,
+                                     LuxParser::ExpressionContext* expr,
+                                     const TypeInfo* declaredType) {
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) return;
+
+    auto* vi = &it->second;
+    resetTrackedBufferInfo(*vi);
+
+    if (!declaredType || declaredType->kind != TypeKind::Pointer) return;
+
+    if (auto* src = resolveTrackedVarFromExpr(expr)) {
+        if (src != vi && src->type && src->type->kind == TypeKind::Pointer) {
+            vi->hasBufferCapacity = src->hasBufferCapacity;
+            vi->bufferCapacity = src->bufferCapacity;
+            vi->hasKnownCStringLen = src->hasKnownCStringLen;
+            vi->cstringLen = src->cstringLen;
+            vi->pointerEscaped = src->pointerEscaped;
+            return;
+        }
+    }
+
+    if (auto cap = tryGetCStringLiteralLen(expr)) {
+        vi->hasBufferCapacity = true;
+        vi->bufferCapacity = *cap + 1;
+        vi->hasKnownCStringLen = true;
+        vi->cstringLen = *cap;
+        return;
+    }
+
+    LuxParser::ExpressionContext* probe = expr;
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(probe))
+        probe = cast->expression();
+
+    auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(probe);
+    if (!call) return;
+
+    std::string calleeName;
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression()))
+        calleeName = ident->IDENTIFIER()->getText();
+    if (calleeName.empty()) return;
+
+    std::vector<LuxParser::ExpressionContext*> args;
+    if (auto* argList = call->argList())
+        args = argList->expression();
+
+    if (calleeName == "malloc" && args.size() >= 1) {
+        if (auto n = tryEvalUSizeExpr(args[0])) {
+            vi->hasBufferCapacity = true;
+            vi->bufferCapacity = *n;
+        }
+        return;
+    }
+
+    if (calleeName == "calloc" && args.size() >= 2) {
+        auto count = tryEvalUSizeExpr(args[0]);
+        auto size  = tryEvalUSizeExpr(args[1]);
+        if (count && size && *count <= std::numeric_limits<uint64_t>::max() / *size) {
+            vi->hasBufferCapacity = true;
+            vi->bufferCapacity = (*count) * (*size);
+        }
+        return;
+    }
+
+    if (calleeName == "realloc" && args.size() >= 2) {
+        if (auto n = tryEvalUSizeExpr(args[1])) {
+            vi->hasBufferCapacity = true;
+            vi->bufferCapacity = *n;
+            vi->hasKnownCStringLen = false;
+        }
+        return;
+    }
+}
+
+void Checker::trackVarNumericRangeFromExpr(const std::string& varName,
+                                           LuxParser::ExpressionContext* expr,
+                                           const TypeInfo* declaredType) {
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) return;
+
+    auto* vi = &it->second;
+    resetTrackedNumericInfo(*vi);
+
+    if (!declaredType || declaredType->kind != TypeKind::Integer) return;
+
+    auto range = tryEvalUSizeRangeExpr(expr);
+    if (!range) return;
+
+    vi->hasKnownUSizeRange = true;
+    vi->minUSize = range->first;
+    vi->maxUSize = range->second;
+}
+
+void Checker::analyzeUnsafeCBufferCall(const std::string& funcName,
+                                       antlr4::ParserRuleContext* ctx,
+                                       const std::vector<LuxParser::ExpressionContext*>& args) {
+    if (!cBindings_) return;
+    const CFunction* cfunc = cBindings_->findFunction(funcName);
+    if (!cfunc) return;
+    if (args.empty()) return;
+
+    auto warn = [&](const std::string& details) {
+        warning(ctx, "possible buffer overflow in C call '" + funcName + "': " + details);
+    };
+
+    auto lower = [](std::string s) {
+        for (char& ch : s)
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        return s;
+    };
+    auto containsAny = [&](const std::string& s,
+                           const std::vector<std::string>& needles) {
+        for (const auto& n : needles)
+            if (!n.empty() && s.find(n) != std::string::npos)
+                return true;
+        return false;
+    };
+
+    const std::vector<std::string> destHints = {
+        "dst", "dest", "out", "buf", "buffer", "str", "target"
+    };
+    const std::vector<std::string> sizeHints = {
+        "n", "len", "size", "count", "cap", "bytes", "max"
+    };
+    const std::vector<std::string> srcHints = {
+        "src", "source", "from", "input", "in"
+    };
+
+    std::vector<size_t> pointerIdx;
+    std::vector<size_t> integerIdx;
+    for (size_t i = 0; i < cfunc->paramTypes.size(); i++) {
+        if (i >= args.size()) break;
+        auto* ti = cfunc->paramTypes[i];
+        if (!ti) continue;
+        if (ti->kind == TypeKind::Pointer)
+            pointerIdx.push_back(i);
+        else if (ti->kind == TypeKind::Integer)
+            integerIdx.push_back(i);
+    }
+
+    if (pointerIdx.empty()) return;
+
+    for (size_t idx : pointerIdx) {
+        if (idx >= args.size()) continue;
+        if (auto* p = resolveTrackedVarFromExpr(args[idx])) {
+            p->pointerEscaped = true;
+            p->hasKnownCStringLen = false;
+        }
+    }
+
+    auto pickByHint = [&](const std::vector<size_t>& candidates,
+                          const std::vector<std::string>& hints,
+                          size_t preferAfter,
+                          bool requireAfter) -> std::optional<size_t> {
+        for (size_t idx : candidates) {
+            if (requireAfter && idx <= preferAfter) continue;
+            if (idx >= cfunc->paramNames.size()) continue;
+            auto pname = lower(cfunc->paramNames[idx]);
+            if (containsAny(pname, hints))
+                return idx;
+        }
+        for (size_t idx : candidates) {
+            if (requireAfter && idx <= preferAfter) continue;
+            return idx;
+        }
+        return std::nullopt;
+    };
+
+    auto destIdx = pickByHint(pointerIdx, destHints, 0, false);
+    if (!destIdx) return;
+
+    auto* dest = resolveTrackedVarFromExpr(args[*destIdx]);
+    if (!dest || !dest->hasBufferCapacity) return;
+
+    auto sizeIdx = pickByHint(integerIdx, sizeHints, *destIdx, true);
+    if (sizeIdx) {
+        auto nRange = tryEvalUSizeRangeExpr(args[*sizeIdx]);
+        if (nRange && nRange->first > dest->bufferCapacity) {
+            std::string pname = (*sizeIdx < cfunc->paramNames.size() &&
+                                 !cfunc->paramNames[*sizeIdx].empty())
+                                ? cfunc->paramNames[*sizeIdx]
+                                : ("arg" + std::to_string(*sizeIdx + 1));
+            warn("inferred write bound '" + pname + "' = " +
+                 std::to_string(nRange->first) +
+                 " exceeds destination capacity " +
+                 std::to_string(dest->bufferCapacity));
+        } else if (nRange && nRange->second > dest->bufferCapacity) {
+            std::string pname = (*sizeIdx < cfunc->paramNames.size() &&
+                                 !cfunc->paramNames[*sizeIdx].empty())
+                                ? cfunc->paramNames[*sizeIdx]
+                                : ("arg" + std::to_string(*sizeIdx + 1));
+            warn("inferred write bound range for '" + pname + "' is [" +
+                 std::to_string(nRange->first) + ", " +
+                 std::to_string(nRange->second) +
+                 "], which may exceed destination capacity " +
+                 std::to_string(dest->bufferCapacity));
+        }
+        return;
+    }
+
+    auto srcIdx = pickByHint(pointerIdx, srcHints, *destIdx, true);
+    if (!srcIdx) return;
+
+    auto srcLen = tryGetCStringLiteralLen(args[*srcIdx]);
+    if (!srcLen) return;
+
+    uint64_t required = *srcLen + 1;
+    if (required > dest->bufferCapacity) {
+        std::string pname = (*srcIdx < cfunc->paramNames.size() &&
+                             !cfunc->paramNames[*srcIdx].empty())
+                            ? cfunc->paramNames[*srcIdx]
+                            : ("arg" + std::to_string(*srcIdx + 1));
+        warn("inferred minimum required size from source '" + pname +
+             "' is " + std::to_string(required) +
+             " bytes, destination capacity is " +
+             std::to_string(dest->bufferCapacity));
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1852,8 +2213,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             calleeName = ident->IDENTIFIER()->getText();
 
         std::vector<const TypeInfo*> argTypes;
+        std::vector<LuxParser::ExpressionContext*> argExprs;
         if (auto* argList = call->argList()) {
             for (auto* argExpr : argList->expression()) {
+                argExprs.push_back(argExpr);
                 argTypes.push_back(resolveExprType(argExpr));
             }
         }
@@ -1903,6 +2266,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                     }
                 }
             }
+            if (!calleeName.empty())
+                analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
             return calleeType->returnType;
         }
 
@@ -1947,9 +2312,14 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 if (retName == "_any" || retName == "_numeric") {
                     // Polymorphic: return type matches first argument
                     if (!argTypes.empty() && argTypes[0])
+                    {
+                        analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
                         return argTypes[0];
+                    }
+                    analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
                     return typeRegistry_.lookup("int32");
                 }
+                analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
                 return resolveBuiltinReturnType(retName);
             }
         }
@@ -3468,6 +3838,8 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
             vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
         vi.scopeDepth = scopeDepth_;
         locals_[name] = vi;
+        trackVarBufferFromExpr(name, stmt->expression(), initType);
+        trackVarNumericRangeFromExpr(name, stmt->expression(), initType);
         return;
     }
 
@@ -3527,6 +3899,8 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
     vi.scopeDepth = scopeDepth_;
     locals_[name] = vi;
+    trackVarBufferFromExpr(name, stmt->expression(), typeInfo);
+    trackVarNumericRangeFromExpr(name, stmt->expression(), typeInfo);
 }
 
 void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
@@ -3583,6 +3957,12 @@ void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
         }
         // Check: assigning a negative constant to an unsigned integer type
         checkNegativeToUnsigned(expectedType, indexExprs.back(), stmt);
+
+        // Whole-variable assignment (x = expr) can change tracked buffer state.
+        if (indexExprs.size() == 1) {
+            trackVarBufferFromExpr(name, indexExprs.back(), varType);
+            trackVarNumericRangeFromExpr(name, indexExprs.back(), varType);
+        }
     }
 }
 
@@ -3873,8 +4253,10 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
 
     // Resolve all argument types
     std::vector<const TypeInfo*> argTypes;
+    std::vector<LuxParser::ExpressionContext*> argExprs;
     if (auto* argList = stmt->argList()) {
         for (auto* argExpr : argList->expression()) {
+            argExprs.push_back(argExpr);
             argTypes.push_back(resolveExprType(argExpr));
         }
     }
@@ -3924,6 +4306,7 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
                 }
             }
         }
+        analyzeUnsafeCBufferCall(name, stmt, argExprs);
         return;
     }
 
@@ -3967,6 +4350,8 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
             }
         }
     }
+
+    analyzeUnsafeCBufferCall(name, stmt, argExprs);
 }
 
 void Checker::checkExprStmt(LuxParser::ExprStmtContext* stmt) {

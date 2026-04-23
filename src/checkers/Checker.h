@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <optional>
+#include <utility>
 #include <unordered_map>
 #include <unordered_set>
 #include "generated/LuxParser.h"
@@ -49,6 +51,18 @@ private:
         bool used = false;         // set to true when the variable is read
         antlr4::Token* declToken = nullptr; // for warning location
         unsigned scopeDepth = 0;   // nesting depth at declaration point
+
+        // Phase 1: lightweight buffer tracking for pointer-based C calls
+        bool hasBufferCapacity = false;
+        uint64_t bufferCapacity = 0;
+        bool hasKnownCStringLen = false;
+        uint64_t cstringLen = 0;
+
+        // Phase 3: lightweight range + escape tracking
+        bool hasKnownUSizeRange = false;
+        uint64_t minUSize = 0;
+        uint64_t maxUSize = 0;
+        bool pointerEscaped = false;
     };
     std::unordered_map<std::string, VarInfo> locals_;
     unsigned scopeDepth_ = 0;     // current block nesting depth
@@ -145,6 +159,24 @@ private:
                     const std::string& msg);
     void emitDiag(antlr4::Token* start, antlr4::Token* stop,
                   Diagnostic::Severity sev, const std::string& msg);
+
+    // ── Phase 1: FFI buffer safety helpers ──────────────────────────
+    std::optional<uint64_t> tryEvalUSizeExpr(LuxParser::ExpressionContext* expr) const;
+    std::optional<std::pair<uint64_t, uint64_t>>
+        tryEvalUSizeRangeExpr(LuxParser::ExpressionContext* expr) const;
+    std::optional<uint64_t> tryGetCStringLiteralLen(LuxParser::ExpressionContext* expr) const;
+    VarInfo* resolveTrackedVarFromExpr(LuxParser::ExpressionContext* expr);
+    void resetTrackedBufferInfo(VarInfo& vi);
+    void resetTrackedNumericInfo(VarInfo& vi);
+    void trackVarBufferFromExpr(const std::string& varName,
+                                LuxParser::ExpressionContext* expr,
+                                const TypeInfo* declaredType);
+    void trackVarNumericRangeFromExpr(const std::string& varName,
+                                      LuxParser::ExpressionContext* expr,
+                                      const TypeInfo* declaredType);
+    void analyzeUnsafeCBufferCall(const std::string& funcName,
+                                  antlr4::ParserRuleContext* ctx,
+                                  const std::vector<LuxParser::ExpressionContext*>& args);
 
     // ── Namespace context (set by CLI before check) ─────────────────
     const NamespaceRegistry* nsRegistry_  = nullptr;

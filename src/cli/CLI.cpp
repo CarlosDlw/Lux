@@ -29,7 +29,121 @@
 #include <algorithm>
 #include <filesystem>
 
+#ifdef LUX_RUNTIME_DIAGNOSTICS
+#include <array>
+#include <csignal>
+#include <cstring>
+#include <execinfo.h>
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
+
+#ifdef LUX_RUNTIME_DIAGNOSTICS
+namespace {
+
+volatile sig_atomic_t g_inCrashHandler = 0;
+
+const char* signalName(int sig) {
+    switch (sig) {
+        case SIGSEGV: return "SIGSEGV";
+        case SIGABRT: return "SIGABRT";
+#ifdef SIGBUS
+        case SIGBUS:  return "SIGBUS";
+#endif
+        case SIGFPE:  return "SIGFPE";
+        case SIGILL:  return "SIGILL";
+        default:      return "SIGNAL";
+    }
+}
+
+const char* probableCause(int sig) {
+    switch (sig) {
+        case SIGSEGV:
+#ifdef SIGBUS
+        case SIGBUS:
+#endif
+            return "invalid memory access (overflow/use-after-free/null dereference)";
+        case SIGABRT:
+            return "detected memory corruption or explicit abort()";
+        case SIGFPE:
+            return "invalid arithmetic operation (division by zero or overflow trap)";
+        case SIGILL:
+            return "invalid instruction or corrupted control flow";
+        default:
+            return "runtime fatal condition";
+    }
+}
+
+void runtimeCrashHandler(int sig, siginfo_t* info, void*) {
+    if (g_inCrashHandler) _Exit(128 + sig);
+    g_inCrashHandler = 1;
+
+    std::string msg;
+    msg += "\nlux: runtime crash detected in JIT execution\n";
+    msg += "lux: signal: ";
+    msg += signalName(sig);
+    msg += " (" + std::to_string(sig) + ")\n";
+
+    if (info) {
+        msg += "lux: fault address: ";
+        msg += std::to_string(reinterpret_cast<uintptr_t>(info->si_addr));
+        msg += "\n";
+    }
+
+    msg += "lux: probable cause: ";
+    msg += probableCause(sig);
+    msg += "\n";
+    msg += "lux: stack trace:\n";
+    (void)!write(STDERR_FILENO, msg.c_str(), msg.size());
+
+    void* frames[64];
+    int n = backtrace(frames, 64);
+    if (n > 0)
+        backtrace_symbols_fd(frames, n, STDERR_FILENO);
+
+    const char* hint =
+        "lux: hint: rebuild with -DCMAKE_BUILD_TYPE=Debug to maximize diagnostics\n";
+    (void)!write(STDERR_FILENO, hint, std::strlen(hint));
+
+    _Exit(128 + sig);
+}
+
+class RuntimeSignalGuard {
+public:
+    RuntimeSignalGuard() {
+        install(SIGSEGV, idx_++);
+        install(SIGABRT, idx_++);
+#ifdef SIGBUS
+        install(SIGBUS, idx_++);
+#endif
+        install(SIGFPE, idx_++);
+        install(SIGILL, idx_++);
+    }
+
+    ~RuntimeSignalGuard() {
+        for (int i = 0; i < idx_; i++)
+            sigaction(installed_[i], &oldActions_[i], nullptr);
+    }
+
+private:
+    void install(int sig, int slot) {
+        installed_[slot] = sig;
+        struct sigaction sa;
+        std::memset(&sa, 0, sizeof(sa));
+        sa.sa_sigaction = runtimeCrashHandler;
+        sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+        sigemptyset(&sa.sa_mask);
+        sigaction(sig, &sa, &oldActions_[slot]);
+    }
+
+    std::array<struct sigaction, 8> oldActions_{};
+    std::array<int, 8> installed_{};
+    int idx_ = 0;
+};
+
+}
+#endif
 
 CLI::CLI(int argc, char* argv[])
     : argc_(argc), argv_(argv)
@@ -457,6 +571,10 @@ int CLI::compile() {
 // Shared libraries specified with -l flags are dlopen'd before JIT finalization.
 
 int CLI::jitRun() {
+#ifdef LUX_RUNTIME_DIAGNOSTICS
+    RuntimeSignalGuard signalGuard;
+#endif
+
     // ─── Steps 1-5: same as compile() ────────────────────────────────────
     auto projectRoot = getProjectRoot();
 

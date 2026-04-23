@@ -5,6 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(LUX_ENABLE_SANITIZERS
+    "Enable ASan/UBSan in debug-like builds"
+    ON)
+
 # ─── LLVM ─────────────────────────────────────────────────────────────────────
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION} at ${LLVM_DIR}")
@@ -190,6 +194,21 @@ target_link_libraries(lux PRIVATE
 
 # Export all symbols so LLVM MCJIT can resolve builtins via dlsym (lux run command).
 target_link_options(lux PRIVATE -rdynamic)
+
+# ─── Debug runtime diagnostics (Phase 4) ─────────────────────────────────────
+if(LUX_ENABLE_SANITIZERS
+   AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"
+   AND CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
+    set(LUX_SANITIZER_FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer)
+
+    target_compile_options(lux PRIVATE ${LUX_SANITIZER_FLAGS})
+    target_link_options(lux PRIVATE ${LUX_SANITIZER_FLAGS})
+
+    target_compile_options(lux_builtins PRIVATE ${LUX_SANITIZER_FLAGS})
+
+    target_compile_definitions(lux PRIVATE LUX_RUNTIME_DIAGNOSTICS=1)
+    message(STATUS "Lux debug runtime diagnostics enabled (ASan/UBSan)")
+endif()
 
 # ─── Build instructions ───────────────────────────────────────────────────────
 # mkdir build && cd build && cmake .. && make -j$(nproc)

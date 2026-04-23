@@ -48,8 +48,10 @@ private:
         bool initialized = true;  // false when declared without initializer
         bool used = false;         // set to true when the variable is read
         antlr4::Token* declToken = nullptr; // for warning location
+        unsigned scopeDepth = 0;   // nesting depth at declaration point
     };
     std::unordered_map<std::string, VarInfo> locals_;
+    unsigned scopeDepth_ = 0;     // current block nesting depth
 
     // Module-level function signatures (name → function TypeInfo)
     std::unordered_map<std::string, const TypeInfo*> functions_;

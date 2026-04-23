@@ -3002,6 +3002,8 @@ bool Checker::isTerminatorStmt(LuxParser::StatementContext* stmt) {
 
 void Checker::checkBlock(LuxParser::BlockContext* block,
                          const TypeInfo* retType) {
+    auto savedLocals = locals_;
+    ++scopeDepth_;
     bool terminated = false;
     for (auto* stmt : block->statement()) {
         if (terminated) {
@@ -3010,6 +3012,15 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
         }
         checkStmt(stmt, retType, terminated);
     }
+    --scopeDepth_;
+    // Propagate 'used' flags to outer-scope variables before restoring.
+    for (auto& [name, info] : savedLocals) {
+        auto it = locals_.find(name);
+        if (it != locals_.end())
+            info.used = info.used || it->second.used;
+    }
+    // Full restore: removes inner-scope variables and restores outer values.
+    locals_ = savedLocals;
 }
 
 void Checker::checkStmt(LuxParser::StatementContext* stmt,
@@ -3111,6 +3122,7 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
     } else if (auto* nb = stmt->nakedBlockStmt()) {
         // {} — lexical scope: variables declared inside do NOT leak out
         auto savedLocals = locals_;
+        ++scopeDepth_;
         bool innerTerminated = false;
         for (auto* inner : nb->statement()) {
             if (innerTerminated) {
@@ -3119,14 +3131,12 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
             }
             checkStmt(inner, retType, innerTerminated);
         }
-        // Restore scope: remove variables declared inside, keep mutations to
-        // variables that existed before the block.
-        for (auto it = locals_.begin(); it != locals_.end(); ) {
-            if (!savedLocals.count(it->first))
-                it = locals_.erase(it);
-            else
-                ++it;
+        --scopeDepth_;
+        for (auto& [name, info] : savedLocals) {
+            auto it = locals_.find(name);
+            if (it != locals_.end()) info.used = info.used || it->second.used;
         }
+        locals_ = savedLocals;
 
     } else if (auto* ib = stmt->inlineBlockStmt()) {
         // #inline {} — variables are injected into parent scope
@@ -3139,15 +3149,11 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
         }
 
     } else if (auto* sb = stmt->scopeBlockStmt()) {
-        // #scope (callbacks) {} — validate callbacks, then check body
-        for (auto* cb : sb->scopeCallbackList()->scopeCallback()) {
-            auto funcName = cb->IDENTIFIER()->getText();
-            if (!isKnownFunction(funcName) && !(cBindings_ && cBindings_->findFunction(funcName)))
-                warning(cb, "unknown function '" + funcName + "' in #scope callback");
-            if (cb->argList())
-                for (auto* arg : cb->argList()->expression())
-                    resolveExprType(arg);
-        }
+        // #scope (callbacks) {} — callbacks execute at scope exit, so they can
+        // reference variables declared inside the body. Process body first, then
+        // validate callbacks with body locals visible.
+        auto savedLocals = locals_;
+        ++scopeDepth_;
         bool innerTerminated = false;
         for (auto* inner : sb->statement()) {
             if (innerTerminated) {
@@ -3156,6 +3162,21 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
             }
             checkStmt(inner, retType, innerTerminated);
         }
+        // Validate callbacks with body locals in scope
+        for (auto* cb : sb->scopeCallbackList()->scopeCallback()) {
+            auto funcName = cb->IDENTIFIER()->getText();
+            if (!isKnownFunction(funcName) && !(cBindings_ && cBindings_->findFunction(funcName)))
+                warning(cb, "unknown function '" + funcName + "' in #scope callback");
+            if (cb->argList())
+                for (auto* arg : cb->argList()->expression())
+                    resolveExprType(arg);
+        }
+        --scopeDepth_;
+        for (auto& [name, info] : savedLocals) {
+            auto it = locals_.find(name);
+            if (it != locals_.end()) info.used = info.used || it->second.used;
+        }
+        locals_ = savedLocals;
     }
 
     if (isTerminatorStmt(stmt))
@@ -3318,12 +3339,14 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         }
         for (size_t i = 0; i < ids.size(); i++) {
             auto varName = ids[i]->getText();
-            if (locals_.count(varName)) {
+            auto it = locals_.find(varName);
+            if (it != locals_.end() && it->second.scopeDepth == scopeDepth_) {
                 error(stmt, "variable '" + varName + "' already declared in this scope");
                 continue;
             }
             VarInfo vi{initType->tupleElements[i], 0, true, false, nullptr};
             vi.declToken = ids[i]->getSymbol();
+            vi.scopeDepth = scopeDepth_;
             locals_[varName] = vi;
         }
         return;
@@ -3331,9 +3354,12 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
 
     auto name = stmt->IDENTIFIER(0)->getText();
 
-    if (locals_.count(name)) {
-        error(stmt, "variable '" + name + "' already declared in this scope");
-        return;
+    {
+        auto it = locals_.find(name);
+        if (it != locals_.end() && it->second.scopeDepth == scopeDepth_) {
+            error(stmt, "variable '" + name + "' already declared in this scope");
+            return;
+        }
     }
 
     // ── Detect auto type ─────────────────────────────────────────────
@@ -3391,6 +3417,7 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         VarInfo vi{initType, arrayDims, true, false, nullptr};
         if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
             vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
+        vi.scopeDepth = scopeDepth_;
         locals_[name] = vi;
         return;
     }
@@ -3408,6 +3435,7 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         VarInfo vi{typeInfo, arrayDims, autoInit, false, nullptr};
         if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
             vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
+        vi.scopeDepth = scopeDepth_;
         locals_[name] = vi;
         return;
     }
@@ -3448,6 +3476,7 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
     if (stmt->IDENTIFIER(0) && stmt->IDENTIFIER(0)->getSymbol())
         vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
+    vi.scopeDepth = scopeDepth_;
     locals_[name] = vi;
 }
 

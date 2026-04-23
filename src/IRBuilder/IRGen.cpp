@@ -3205,8 +3205,12 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
 
     // ── Emit the if-body ───────────────────────────────────────────
     builder_->SetInsertPoint(bodyBlocks[0]);
-    for (auto* stmt : ctx->block()->statement())
-        visit(stmt);
+    {
+        auto savedLocals = locals_;
+        for (auto* stmt : ctx->block()->statement())
+            visit(stmt);
+        locals_ = savedLocals;
+    }
     if (!builder_->GetInsertBlock()->getTerminator())
         builder_->CreateBr(mergeBlock);
 
@@ -3227,8 +3231,12 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
 
         // Body
         builder_->SetInsertPoint(bodyBlocks[i + 1]);
-        for (auto* stmt : elseIfs[i]->block()->statement())
-            visit(stmt);
+        {
+            auto savedLocals = locals_;
+            for (auto* stmt : elseIfs[i]->block()->statement())
+                visit(stmt);
+            locals_ = savedLocals;
+        }
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateBr(mergeBlock);
     }
@@ -3236,8 +3244,12 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
     // ── Emit else body ─────────────────────────────────────────────
     if (elseBlock) {
         builder_->SetInsertPoint(elseBlock);
-        for (auto* stmt : elseClause->block()->statement())
-            visit(stmt);
+        {
+            auto savedLocals = locals_;
+            for (auto* stmt : elseClause->block()->statement())
+                visit(stmt);
+            locals_ = savedLocals;
+        }
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateBr(mergeBlock);
     }
@@ -3283,8 +3295,12 @@ std::any IRGen::visitForClassicStmt(LuxParser::ForClassicStmtContext* ctx) {
 
     // Body
     builder_->SetInsertPoint(bodyBB);
-    for (auto* stmt : ctx->block()->statement())
-        visit(stmt);
+    {
+        auto savedLocals = locals_;
+        for (auto* stmt : ctx->block()->statement())
+            visit(stmt);
+        locals_ = savedLocals;
+    }
     if (!builder_->GetInsertBlock()->getTerminator())
         builder_->CreateBr(updateBB);
 
@@ -3654,8 +3670,12 @@ std::any IRGen::visitLoopStmt(LuxParser::LoopStmtContext* ctx) {
     builder_->CreateBr(bodyBB);
 
     builder_->SetInsertPoint(bodyBB);
-    for (auto* stmt : ctx->block()->statement())
-        visit(stmt);
+    {
+        auto savedLocals = locals_;
+        for (auto* stmt : ctx->block()->statement())
+            visit(stmt);
+        locals_ = savedLocals;
+    }
     if (!builder_->GetInsertBlock()->getTerminator())
         builder_->CreateBr(bodyBB);
 
@@ -3698,8 +3718,12 @@ std::any IRGen::visitSwitchStmt(LuxParser::SwitchStmtContext* ctx) {
 
         // Emit case body
         builder_->SetInsertPoint(caseBB);
-        for (auto* stmt : cc->block()->statement())
-            visit(stmt);
+        {
+            auto savedLocals = locals_;
+            for (auto* stmt : cc->block()->statement())
+                visit(stmt);
+            locals_ = savedLocals;
+        }
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateBr(mergeBB);
     }
@@ -3707,8 +3731,12 @@ std::any IRGen::visitSwitchStmt(LuxParser::SwitchStmtContext* ctx) {
     // Emit default body
     if (ctx->defaultClause()) {
         builder_->SetInsertPoint(defaultBB);
-        for (auto* stmt : ctx->defaultClause()->block()->statement())
-            visit(stmt);
+        {
+            auto savedLocals = locals_;
+            for (auto* stmt : ctx->defaultClause()->block()->statement())
+                visit(stmt);
+            locals_ = savedLocals;
+        }
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateBr(mergeBB);
     }
@@ -3736,8 +3764,12 @@ std::any IRGen::visitWhileStmt(LuxParser::WhileStmtContext* ctx) {
 
     // Body
     builder_->SetInsertPoint(bodyBB);
-    for (auto* stmt : ctx->block()->statement())
-        visit(stmt);
+    {
+        auto savedLocals = locals_;
+        for (auto* stmt : ctx->block()->statement())
+            visit(stmt);
+        locals_ = savedLocals;
+    }
     if (!builder_->GetInsertBlock()->getTerminator())
         builder_->CreateBr(condBB);
 
@@ -3758,8 +3790,12 @@ std::any IRGen::visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx) {
 
     // Body (executes at least once)
     builder_->SetInsertPoint(bodyBB);
-    for (auto* stmt : ctx->block()->statement())
-        visit(stmt);
+    {
+        auto savedLocals = locals_;
+        for (auto* stmt : ctx->block()->statement())
+            visit(stmt);
+        locals_ = savedLocals;
+    }
     if (!builder_->GetInsertBlock()->getTerminator())
         builder_->CreateBr(condBB);
 
@@ -10091,8 +10127,10 @@ void IRGen::emitDeferredCleanups() {
 
 // { statements }  —  lexical scope block (no callbacks, just inline statements)
 std::any IRGen::visitNakedBlockStmt(LuxParser::NakedBlockStmtContext* ctx) {
+    auto savedLocals = locals_;
     for (auto* stmt : ctx->statement())
         visit(stmt);
+    locals_ = savedLocals;
     return {};
 }
 
@@ -10117,18 +10155,21 @@ std::any IRGen::visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext* ctx) {
     }
 
     // Visit block body.
+    auto savedLocals = locals_;
     for (auto* stmt : ctx->statement())
         visit(stmt);
 
     // Normal-exit path: emit callbacks in LIFO order and pop them.
     // Early-return path: emitAllCleanups() (called by visitReturnStmt) already
     // emitted them, so we just pop without re-emitting.
+    // Callbacks are emitted while body locals are still visible.
     auto* bb = builder_->GetInsertBlock();
     if (bb && !bb->getTerminator()) {
         for (size_t i = deferStack_.size(); i-- > deferBase;)
             emitScopeCallback(deferStack_[i].scopeCbCtx);
     }
     deferStack_.resize(deferBase);
+    locals_ = savedLocals;
 
     return {};
 }

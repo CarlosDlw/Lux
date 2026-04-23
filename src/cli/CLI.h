@@ -15,10 +15,12 @@ struct CLIOptions {
     bool        showIR      = false;
     bool        showHelp    = false;
     bool        showVersion = false;
+    bool        runJIT      = false;   // lux run <file.lx>
 
     std::vector<std::string> linkerFlags;   // -lxxx
     std::vector<std::string> libPaths;      // -Lpath
     std::vector<std::string> includePaths;  // -Ipath
+    std::vector<std::string> runArgs;       // args forwarded to main (after --)
 };
 
 // Holds a parsed source file together with its namespace.
@@ -39,11 +41,13 @@ private:
     char** argv_ = nullptr;
     bool   isHelpC_ = false;
     bool   isLSP_   = false;
+    bool   isRun_   = false;
 
     bool parse(int argc, char* argv[]);
     void printHelp()    const;
     void printVersion() const;
     int  compile();
+    int  jitRun();
 
     // Multi-file pipeline helpers
     std::string getProjectRoot() const;

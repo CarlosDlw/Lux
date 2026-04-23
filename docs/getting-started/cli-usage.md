@@ -8,6 +8,7 @@ This page documents all command-line options for the Lux compiler (`lux`).
 lux <file.lx>              Compile and print LLVM IR to stdout
 lux <file.lx> <output>     Compile and emit native binary
 lux <file.lx> <output> -oN Compile with optimization level N
+lux run <file.lx>          Run via JIT (no binary produced)
 lux helpc <lib> [symbol]   C library reference helper
 lux help                   Show help message
 lux version                Show compiler version
@@ -127,6 +128,19 @@ lux main.lx ./main
 ./main
 ```
 
+### JIT Run (No Binary)
+
+```bash
+lux run main.lx
+```
+
+Compiles and executes immediately without writing a binary to disk. Useful for quick iteration:
+
+```bash
+lux run main.lx -lraylib         # run a raylib program directly
+lux run main.lx -- foo bar       # pass args to main()
+```
+
 ### Optimized Build
 
 ```bash
@@ -216,6 +230,33 @@ lux: cannot find header '<mylib.h>'. Check '-I' include paths
 A `#include` directive references a header that cannot be found. Add the correct `-I` path.
 
 ## Subcommands
+
+### run — JIT Execution
+
+```bash
+lux run <file.lx> [flags] [-- args...]
+```
+
+Compiles and immediately runs the program in-process via LLVM MCJIT — no binary is written to disk. Accepts the same `-l`, `-L`, and `-I` flags as the standard compile command.
+
+```bash
+lux run main.lx                        # run with no extra libs
+lux run game.lx -lraylib               # run and load libraylib at runtime
+lux run app.lx -L./lib -lmylib         # custom library path
+lux run app.lx -I./include -lmylib     # custom include path
+lux run app.lx -- arg1 arg2            # pass arguments to main()
+```
+
+Auto-linking still applies: if your code includes a header that requires a library (e.g., `<raylib.h>` → `-lraylib`), the compiler prints:
+
+```
+lux: auto-linking '-lraylib' (required by <raylib.h>)
+```
+
+**Notes:**
+- The program runs inside the compiler process, so it shares the same address space. Crashes in the program will crash the compiler process.
+- No binary artifacts are produced (no `.luxbuild/` directory is created).
+- Optimization is not applied (equivalent to `-o0`).
 
 ### helpc — C Library Reference
 

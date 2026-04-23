@@ -1344,6 +1344,18 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── Plain identifier ─────────────────────────────────────────────
+    // Must come before the generic child-recurse so that cursorLine
+    // (which may have been adjusted by the #scope callback handler to
+    // the block's end line) is honoured instead of falling through to
+    // the provide() fallback that uses the raw cursor position.
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        if (id->IDENTIFIER()->getSymbol() == hoveredToken)
+            return hoverIdent(tokenText, hoveredToken, tree, bindings,
+                               cursorLine, project);
+        return std::nullopt;
+    }
+
     // ── Generic: recurse into children ─────────────────────────────
     for (auto* child : expr->children) {
         if (auto* childExpr = dynamic_cast<LuxParser::ExpressionContext*>(child)) {
@@ -1598,15 +1610,22 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
     // Scope block #scope (callbacks) { ... } — hover callbacks + recurse into body
     if (auto* sb = stmt->scopeBlockStmt()) {
         if (sb->scopeCallbackList()) {
+            // Callbacks execute at scope exit and can reference variables declared
+            // inside the body. Use the block's end line so collectLocals sees all
+            // body locals when resolving identifiers inside callback arguments.
+            size_t cbCursorLine = cursorLine;
+            if (auto* stop = sb->getStop())
+                cbCursorLine = stop->getLine();
+
             for (auto* cb : sb->scopeCallbackList()->scopeCallback()) {
                 if (cb->IDENTIFIER() && cb->IDENTIFIER()->getSymbol() == hoveredToken) {
                     return hoverIdent(tokenText, hoveredToken, tree,
-                                       bindings, cursorLine, project);
+                                       bindings, cbCursorLine, project);
                 }
                 if (auto* al = cb->argList()) {
                     for (auto* a : al->expression()) {
                         auto r = walkExprForHover(a, hoveredToken, tokenText,
-                                                   tree, bindings, cursorLine, project);
+                                                   tree, bindings, cbCursorLine, project);
                         if (r) return r;
                     }
                 }

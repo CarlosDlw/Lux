@@ -48,14 +48,15 @@ public:
     RuleBlock = 23, RuleStatement = 24, RuleDeferStmt = 25, RuleNakedBlockStmt = 26, 
     RuleInlineBlockStmt = 27, RuleScopeBlockStmt = 28, RuleScopeCallbackList = 29, 
     RuleScopeCallback = 30, RuleExprStmt = 31, RuleVarDeclStmt = 32, RuleAssignStmt = 33, 
-    RuleCompoundAssignStmt = 34, RuleFieldAssignStmt = 35, RuleIndexFieldAssignStmt = 36, 
-    RuleDerefAssignStmt = 37, RuleArrowAssignStmt = 38, RuleArrowCompoundAssignStmt = 39, 
-    RuleCallStmt = 40, RuleArgList = 41, RuleReturnStmt = 42, RuleIfStmt = 43, 
-    RuleElseIfClause = 44, RuleElseClause = 45, RuleForStmt = 46, RuleBreakStmt = 47, 
-    RuleContinueStmt = 48, RuleLoopStmt = 49, RuleWhileStmt = 50, RuleDoWhileStmt = 51, 
-    RuleLockStmt = 52, RuleTryCatchStmt = 53, RuleCatchClause = 54, RuleFinallyClause = 55, 
-    RuleThrowStmt = 56, RuleSwitchStmt = 57, RuleCaseClause = 58, RuleDefaultClause = 59, 
-    RuleExpression = 60, RuleTypeSpec = 61, RuleFnTypeSpec = 62, RulePrimitiveType = 63
+    RuleCompoundAssignStmt = 34, RuleFieldAssignStmt = 35, RuleFieldCompoundAssignStmt = 36, 
+    RuleIndexFieldAssignStmt = 37, RuleDerefAssignStmt = 38, RuleArrowAssignStmt = 39, 
+    RuleArrowCompoundAssignStmt = 40, RuleCallStmt = 41, RuleArgList = 42, 
+    RuleReturnStmt = 43, RuleIfStmt = 44, RuleElseIfClause = 45, RuleElseClause = 46, 
+    RuleForStmt = 47, RuleBreakStmt = 48, RuleContinueStmt = 49, RuleLoopStmt = 50, 
+    RuleWhileStmt = 51, RuleDoWhileStmt = 52, RuleLockStmt = 53, RuleTryCatchStmt = 54, 
+    RuleCatchClause = 55, RuleFinallyClause = 56, RuleThrowStmt = 57, RuleSwitchStmt = 58, 
+    RuleCaseClause = 59, RuleDefaultClause = 60, RuleExpression = 61, RuleTypeSpec = 62, 
+    RuleFnTypeSpec = 63, RulePrimitiveType = 64
   };
 
   explicit LuxParser(antlr4::TokenStream *input);
@@ -111,6 +112,7 @@ public:
   class AssignStmtContext;
   class CompoundAssignStmtContext;
   class FieldAssignStmtContext;
+  class FieldCompoundAssignStmtContext;
   class IndexFieldAssignStmtContext;
   class DerefAssignStmtContext;
   class ArrowAssignStmtContext;
@@ -588,6 +590,7 @@ public:
     DerefAssignStmtContext *derefAssignStmt();
     IndexFieldAssignStmtContext *indexFieldAssignStmt();
     FieldAssignStmtContext *fieldAssignStmt();
+    FieldCompoundAssignStmtContext *fieldCompoundAssignStmt();
     ArrowAssignStmtContext *arrowAssignStmt();
     ArrowCompoundAssignStmtContext *arrowCompoundAssignStmt();
     CallStmtContext *callStmt();
@@ -817,6 +820,35 @@ public:
   };
 
   FieldAssignStmtContext* fieldAssignStmt();
+
+  class  FieldCompoundAssignStmtContext : public antlr4::ParserRuleContext {
+  public:
+    antlr4::Token *op = nullptr;
+    FieldCompoundAssignStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *SEMI();
+    antlr4::tree::TerminalNode *PLUS_ASSIGN();
+    antlr4::tree::TerminalNode *MINUS_ASSIGN();
+    antlr4::tree::TerminalNode *STAR_ASSIGN();
+    antlr4::tree::TerminalNode *SLASH_ASSIGN();
+    antlr4::tree::TerminalNode *PERCENT_ASSIGN();
+    antlr4::tree::TerminalNode *AMP_ASSIGN();
+    antlr4::tree::TerminalNode *PIPE_ASSIGN();
+    antlr4::tree::TerminalNode *CARET_ASSIGN();
+    antlr4::tree::TerminalNode *LSHIFT_ASSIGN();
+    antlr4::tree::TerminalNode *RSHIFT_ASSIGN();
+    std::vector<antlr4::tree::TerminalNode *> DOT();
+    antlr4::tree::TerminalNode* DOT(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  FieldCompoundAssignStmtContext* fieldCompoundAssignStmt();
 
   class  IndexFieldAssignStmtContext : public antlr4::ParserRuleContext {
   public:

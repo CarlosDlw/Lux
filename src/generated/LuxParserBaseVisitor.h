@@ -163,6 +163,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitIndexFieldAssignStmt(LuxParser::IndexFieldAssignStmtContext *ctx) override {
     return visitChildren(ctx);
   }

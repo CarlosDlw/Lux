@@ -93,6 +93,8 @@ public:
 
     virtual std::any visitFieldAssignStmt(LuxParser::FieldAssignStmtContext *context) = 0;
 
+    virtual std::any visitFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtContext *context) = 0;
+
     virtual std::any visitIndexFieldAssignStmt(LuxParser::IndexFieldAssignStmtContext *context) = 0;
 
     virtual std::any visitDerefAssignStmt(LuxParser::DerefAssignStmtContext *context) = 0;

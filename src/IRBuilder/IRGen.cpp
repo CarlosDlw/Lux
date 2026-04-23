@@ -1868,6 +1868,117 @@ std::any IRGen::visitFieldAssignStmt(LuxParser::FieldAssignStmtContext* ctx) {
     return {};
 }
 
+// p.x += 5;  data.algo.pos.x -= 10;
+std::any IRGen::visitFieldCompoundAssignStmt(
+    LuxParser::FieldCompoundAssignStmtContext* ctx) {
+    auto identifiers = ctx->IDENTIFIER();
+    auto varName = identifiers[0]->getText();
+
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) {
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
+        return {};
+    }
+
+    auto* alloca   = it->second.alloca;
+    auto* structTI = it->second.typeInfo;
+    auto* structTy = alloca->getAllocatedType();
+
+    // Walk field chain: p.x.y → GEP(0, fieldIdx_x), then GEP(0, fieldIdx_y)
+    llvm::Value* currentPtr = alloca;
+    llvm::Type*  currentTy  = structTy;
+    const TypeInfo* currentTI = structTI;
+
+    for (size_t i = 1; i < identifiers.size(); i++) {
+        auto fieldName = identifiers[i]->getText();
+        int fieldIdx = -1;
+        for (size_t f = 0; f < currentTI->fields.size(); f++) {
+            if (currentTI->fields[f].name == fieldName) {
+                fieldIdx = static_cast<int>(f);
+                break;
+            }
+        }
+        if (fieldIdx < 0) {
+            std::cerr << "lux: '" << currentTI->name
+                      << "' has no field '" << fieldName << "'\n";
+            return {};
+        }
+
+        if (currentTI->kind == TypeKind::Union) {
+            currentTI = currentTI->fields[fieldIdx].typeInfo;
+            currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+        } else {
+            currentPtr = builder_->CreateStructGEP(currentTy, currentPtr,
+                                                   fieldIdx, fieldName + "_ptr");
+            currentTI = currentTI->fields[fieldIdx].typeInfo;
+            currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+        }
+    }
+
+    auto* cur = builder_->CreateLoad(currentTy, currentPtr, "field_cur");
+    auto* rhs = castValue(visit(ctx->expression()));
+
+    // Cast RHS to field type
+    if (rhs->getType() != currentTy) {
+        if (rhs->getType()->isIntegerTy() && currentTy->isIntegerTy())
+            rhs = builder_->CreateIntCast(rhs, currentTy, currentTI->isSigned);
+        else if (rhs->getType()->isFloatingPointTy() && currentTy->isFloatingPointTy()) {
+            if (rhs->getType()->getPrimitiveSizeInBits() > currentTy->getPrimitiveSizeInBits())
+                rhs = builder_->CreateFPTrunc(rhs, currentTy);
+            else
+                rhs = builder_->CreateFPExt(rhs, currentTy);
+        }
+    }
+
+    bool isFloat = currentTy->isFloatingPointTy();
+    llvm::Value* result = nullptr;
+
+    // Division by zero guard for /= and %=
+    if (!isFloat && (ctx->op->getType() == LuxLexer::SLASH_ASSIGN ||
+                     ctx->op->getType() == LuxLexer::PERCENT_ASSIGN)) {
+        emitDivByZeroGuard(rhs, ctx->op);
+    }
+
+    switch (ctx->op->getType()) {
+    case LuxLexer::PLUS_ASSIGN:
+        result = isFloat ? builder_->CreateFAdd(cur, rhs) : builder_->CreateAdd(cur, rhs);
+        break;
+    case LuxLexer::MINUS_ASSIGN:
+        result = isFloat ? builder_->CreateFSub(cur, rhs) : builder_->CreateSub(cur, rhs);
+        break;
+    case LuxLexer::STAR_ASSIGN:
+        result = isFloat ? builder_->CreateFMul(cur, rhs) : builder_->CreateMul(cur, rhs);
+        break;
+    case LuxLexer::SLASH_ASSIGN:
+        result = isFloat ? builder_->CreateFDiv(cur, rhs) : builder_->CreateSDiv(cur, rhs);
+        break;
+    case LuxLexer::PERCENT_ASSIGN:
+        result = isFloat ? builder_->CreateFRem(cur, rhs) : builder_->CreateSRem(cur, rhs);
+        break;
+    case LuxLexer::AMP_ASSIGN:
+        result = builder_->CreateAnd(cur, rhs);
+        break;
+    case LuxLexer::PIPE_ASSIGN:
+        result = builder_->CreateOr(cur, rhs);
+        break;
+    case LuxLexer::CARET_ASSIGN:
+        result = builder_->CreateXor(cur, rhs);
+        break;
+    case LuxLexer::LSHIFT_ASSIGN:
+        result = builder_->CreateShl(cur, rhs);
+        break;
+    case LuxLexer::RSHIFT_ASSIGN:
+        result = builder_->CreateAShr(cur, rhs);
+        break;
+    default:
+        result = cur;
+        break;
+    }
+
+    builder_->CreateStore(result, currentPtr);
+    return {};
+}
+
 // arr[i].field = value;  or  arr[i][j].field.subfield = value;
 std::any IRGen::visitIndexFieldAssignStmt(
     LuxParser::IndexFieldAssignStmtContext* ctx) {

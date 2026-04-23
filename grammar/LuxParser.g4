@@ -141,6 +141,7 @@ statement
     | derefAssignStmt
     | indexFieldAssignStmt
     | fieldAssignStmt
+    | fieldCompoundAssignStmt
     | arrowAssignStmt
     | arrowCompoundAssignStmt
     | callStmt
@@ -220,6 +221,13 @@ compoundAssignStmt
 // p.x = 42;
 fieldAssignStmt
     : IDENTIFIER (DOT IDENTIFIER)+ ASSIGN expression SEMI
+    ;
+
+// p.x += 5;  data.algo.pos.x -= 10;
+fieldCompoundAssignStmt
+    : IDENTIFIER (DOT IDENTIFIER)+ op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
+        | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
     ;
 
 // arr[i].field = 42;

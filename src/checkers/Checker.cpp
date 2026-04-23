@@ -3032,6 +3032,8 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
         checkAssignStmt(assign);
     } else if (auto* compound = stmt->compoundAssignStmt()) {
         checkCompoundAssignStmt(compound);
+    } else if (auto* fieldCompound = stmt->fieldCompoundAssignStmt()) {
+        checkFieldCompoundAssignStmt(fieldCompound);
     } else if (auto* fieldAssign = stmt->fieldAssignStmt()) {
         checkFieldAssignStmt(fieldAssign);
     } else if (stmt->arrowAssignStmt()) {
@@ -3620,6 +3622,73 @@ void Checker::checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt) {
     if (rhsType && currentType && !isAssignable(currentType, rhsType)) {
         error(stmt, "type mismatch in field assignment: expected '" +
                          currentType->name + "', got '" + rhsType->name + "'");
+    }
+}
+
+void Checker::checkFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtContext* stmt) {
+    auto identifiers = stmt->IDENTIFIER();
+    auto varName = identifiers[0]->getText();
+
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) {
+        error(stmt, "undefined variable '" + varName + "'");
+        return;
+    }
+
+    // Walk the field chain: p.x.y += val
+    auto* currentType = it->second.type;
+    for (size_t i = 1; i < identifiers.size(); i++) {
+        auto fieldName = identifiers[i]->getText();
+
+        if (!currentType || (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
+            error(stmt, "'" +
+                             (i == 1 ? varName : identifiers[i-1]->getText()) +
+                             "' is not a struct or union type");
+            return;
+        }
+
+        bool found = false;
+        for (auto& field : currentType->fields) {
+            if (field.name == fieldName) {
+                currentType = field.typeInfo;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            error(stmt, "struct '" + currentType->name +
+                             "' has no field '" + fieldName + "'");
+            return;
+        }
+    }
+
+    auto* rhsType = resolveExprType(stmt->expression());
+    auto opText = stmt->op->getText();
+
+    bool needsNumeric = (opText == "+=" || opText == "-=" ||
+                         opText == "*=" || opText == "/=");
+    bool needsInteger = (opText == "%=" || opText == "&=" || opText == "|=" ||
+                         opText == "^=" || opText == "<<=" || opText == ">>=");
+
+    if (needsNumeric && currentType && !isNumeric(currentType))
+        error(stmt, "operator '" + opText +
+                         "' requires numeric field, got '" + currentType->name + "'");
+    if (needsInteger && currentType && !isInteger(currentType))
+        error(stmt, "operator '" + opText +
+                         "' requires integer field, got '" + currentType->name + "'");
+    if (needsNumeric && rhsType && !isNumeric(rhsType))
+        error(stmt, "operator '" + opText +
+                         "' requires numeric operand, got '" + rhsType->name + "'");
+    if (needsInteger && rhsType && !isInteger(rhsType))
+        error(stmt, "operator '" + opText +
+                         "' requires integer operand, got '" + rhsType->name + "'");
+
+    // Compile-time division by zero check
+    if (opText == "/=" || opText == "%=") {
+        if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(stmt->expression())) {
+            if (intLit->INT_LIT()->getText() == "0")
+                error(stmt, "division by zero");
+        }
     }
 }
 

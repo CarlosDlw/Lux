@@ -109,6 +109,7 @@ private:
 
     // ── Statement checks ────────────────────────────────────────────
     void checkBlock(LuxParser::BlockContext* block, const TypeInfo* retType);
+    void checkStmt(LuxParser::StatementContext* stmt, const TypeInfo* retType, bool& terminated);
     void checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt);
     void checkAssignStmt(LuxParser::AssignStmtContext* stmt);
     void checkCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* stmt);

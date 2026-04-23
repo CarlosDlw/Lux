@@ -141,6 +141,9 @@ public:
     std::any visitTryExpr(LuxParser::TryExprContext* ctx)             override;
     std::any visitExtendDecl(LuxParser::ExtendDeclContext* ctx)        override;
     std::any visitDeferStmt(LuxParser::DeferStmtContext* ctx)           override;
+    std::any visitNakedBlockStmt(LuxParser::NakedBlockStmtContext* ctx) override;
+    std::any visitInlineBlockStmt(LuxParser::InlineBlockStmtContext* ctx) override;
+    std::any visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext* ctx) override;
     // Generic expression visitors
     std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext* ctx) override;
     std::any visitGenericStaticMethodCallExpr(LuxParser::GenericStaticMethodCallExprContext* ctx) override;
@@ -206,6 +209,7 @@ private:
     struct DeferredStmt {
         LuxParser::CallStmtContext* callCtx = nullptr;
         LuxParser::ExprStmtContext* exprCtx = nullptr;
+        LuxParser::ScopeCallbackContext* scopeCbCtx = nullptr;
     };
     std::vector<DeferredStmt> deferStack_;
 
@@ -342,6 +346,7 @@ private:
     void                emitDeferredCleanups();
     void                emitAutoCleanups(const std::string& skipVar = "");
     void                emitAllCleanups(const std::string& skipVar = "");
+    void                emitScopeCallback(LuxParser::ScopeCallbackContext* ctx);
     void                emitDivByZeroGuard(llvm::Value* divisor,
                                            antlr4::Token* opToken);
     bool                requireArgs(const std::string& funcName,

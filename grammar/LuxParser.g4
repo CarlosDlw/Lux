@@ -158,12 +158,38 @@ statement
     | tryCatchStmt
     | throwStmt
     | deferStmt
+    | nakedBlockStmt
+    | inlineBlockStmt
+    | scopeBlockStmt
     ;
 
 // defer free(ptr);  or  defer v.free();
 deferStmt
     : DEFER callStmt
     | DEFER exprStmt
+    ;
+
+// { statements }  — creates a new lexical scope
+nakedBlockStmt
+    : LBRACE statement* RBRACE
+    ;
+
+// #inline { statements }  — injects statements into parent scope
+inlineBlockStmt
+    : INLINE_BLOCK LBRACE statement* RBRACE
+    ;
+
+// #scope (callback, ...) { statements }  — scoped RAII block with exit callbacks
+scopeBlockStmt
+    : SCOPE_BLOCK LPAREN scopeCallbackList RPAREN LBRACE statement* RBRACE
+    ;
+
+scopeCallbackList
+    : scopeCallback (COMMA scopeCallback)*
+    ;
+
+scopeCallback
+    : IDENTIFIER LPAREN argList? RPAREN
     ;
 
 // Expression as statement: x++; f(x); etc.

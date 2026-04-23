@@ -10082,7 +10082,94 @@ void IRGen::emitDeferredCleanups() {
             visit(it->callCtx);
         else if (it->exprCtx)
             visit(it->exprCtx);
+        else if (it->scopeCbCtx)
+            emitScopeCallback(it->scopeCbCtx);
     }
+}
+
+// ── Structural Blocks ────────────────────────────────────────────────────────
+
+// { statements }  —  lexical scope block (no callbacks, just inline statements)
+std::any IRGen::visitNakedBlockStmt(LuxParser::NakedBlockStmtContext* ctx) {
+    for (auto* stmt : ctx->statement())
+        visit(stmt);
+    return {};
+}
+
+// #inline { statements }  —  inject statements directly into parent scope
+std::any IRGen::visitInlineBlockStmt(LuxParser::InlineBlockStmtContext* ctx) {
+    for (auto* stmt : ctx->statement())
+        visit(stmt);
+    return {};
+}
+
+// #scope (A(), B()) { statements }  —  RAII block with guaranteed exit callbacks
+// Callbacks execute in LIFO order on every exit path (normal + early return).
+std::any IRGen::visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext* ctx) {
+    // Record stack depth before pushing this scope's callbacks.
+    size_t deferBase = deferStack_.size();
+
+    // Push callbacks in declaration order; LIFO emission gives reverse execution.
+    for (auto* cb : ctx->scopeCallbackList()->scopeCallback()) {
+        DeferredStmt ds;
+        ds.scopeCbCtx = cb;
+        deferStack_.push_back(ds);
+    }
+
+    // Visit block body.
+    for (auto* stmt : ctx->statement())
+        visit(stmt);
+
+    // Normal-exit path: emit callbacks in LIFO order and pop them.
+    // Early-return path: emitAllCleanups() (called by visitReturnStmt) already
+    // emitted them, so we just pop without re-emitting.
+    auto* bb = builder_->GetInsertBlock();
+    if (bb && !bb->getTerminator()) {
+        for (size_t i = deferStack_.size(); i-- > deferBase;)
+            emitScopeCallback(deferStack_[i].scopeCbCtx);
+    }
+    deferStack_.resize(deferBase);
+
+    return {};
+}
+
+// Emit a single #scope callback: IDENTIFIER LPAREN argList? RPAREN
+void IRGen::emitScopeCallback(LuxParser::ScopeCallbackContext* ctx) {
+    auto funcName = ctx->IDENTIFIER()->getText();
+
+    auto resolvedName = resolveCallTarget(funcName);
+    auto* fn = module_->getFunction(resolvedName);
+    if (!fn)
+        fn = declareCFunction(funcName);
+    if (!fn) {
+        std::cerr << "lux: #scope callback: unknown function '" << funcName << "'\n";
+        return;
+    }
+
+    std::vector<llvm::Value*> args;
+    if (auto* argList = ctx->argList()) {
+        auto* fnTy = fn->getFunctionType();
+        auto params = fnTy->params();
+        size_t idx = 0;
+        for (auto* argExpr : argList->expression()) {
+            auto* v = castValue(visit(argExpr));
+            // Coerce to declared parameter type when possible.
+            if (idx < params.size() && v->getType() != params[idx]) {
+                if (v->getType()->isIntegerTy() && params[idx]->isIntegerTy())
+                    v = builder_->CreateIntCast(v, params[idx], true);
+                else if (v->getType()->isFloatingPointTy() && params[idx]->isFloatingPointTy()) {
+                    if (v->getType()->getPrimitiveSizeInBits() > params[idx]->getPrimitiveSizeInBits())
+                        v = builder_->CreateFPTrunc(v, params[idx]);
+                    else
+                        v = builder_->CreateFPExt(v, params[idx]);
+                }
+            }
+            args.push_back(v);
+            ++idx;
+        }
+    }
+
+    builder_->CreateCall(fn, args);
 }
 
 void IRGen::emitAutoCleanups(const std::string& skipVar) {

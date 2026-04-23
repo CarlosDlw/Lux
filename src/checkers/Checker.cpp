@@ -3004,114 +3004,162 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
                          const TypeInfo* retType) {
     bool terminated = false;
     for (auto* stmt : block->statement()) {
-        // Unreachable code detection: warn on any statement after a terminator
         if (terminated) {
             warning(stmt, "unreachable code");
-            break;  // only one warning per block
+            break;
         }
-
-        if (auto* varDecl = stmt->varDeclStmt()) {
-            checkVarDeclStmt(varDecl);
-        } else if (auto* assign = stmt->assignStmt()) {
-            checkAssignStmt(assign);
-        } else if (auto* compound = stmt->compoundAssignStmt()) {
-            checkCompoundAssignStmt(compound);
-        } else if (auto* fieldAssign = stmt->fieldAssignStmt()) {
-            checkFieldAssignStmt(fieldAssign);
-        } else if (stmt->arrowAssignStmt()) {
-            // Arrow assign: ptr->field = val (basic validation via expression)
-            resolveExprType(stmt->arrowAssignStmt()->expression());
-        } else if (stmt->arrowCompoundAssignStmt()) {
-            // Arrow compound: ptr->field += val
-            resolveExprType(stmt->arrowCompoundAssignStmt()->expression());
-        } else if (auto* derefAssign = stmt->derefAssignStmt()) {
-            checkDerefAssignStmt(derefAssign);
-        } else if (auto* call = stmt->callStmt()) {
-            checkCallStmt(call);
-        } else if (auto* exprS = stmt->exprStmt()) {
-            checkExprStmt(exprS);
-        } else if (auto* ret = stmt->returnStmt()) {
-            checkReturnStmt(ret, retType);
-        } else if (auto* ifS = stmt->ifStmt()) {
-            checkIfStmt(ifS, retType);
-        } else if (auto* forS = stmt->forStmt()) {
-            if (auto* forIn = dynamic_cast<LuxParser::ForInStmtContext*>(forS))
-                checkForInStmt(forIn, retType);
-            else if (auto* forC = dynamic_cast<LuxParser::ForClassicStmtContext*>(forS))
-                checkForClassicStmt(forC, retType);
-        } else if (stmt->loopStmt()) {
-            loopDepth_++;
-            checkBlock(stmt->loopStmt()->block(), retType);
-            loopDepth_--;
-        } else if (auto* ws = stmt->whileStmt()) {
-            auto* wCondType = resolveExprType(ws->expression());
-            if (wCondType && !isConditionType(wCondType))
-                error(ws, "condition has type '" + wCondType->name +
-                          "', expected 'bool' or numeric type");
-            loopDepth_++;
-            checkBlock(ws->block(), retType);
-            loopDepth_--;
-        } else if (auto* dw = stmt->doWhileStmt()) {
-            loopDepth_++;
-            checkBlock(dw->block(), retType);
-            loopDepth_--;
-            auto* dwCondType = resolveExprType(dw->expression());
-            if (dwCondType && !isConditionType(dwCondType))
-                error(dw, "condition has type '" + dwCondType->name +
-                          "', expected 'bool' or numeric type");
-        } else if (stmt->breakStmt()) {
-            if (loopDepth_ == 0)
-                error(stmt, "'break' used outside of a loop");
-        } else if (stmt->continueStmt()) {
-            if (loopDepth_ == 0)
-                error(stmt, "'continue' used outside of a loop");
-        } else if (auto* sw = stmt->switchStmt()) {
-            checkSwitchStmt(sw, retType);
-        } else if (auto* lk = stmt->lockStmt()) {
-            resolveExprType(lk->expression());
-            checkBlock(lk->block(), retType);
-        } else if (auto* tc = stmt->tryCatchStmt()) {
-            // Check try block
-            checkBlock(tc->block(), retType);
-            // Check catch clauses (register catch variable in scope)
-            for (auto* cc : tc->catchClause()) {
-                auto catchVarName = cc->IDENTIFIER()->getText();
-                unsigned catchDims = 0;
-                auto* catchType = resolveTypeSpec(cc->typeSpec(), catchDims);
-                auto prev = locals_.find(catchVarName);
-                bool hadPrev = prev != locals_.end();
-                VarInfo prevInfo;
-                if (hadPrev) prevInfo = prev->second;
-                if (catchType)
-                    locals_[catchVarName] = {catchType, catchDims, true, true, nullptr};
-                checkBlock(cc->block(), retType);
-                if (hadPrev)
-                    locals_[catchVarName] = prevInfo;
-                else
-                    locals_.erase(catchVarName);
-            }
-            // Check finally clause
-            if (auto* fin = tc->finallyClause()) {
-                checkBlock(fin->block(), retType);
-            }
-        } else if (stmt->throwStmt()) {
-            resolveExprType(stmt->throwStmt()->expression());
-        } else if (auto* ifa = stmt->indexFieldAssignStmt()) {
-            // arr[i].field = val — validate expressions
-            for (auto* e : ifa->expression()) {
-                resolveExprType(e);
-            }
-        } else if (auto* def = stmt->deferStmt()) {
-            if (def->callStmt())
-                checkCallStmt(def->callStmt());
-            else if (def->exprStmt())
-                checkExprStmt(def->exprStmt());
-        }
-
-        // Mark this block as terminated if this statement exits unconditionally
-        if (isTerminatorStmt(stmt))
-            terminated = true;
+        checkStmt(stmt, retType, terminated);
     }
+}
+
+void Checker::checkStmt(LuxParser::StatementContext* stmt,
+                        const TypeInfo* retType,
+                        bool& terminated) {
+    if (auto* varDecl = stmt->varDeclStmt()) {
+        checkVarDeclStmt(varDecl);
+    } else if (auto* assign = stmt->assignStmt()) {
+        checkAssignStmt(assign);
+    } else if (auto* compound = stmt->compoundAssignStmt()) {
+        checkCompoundAssignStmt(compound);
+    } else if (auto* fieldAssign = stmt->fieldAssignStmt()) {
+        checkFieldAssignStmt(fieldAssign);
+    } else if (stmt->arrowAssignStmt()) {
+        resolveExprType(stmt->arrowAssignStmt()->expression());
+    } else if (stmt->arrowCompoundAssignStmt()) {
+        resolveExprType(stmt->arrowCompoundAssignStmt()->expression());
+    } else if (auto* derefAssign = stmt->derefAssignStmt()) {
+        checkDerefAssignStmt(derefAssign);
+    } else if (auto* call = stmt->callStmt()) {
+        checkCallStmt(call);
+    } else if (auto* exprS = stmt->exprStmt()) {
+        checkExprStmt(exprS);
+    } else if (auto* ret = stmt->returnStmt()) {
+        checkReturnStmt(ret, retType);
+    } else if (auto* ifS = stmt->ifStmt()) {
+        checkIfStmt(ifS, retType);
+    } else if (auto* forS = stmt->forStmt()) {
+        if (auto* forIn = dynamic_cast<LuxParser::ForInStmtContext*>(forS))
+            checkForInStmt(forIn, retType);
+        else if (auto* forC = dynamic_cast<LuxParser::ForClassicStmtContext*>(forS))
+            checkForClassicStmt(forC, retType);
+    } else if (stmt->loopStmt()) {
+        loopDepth_++;
+        checkBlock(stmt->loopStmt()->block(), retType);
+        loopDepth_--;
+    } else if (auto* ws = stmt->whileStmt()) {
+        auto* wCondType = resolveExprType(ws->expression());
+        if (wCondType && !isConditionType(wCondType))
+            error(ws, "condition has type '" + wCondType->name +
+                      "', expected 'bool' or numeric type");
+        loopDepth_++;
+        checkBlock(ws->block(), retType);
+        loopDepth_--;
+    } else if (auto* dw = stmt->doWhileStmt()) {
+        loopDepth_++;
+        checkBlock(dw->block(), retType);
+        loopDepth_--;
+        auto* dwCondType = resolveExprType(dw->expression());
+        if (dwCondType && !isConditionType(dwCondType))
+            error(dw, "condition has type '" + dwCondType->name +
+                      "', expected 'bool' or numeric type");
+    } else if (stmt->breakStmt()) {
+        if (loopDepth_ == 0)
+            error(stmt, "'break' used outside of a loop");
+    } else if (stmt->continueStmt()) {
+        if (loopDepth_ == 0)
+            error(stmt, "'continue' used outside of a loop");
+    } else if (auto* sw = stmt->switchStmt()) {
+        checkSwitchStmt(sw, retType);
+    } else if (auto* lk = stmt->lockStmt()) {
+        resolveExprType(lk->expression());
+        checkBlock(lk->block(), retType);
+    } else if (auto* tc = stmt->tryCatchStmt()) {
+        checkBlock(tc->block(), retType);
+        for (auto* cc : tc->catchClause()) {
+            auto catchVarName = cc->IDENTIFIER()->getText();
+            unsigned catchDims = 0;
+            auto* catchType = resolveTypeSpec(cc->typeSpec(), catchDims);
+            auto prev = locals_.find(catchVarName);
+            bool hadPrev = prev != locals_.end();
+            VarInfo prevInfo;
+            if (hadPrev) prevInfo = prev->second;
+            if (catchType)
+                locals_[catchVarName] = {catchType, catchDims, true, true, nullptr};
+            checkBlock(cc->block(), retType);
+            if (hadPrev)
+                locals_[catchVarName] = prevInfo;
+            else
+                locals_.erase(catchVarName);
+        }
+        if (auto* fin = tc->finallyClause()) {
+            checkBlock(fin->block(), retType);
+        }
+    } else if (stmt->throwStmt()) {
+        resolveExprType(stmt->throwStmt()->expression());
+    } else if (auto* ifa = stmt->indexFieldAssignStmt()) {
+        for (auto* e : ifa->expression()) {
+            resolveExprType(e);
+        }
+    } else if (auto* def = stmt->deferStmt()) {
+        if (def->callStmt())
+            checkCallStmt(def->callStmt());
+        else if (def->exprStmt())
+            checkExprStmt(def->exprStmt());
+
+    // ── Structural Blocks ──────────────────────────────────────────────
+
+    } else if (auto* nb = stmt->nakedBlockStmt()) {
+        // {} — lexical scope: variables declared inside do NOT leak out
+        auto savedLocals = locals_;
+        bool innerTerminated = false;
+        for (auto* inner : nb->statement()) {
+            if (innerTerminated) {
+                warning(inner, "unreachable code");
+                break;
+            }
+            checkStmt(inner, retType, innerTerminated);
+        }
+        // Restore scope: remove variables declared inside, keep mutations to
+        // variables that existed before the block.
+        for (auto it = locals_.begin(); it != locals_.end(); ) {
+            if (!savedLocals.count(it->first))
+                it = locals_.erase(it);
+            else
+                ++it;
+        }
+
+    } else if (auto* ib = stmt->inlineBlockStmt()) {
+        // #inline {} — variables are injected into parent scope
+        for (auto* inner : ib->statement()) {
+            if (terminated) {
+                warning(inner, "unreachable code");
+                break;
+            }
+            checkStmt(inner, retType, terminated);
+        }
+
+    } else if (auto* sb = stmt->scopeBlockStmt()) {
+        // #scope (callbacks) {} — validate callbacks, then check body
+        for (auto* cb : sb->scopeCallbackList()->scopeCallback()) {
+            auto funcName = cb->IDENTIFIER()->getText();
+            if (!isKnownFunction(funcName) && !(cBindings_ && cBindings_->findFunction(funcName)))
+                warning(cb, "unknown function '" + funcName + "' in #scope callback");
+            if (cb->argList())
+                for (auto* arg : cb->argList()->expression())
+                    resolveExprType(arg);
+        }
+        bool innerTerminated = false;
+        for (auto* inner : sb->statement()) {
+            if (innerTerminated) {
+                warning(inner, "unreachable code");
+                break;
+            }
+            checkStmt(inner, retType, innerTerminated);
+        }
+    }
+
+    if (isTerminatorStmt(stmt))
+        terminated = true;
 }
 
 void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,

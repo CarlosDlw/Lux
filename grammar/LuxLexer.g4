@@ -47,6 +47,10 @@ ARROW     : '->';
 INCLUDE_SYS   : '#include' [ \t]+ '<' ~[>\r\n]+ '>';
 INCLUDE_LOCAL  : '#include' [ \t]+ '"' ~["\r\n]+ '"';
 
+// Structural block directives
+INLINE_BLOCK  : '#inline';
+SCOPE_BLOCK   : '#scope';
+
 NULLCOAL  : '??';
 SPREAD    : '...';
 RANGE_INCL: '..=';

@@ -73,6 +73,16 @@ public:
 
     virtual std::any visitDeferStmt(LuxParser::DeferStmtContext *context) = 0;
 
+    virtual std::any visitNakedBlockStmt(LuxParser::NakedBlockStmtContext *context) = 0;
+
+    virtual std::any visitInlineBlockStmt(LuxParser::InlineBlockStmtContext *context) = 0;
+
+    virtual std::any visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext *context) = 0;
+
+    virtual std::any visitScopeCallbackList(LuxParser::ScopeCallbackListContext *context) = 0;
+
+    virtual std::any visitScopeCallback(LuxParser::ScopeCallbackContext *context) = 0;
+
     virtual std::any visitExprStmt(LuxParser::ExprStmtContext *context) = 0;
 
     virtual std::any visitVarDeclStmt(LuxParser::VarDeclStmtContext *context) = 0;

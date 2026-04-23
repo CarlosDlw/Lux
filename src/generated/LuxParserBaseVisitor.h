@@ -123,6 +123,26 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitNakedBlockStmt(LuxParser::NakedBlockStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitInlineBlockStmt(LuxParser::InlineBlockStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitScopeCallbackList(LuxParser::ScopeCallbackListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitScopeCallback(LuxParser::ScopeCallbackContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitExprStmt(LuxParser::ExprStmtContext *ctx) override {
     return visitChildren(ctx);
   }

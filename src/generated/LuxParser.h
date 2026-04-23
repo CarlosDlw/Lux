@@ -18,23 +18,24 @@ public:
     CONTINUE = 22, SWITCH = 23, CASE = 24, DEFAULT = 25, SPAWN = 26, AWAIT = 27, 
     LOCK = 28, EXTEND = 29, TRY = 30, CATCH = 31, FINALLY = 32, THROW = 33, 
     DEFER = 34, EXTERN = 35, AUTO = 36, VEC = 37, MAP = 38, SET = 39, TUPLE = 40, 
-    ARROW = 41, INCLUDE_SYS = 42, INCLUDE_LOCAL = 43, NULLCOAL = 44, SPREAD = 45, 
-    RANGE_INCL = 46, RANGE = 47, INT1 = 48, INT8 = 49, INT16 = 50, INT32 = 51, 
-    INT64 = 52, INT128 = 53, INTINF = 54, ISIZE = 55, UINT1 = 56, UINT8 = 57, 
-    UINT16 = 58, UINT32 = 59, UINT64 = 60, UINT128 = 61, USIZE = 62, FLOAT32 = 63, 
-    FLOAT64 = 64, FLOAT80 = 65, FLOAT128 = 66, DOUBLE = 67, BOOL = 68, CHAR = 69, 
-    VOID = 70, STRING = 71, CSTRING = 72, HEX_LIT = 73, OCT_LIT = 74, BIN_LIT = 75, 
-    INT_LIT = 76, FLOAT_LIT = 77, BOOL_LIT = 78, C_STR_LIT = 79, STR_LIT = 80, 
-    CHAR_LIT = 81, IDENTIFIER = 82, PLUS_ASSIGN = 83, MINUS_ASSIGN = 84, 
-    STAR_ASSIGN = 85, SLASH_ASSIGN = 86, PERCENT_ASSIGN = 87, AMP_ASSIGN = 88, 
-    PIPE_ASSIGN = 89, CARET_ASSIGN = 90, LSHIFT_ASSIGN = 91, RSHIFT_ASSIGN = 92, 
-    SEMI = 93, COLON = 94, SCOPE = 95, COMMA = 96, DOT = 97, ASSIGN = 98, 
-    LPAREN = 99, RPAREN = 100, LBRACE = 101, RBRACE = 102, LBRACKET = 103, 
-    RBRACKET = 104, STAR = 105, AMPERSAND = 106, MINUS = 107, PLUS = 108, 
-    SLASH = 109, PERCENT = 110, EQ = 111, NEQ = 112, LTE = 113, GTE = 114, 
-    LT = 115, GT = 116, LAND = 117, LOR = 118, NOT = 119, INCR = 120, DECR = 121, 
-    LSHIFT = 122, PIPE = 123, CARET = 124, TILDE = 125, QUESTION = 126, 
-    WS = 127, LINE_COMMENT = 128, BLOCK_COMMENT = 129
+    ARROW = 41, INCLUDE_SYS = 42, INCLUDE_LOCAL = 43, INLINE_BLOCK = 44, 
+    SCOPE_BLOCK = 45, NULLCOAL = 46, SPREAD = 47, RANGE_INCL = 48, RANGE = 49, 
+    INT1 = 50, INT8 = 51, INT16 = 52, INT32 = 53, INT64 = 54, INT128 = 55, 
+    INTINF = 56, ISIZE = 57, UINT1 = 58, UINT8 = 59, UINT16 = 60, UINT32 = 61, 
+    UINT64 = 62, UINT128 = 63, USIZE = 64, FLOAT32 = 65, FLOAT64 = 66, FLOAT80 = 67, 
+    FLOAT128 = 68, DOUBLE = 69, BOOL = 70, CHAR = 71, VOID = 72, STRING = 73, 
+    CSTRING = 74, HEX_LIT = 75, OCT_LIT = 76, BIN_LIT = 77, INT_LIT = 78, 
+    FLOAT_LIT = 79, BOOL_LIT = 80, C_STR_LIT = 81, STR_LIT = 82, CHAR_LIT = 83, 
+    IDENTIFIER = 84, PLUS_ASSIGN = 85, MINUS_ASSIGN = 86, STAR_ASSIGN = 87, 
+    SLASH_ASSIGN = 88, PERCENT_ASSIGN = 89, AMP_ASSIGN = 90, PIPE_ASSIGN = 91, 
+    CARET_ASSIGN = 92, LSHIFT_ASSIGN = 93, RSHIFT_ASSIGN = 94, SEMI = 95, 
+    COLON = 96, SCOPE = 97, COMMA = 98, DOT = 99, ASSIGN = 100, LPAREN = 101, 
+    RPAREN = 102, LBRACE = 103, RBRACE = 104, LBRACKET = 105, RBRACKET = 106, 
+    STAR = 107, AMPERSAND = 108, MINUS = 109, PLUS = 110, SLASH = 111, PERCENT = 112, 
+    EQ = 113, NEQ = 114, LTE = 115, GTE = 116, LT = 117, GT = 118, LAND = 119, 
+    LOR = 120, NOT = 121, INCR = 122, DECR = 123, LSHIFT = 124, PIPE = 125, 
+    CARET = 126, TILDE = 127, QUESTION = 128, WS = 129, LINE_COMMENT = 130, 
+    BLOCK_COMMENT = 131
   };
 
   enum {
@@ -44,16 +45,17 @@ public:
     RuleUnionField = 12, RuleExternDecl = 13, RuleExternParamList = 14, 
     RuleExternParam = 15, RuleFunctionDecl = 16, RuleExtendDecl = 17, RuleTypeParamList = 18, 
     RuleTypeParam = 19, RuleExtendMethod = 20, RuleParamList = 21, RuleParam = 22, 
-    RuleBlock = 23, RuleStatement = 24, RuleDeferStmt = 25, RuleExprStmt = 26, 
-    RuleVarDeclStmt = 27, RuleAssignStmt = 28, RuleCompoundAssignStmt = 29, 
-    RuleFieldAssignStmt = 30, RuleIndexFieldAssignStmt = 31, RuleDerefAssignStmt = 32, 
-    RuleArrowAssignStmt = 33, RuleArrowCompoundAssignStmt = 34, RuleCallStmt = 35, 
-    RuleArgList = 36, RuleReturnStmt = 37, RuleIfStmt = 38, RuleElseIfClause = 39, 
-    RuleElseClause = 40, RuleForStmt = 41, RuleBreakStmt = 42, RuleContinueStmt = 43, 
-    RuleLoopStmt = 44, RuleWhileStmt = 45, RuleDoWhileStmt = 46, RuleLockStmt = 47, 
-    RuleTryCatchStmt = 48, RuleCatchClause = 49, RuleFinallyClause = 50, 
-    RuleThrowStmt = 51, RuleSwitchStmt = 52, RuleCaseClause = 53, RuleDefaultClause = 54, 
-    RuleExpression = 55, RuleTypeSpec = 56, RuleFnTypeSpec = 57, RulePrimitiveType = 58
+    RuleBlock = 23, RuleStatement = 24, RuleDeferStmt = 25, RuleNakedBlockStmt = 26, 
+    RuleInlineBlockStmt = 27, RuleScopeBlockStmt = 28, RuleScopeCallbackList = 29, 
+    RuleScopeCallback = 30, RuleExprStmt = 31, RuleVarDeclStmt = 32, RuleAssignStmt = 33, 
+    RuleCompoundAssignStmt = 34, RuleFieldAssignStmt = 35, RuleIndexFieldAssignStmt = 36, 
+    RuleDerefAssignStmt = 37, RuleArrowAssignStmt = 38, RuleArrowCompoundAssignStmt = 39, 
+    RuleCallStmt = 40, RuleArgList = 41, RuleReturnStmt = 42, RuleIfStmt = 43, 
+    RuleElseIfClause = 44, RuleElseClause = 45, RuleForStmt = 46, RuleBreakStmt = 47, 
+    RuleContinueStmt = 48, RuleLoopStmt = 49, RuleWhileStmt = 50, RuleDoWhileStmt = 51, 
+    RuleLockStmt = 52, RuleTryCatchStmt = 53, RuleCatchClause = 54, RuleFinallyClause = 55, 
+    RuleThrowStmt = 56, RuleSwitchStmt = 57, RuleCaseClause = 58, RuleDefaultClause = 59, 
+    RuleExpression = 60, RuleTypeSpec = 61, RuleFnTypeSpec = 62, RulePrimitiveType = 63
   };
 
   explicit LuxParser(antlr4::TokenStream *input);
@@ -99,6 +101,11 @@ public:
   class BlockContext;
   class StatementContext;
   class DeferStmtContext;
+  class NakedBlockStmtContext;
+  class InlineBlockStmtContext;
+  class ScopeBlockStmtContext;
+  class ScopeCallbackListContext;
+  class ScopeCallbackContext;
   class ExprStmtContext;
   class VarDeclStmtContext;
   class AssignStmtContext;
@@ -598,6 +605,9 @@ public:
     TryCatchStmtContext *tryCatchStmt();
     ThrowStmtContext *throwStmt();
     DeferStmtContext *deferStmt();
+    NakedBlockStmtContext *nakedBlockStmt();
+    InlineBlockStmtContext *inlineBlockStmt();
+    ScopeBlockStmtContext *scopeBlockStmt();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -620,6 +630,91 @@ public:
   };
 
   DeferStmtContext* deferStmt();
+
+  class  NakedBlockStmtContext : public antlr4::ParserRuleContext {
+  public:
+    NakedBlockStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<StatementContext *> statement();
+    StatementContext* statement(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  NakedBlockStmtContext* nakedBlockStmt();
+
+  class  InlineBlockStmtContext : public antlr4::ParserRuleContext {
+  public:
+    InlineBlockStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *INLINE_BLOCK();
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<StatementContext *> statement();
+    StatementContext* statement(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  InlineBlockStmtContext* inlineBlockStmt();
+
+  class  ScopeBlockStmtContext : public antlr4::ParserRuleContext {
+  public:
+    ScopeBlockStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *SCOPE_BLOCK();
+    antlr4::tree::TerminalNode *LPAREN();
+    ScopeCallbackListContext *scopeCallbackList();
+    antlr4::tree::TerminalNode *RPAREN();
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<StatementContext *> statement();
+    StatementContext* statement(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  ScopeBlockStmtContext* scopeBlockStmt();
+
+  class  ScopeCallbackListContext : public antlr4::ParserRuleContext {
+  public:
+    ScopeCallbackListContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<ScopeCallbackContext *> scopeCallback();
+    ScopeCallbackContext* scopeCallback(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  ScopeCallbackListContext* scopeCallbackList();
+
+  class  ScopeCallbackContext : public antlr4::ParserRuleContext {
+  public:
+    ScopeCallbackContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    ArgListContext *argList();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  ScopeCallbackContext* scopeCallback();
 
   class  ExprStmtContext : public antlr4::ParserRuleContext {
   public:

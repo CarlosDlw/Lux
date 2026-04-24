@@ -101,6 +101,7 @@ private:
         std::string prefix;          // partial identifier typed so far
         std::string receiverType;    // for dot/arrow: struct type name
         std::string receiverVar;     // for dot/arrow: receiver variable name (resolve later)
+        std::string receiverCall;    // for dot: receiver function call name (e.g. foo().|)
         std::string scopeName;       // for Name::| — the type/enum name
         std::string modulePath;      // for use: accumulated path (e.g. "std::log")
         unsigned    indexDepth = 0;   // for dot: number of [..] index accesses on receiver

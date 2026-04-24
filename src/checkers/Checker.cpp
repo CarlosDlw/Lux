@@ -1589,6 +1589,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 error(expr, "operator '" + opText +
                                  "' requires numeric operands, got '" + t->name + "'");
             }
+
+            if (!lhsBad && !rhsBad && lhs && rhs && lhs->kind != rhs->kind) {
+                error(expr, "operator '" + opText +
+                                 "' does not allow mixed numeric kinds ('" +
+                                 lhs->name + "' and '" + rhs->name +
+                                 "'); cast explicitly");
+            }
         }
 
         // Compile-time division by zero check
@@ -1633,6 +1640,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                              "' requires numeric operands, got '" + t->name + "'");
         }
 
+        if (!lhsBad && !rhsBad && lhs && rhs && lhs->kind != rhs->kind) {
+            error(expr, "operator '" + opText +
+                             "' does not allow mixed numeric kinds ('" +
+                             lhs->name + "' and '" + rhs->name +
+                             "'); cast explicitly");
+        }
+
         if (lhs && rhs && lhs->kind == rhs->kind)
             return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
         return lhs ? lhs : rhs;
@@ -1669,6 +1683,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         else if (rhs && !isNumeric(rhs))
             error(expr, "operator '" + opText +
                              "' requires numeric operands, got '" + rhs->name + "'");
+
+        if (lhs && rhs && isNumeric(lhs) && isNumeric(rhs) && lhs->kind != rhs->kind) {
+            error(expr, "operator '" + opText +
+                             "' does not allow mixed numeric kinds ('" +
+                             lhs->name + "' and '" + rhs->name +
+                             "'); cast explicitly");
+        }
         return typeRegistry_.lookup("bool");
     }
 

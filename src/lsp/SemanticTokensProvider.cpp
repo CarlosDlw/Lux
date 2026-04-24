@@ -299,15 +299,33 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         }
     }
     else if (auto* ctx = dynamic_cast<LuxParser::FieldAssignStmtContext*>(node)) {
-        auto* base = ctx->IDENTIFIER(0);
-        if (base && base->getText() == "self") {
-            classifyIdent(map, base, SemanticTokenType::Parameter);
+        auto ids = ctx->IDENTIFIER();
+        if (!ids.empty()) {
+            if (ids[0]->getText() == "self") {
+                classifyIdent(map, ids[0], SemanticTokenType::Parameter);
+            }
+            for (size_t i = 1; i < ids.size(); ++i)
+                classifyIdent(map, ids[i], SemanticTokenType::Property);
         }
     }
     else if (auto* ctx = dynamic_cast<LuxParser::FieldCompoundAssignStmtContext*>(node)) {
-        auto* base = ctx->IDENTIFIER(0);
-        if (base && base->getText() == "self") {
-            classifyIdent(map, base, SemanticTokenType::Parameter);
+        auto ids = ctx->IDENTIFIER();
+        if (!ids.empty()) {
+            if (ids[0]->getText() == "self") {
+                classifyIdent(map, ids[0], SemanticTokenType::Parameter);
+            }
+            for (size_t i = 1; i < ids.size(); ++i)
+                classifyIdent(map, ids[i], SemanticTokenType::Property);
+        }
+    }
+    else if (auto* ctx = dynamic_cast<LuxParser::IndexFieldAssignStmtContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        if (!ids.empty()) {
+            if (ids[0]->getText() == "self") {
+                classifyIdent(map, ids[0], SemanticTokenType::Parameter);
+            }
+            for (size_t i = 1; i < ids.size(); ++i)
+                classifyIdent(map, ids[i], SemanticTokenType::Property);
         }
     }
 

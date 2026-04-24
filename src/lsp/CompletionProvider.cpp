@@ -608,8 +608,20 @@ std::vector<CompletionItem> CompletionProvider::complete(
     // Re-infer receiver type now that we have a valid tree
     if (req.context == CompletionContext::DotAccess ||
         req.context == CompletionContext::ArrowAccess) {
-        if (req.receiverType.empty() && !req.receiverVar.empty()) {
-            std::string varType = inferVarType(req.receiverVar, parsed.tree, line, cBindingsPtr, project);
+        if (req.receiverType.empty()) {
+            std::string varType;
+            if (!req.receiverVar.empty()) {
+                varType = inferVarType(req.receiverVar, parsed.tree, line, cBindingsPtr, project);
+            } else if (!req.receiverCall.empty()) {
+                FuncLookupCtx flc;
+                flc.tree = parsed.tree;
+                flc.bindings = cBindingsPtr;
+                flc.builtinReg = &builtinRegistry_;
+                flc.extTypeReg = &extTypeRegistry_;
+                flc.project = project;
+                varType = lookupFuncReturnType(req.receiverCall, &flc);
+            }
+
             if (req.context == CompletionContext::ArrowAccess) {
                 // Strip pointer for arrow access
                 if (!varType.empty() && varType[0] == '*')
@@ -962,13 +974,16 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
                         --nameStart;
                     if (nameStart == nameEnd) break; // no method name before '('
                     std::string methodName = before.substr(nameStart, nameEnd - nameStart);
-                    chain.push_back(methodName);
                     recEnd = nameStart;
                     // Check for '.' before the method name
-                    if (recEnd > 0 && before[recEnd - 1] == '.')
-                        --recEnd; // skip the dot
-                    else
-                        break; // no dot means this is a function call, not a chain
+                    if (recEnd > 0 && before[recEnd - 1] == '.') {
+                        chain.push_back(methodName);
+                        --recEnd; // skip the dot and continue chain walk
+                    } else {
+                        // Base receiver is a function call, e.g. foo().bar().|
+                        req.receiverCall = methodName;
+                        break;
+                    }
                 }
                 // Try: ...[...]
                 else if (before[recEnd - 1] == ']') {
@@ -1017,6 +1032,10 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
             while (recEnd > 0 && (std::isalnum(before[recEnd - 1]) || before[recEnd - 1] == '_'))
                 --recEnd;
             req.receiverVar = before.substr(recEnd, nameEnd - recEnd);
+            if (req.receiverVar.empty() && req.receiverCall.empty() && !chain.empty()) {
+                // Fallback for malformed/incomplete text states.
+                req.receiverCall = chain.front();
+            }
             req.indexDepth = indexDepth;
             // Reverse chain since we collected from right to left
             std::reverse(chain.begin(), chain.end());

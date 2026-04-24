@@ -774,6 +774,39 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
             std::string structName = inferExprStructType(fa->expression(), tree,
                                                          cursorLine);
 
+            if (structName.empty()) {
+                if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(fa->expression())) {
+                    if (auto* callee = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+                        std::string calleeName = callee->IDENTIFIER()->getText();
+
+                        if (auto* cf = bindings.findFunction(calleeName)) {
+                            if (cf->returnType) structName = cf->returnType->name;
+                        }
+
+                        if (structName.empty()) {
+                            if (auto* fd = findFunctionDecl(tree, calleeName)) {
+                                if (fd->typeSpec()) structName = fd->typeSpec()->getText();
+                            }
+                        }
+
+                        if (structName.empty() && project && project->isValid()) {
+                            for (auto& ns : project->registry().allNamespaces()) {
+                                auto* sym = project->registry().findSymbol(ns, calleeName);
+                                if (!sym || sym->kind != ExportedSymbol::Function) continue;
+                                auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                                if (fd && fd->typeSpec()) {
+                                    structName = fd->typeSpec()->getText();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            while (!structName.empty() && structName.front() == '*')
+                structName.erase(structName.begin());
+
             if (!structName.empty())
                 return resolveStructField(structName, tokenText, tree, bindings,
                                           filePath, project);
@@ -789,6 +822,18 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
             aa->IDENTIFIER()->getSymbol()->getTokenIndex() == hoveredToken->getTokenIndex()) {
             std::string structName = inferExprStructType(aa->expression(), tree,
                                                          cursorLine);
+
+            if (structName.empty()) {
+                if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(aa->expression())) {
+                    if (auto* callee = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+                        auto* cf = bindings.findFunction(callee->IDENTIFIER()->getText());
+                        if (cf && cf->returnType) structName = cf->returnType->name;
+                    }
+                }
+            }
+
+            while (!structName.empty() && structName.front() == '*')
+                structName.erase(structName.begin());
 
             if (!structName.empty())
                 return resolveStructField(structName, tokenText, tree, bindings,
@@ -1140,6 +1185,120 @@ std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
                 return r;
         }
         if (auto* rhs = as->expression(1)) {
+            if (auto r = walkExprForDef(rhs, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Field assign statement: obj.field = expr ───────────────
+    if (auto* fas = stmt->fieldAssignStmt()) {
+        auto ids = fas->IDENTIFIER();
+        if (!ids.empty() && ids[0] && ids[0]->getSymbol() == hoveredToken) {
+            return resolveIdent(ids[0]->getText(), tree, bindings, cursorLine,
+                                filePath, project);
+        }
+
+        if (ids.size() >= 2) {
+            std::string currentType;
+            auto* encFunc = findEnclosingFunction(tree, cursorLine);
+            if (encFunc) {
+                auto locals = collectLocals(encFunc, cursorLine);
+                auto it = locals.find(ids[0]->getText());
+                if (it != locals.end()) {
+                    currentType = it->second.typeName;
+                    while (!currentType.empty() && currentType.front() == '*')
+                        currentType.erase(currentType.begin());
+                }
+            }
+
+            for (size_t i = 1; i < ids.size(); i++) {
+                auto* fid = ids[i];
+                if (!fid) continue;
+
+                if (fid->getSymbol() == hoveredToken && !currentType.empty()) {
+                    if (auto r = resolveStructField(currentType, fid->getText(), tree,
+                                                    bindings, filePath, project))
+                        return r;
+                }
+
+                if (auto* sd = findStructDecl(tree, currentType)) {
+                    std::string nextType;
+                    for (auto* f : sd->structField()) {
+                        if (f->IDENTIFIER()->getText() == fid->getText()) {
+                            nextType = f->typeSpec()->getText();
+                            while (!nextType.empty() && nextType.front() == '*')
+                                nextType.erase(nextType.begin());
+                            break;
+                        }
+                    }
+                    if (nextType.empty()) break;
+                    currentType = nextType;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if (auto* rhs = fas->expression()) {
+            if (auto r = walkExprForDef(rhs, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Field compound assign statement: obj.field += expr ──────
+    if (auto* fcs = stmt->fieldCompoundAssignStmt()) {
+        auto ids = fcs->IDENTIFIER();
+        if (!ids.empty() && ids[0] && ids[0]->getSymbol() == hoveredToken) {
+            return resolveIdent(ids[0]->getText(), tree, bindings, cursorLine,
+                                filePath, project);
+        }
+
+        if (ids.size() >= 2) {
+            std::string currentType;
+            auto* encFunc = findEnclosingFunction(tree, cursorLine);
+            if (encFunc) {
+                auto locals = collectLocals(encFunc, cursorLine);
+                auto it = locals.find(ids[0]->getText());
+                if (it != locals.end()) {
+                    currentType = it->second.typeName;
+                    while (!currentType.empty() && currentType.front() == '*')
+                        currentType.erase(currentType.begin());
+                }
+            }
+
+            for (size_t i = 1; i < ids.size(); i++) {
+                auto* fid = ids[i];
+                if (!fid) continue;
+
+                if (fid->getSymbol() == hoveredToken && !currentType.empty()) {
+                    if (auto r = resolveStructField(currentType, fid->getText(), tree,
+                                                    bindings, filePath, project))
+                        return r;
+                }
+
+                if (auto* sd = findStructDecl(tree, currentType)) {
+                    std::string nextType;
+                    for (auto* f : sd->structField()) {
+                        if (f->IDENTIFIER()->getText() == fid->getText()) {
+                            nextType = f->typeSpec()->getText();
+                            while (!nextType.empty() && nextType.front() == '*')
+                                nextType.erase(nextType.begin());
+                            break;
+                        }
+                    }
+                    if (nextType.empty()) break;
+                    currentType = nextType;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if (auto* rhs = fcs->expression()) {
             if (auto r = walkExprForDef(rhs, hoveredToken, tokenText, tree,
                                         bindings, cursorLine, filePath, project))
                 return r;
@@ -1640,6 +1799,22 @@ std::string DefinitionProvider::inferExprStructType(
         return t;
     };
 
+    auto lookupFuncReturnType = [&](const std::string& funcName) -> std::string {
+        if (funcName.empty()) return {};
+
+        // Same-file function
+        if (auto* fd = findFunctionDecl(tree, funcName)) {
+            if (fd->typeSpec()) return fd->typeSpec()->getText();
+        }
+
+        // Same-file extern declaration
+        if (auto* ed = findExternDecl(tree, funcName)) {
+            if (ed->typeSpec()) return ed->typeSpec()->getText();
+        }
+
+        return {};
+    };
+
     // Simple identifier: look up in locals/params
     if (auto* ie = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
         std::string varName = ie->IDENTIFIER()->getText();
@@ -1675,6 +1850,14 @@ std::string DefinitionProvider::inferExprStructType(
                 if (it != locals.end())
                     return stripPointers(it->second.typeName);
             }
+        }
+    }
+
+    // Function call: fn(...) -> infer from declared return type
+    if (auto* fc = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
+        if (auto* calleeIdent = dynamic_cast<LuxParser::IdentExprContext*>(fc->expression())) {
+            auto ret = lookupFuncReturnType(calleeIdent->IDENTIFIER()->getText());
+            if (!ret.empty()) return stripPointers(ret);
         }
     }
 

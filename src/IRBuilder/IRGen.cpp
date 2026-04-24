@@ -375,6 +375,16 @@ std::any IRGen::visitStructDecl(LuxParser::StructDeclContext* ctx) {
 }
 
 std::any IRGen::visitUnionDecl(LuxParser::UnionDeclContext* ctx) {
+    if (auto* tpl = ctx->typeParamList()) {
+        GenericUnionTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = ctx;
+        auto name = ctx->IDENTIFIER()->getText();
+        genericUnionTemplates_[name] = std::move(tmpl);
+        return {};
+    }
+
     auto unionName = ctx->IDENTIFIER()->getText();
 
     // Collect field types and compute the max field size
@@ -9643,6 +9653,10 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
         if (structIt != genericStructTemplates_.end()) {
             return instantiateGenericStruct(baseName, structIt->second, resolvedArgs);
         }
+        auto unionIt = genericUnionTemplates_.find(baseName);
+        if (unionIt != genericUnionTemplates_.end()) {
+            return instantiateGenericUnion(baseName, unionIt->second, resolvedArgs);
+        }
 
         // Built-in extended generics (Task, etc.)
         if (resolvedArgs.size() == 1) {
@@ -9901,6 +9915,29 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
     if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(ctx)) {
         auto ids = sl->IDENTIFIER();
         if (!ids.empty()) return typeRegistry_.lookup(ids[0]->getText());
+        return nullptr;
+    }
+
+    // ── Generic struct/union literal: Type<T, ...> { fields } ──────
+    if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(ctx)) {
+        auto baseName = gsl->IDENTIFIER(0)->getText();
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : gsl->typeSpec()) {
+            auto* argTI = resolveTypeInfo(ts);
+            if (!argTI) argTI = typeRegistry_.lookup("int32");
+            typeArgs.push_back(argTI);
+        }
+
+        auto structIt = genericStructTemplates_.find(baseName);
+        if (structIt != genericStructTemplates_.end()) {
+            return instantiateGenericStruct(baseName, structIt->second, typeArgs);
+        }
+
+        auto unionIt = genericUnionTemplates_.find(baseName);
+        if (unionIt != genericUnionTemplates_.end()) {
+            return instantiateGenericUnion(baseName, unionIt->second, typeArgs);
+        }
+
         return nullptr;
     }
 
@@ -13693,6 +13730,10 @@ const TypeInfo* IRGen::resolveTypeInfoWithSubst(
         if (structIt != genericStructTemplates_.end()) {
             return instantiateGenericStruct(innerBaseName, structIt->second, resolvedArgs);
         }
+        auto unionIt = genericUnionTemplates_.find(innerBaseName);
+        if (unionIt != genericUnionTemplates_.end()) {
+            return instantiateGenericUnion(innerBaseName, unionIt->second, resolvedArgs);
+        }
     }
 
     // Default: normal resolution
@@ -13882,6 +13923,71 @@ const TypeInfo* IRGen::instantiateGenericStruct(
 
     instantiatedGenerics_.erase(mangledName);
     return result;
+}
+
+const TypeInfo* IRGen::instantiateGenericUnion(
+    const std::string& baseName,
+    const GenericUnionTemplate& tmpl,
+    const std::vector<const TypeInfo*>& typeArgs) {
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+
+    if (auto* existing = typeRegistry_.lookup(mangledName)) {
+        if (!llvm::StructType::getTypeByName(*context_, mangledName)) {
+            uint64_t maxSize = 1;
+            for (auto& field : existing->fields) {
+                auto* fieldTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                maxSize = std::max<uint64_t>(maxSize,
+                    module_->getDataLayout().getTypeAllocSize(fieldTy));
+            }
+            auto* i8Ty = llvm::Type::getInt8Ty(*context_);
+            auto* bodyTy = llvm::ArrayType::get(i8Ty, maxSize);
+            llvm::StructType::create(*context_, { bodyTy }, mangledName);
+        }
+        return existing;
+    }
+
+    if (instantiatedGenerics_.count(mangledName)) {
+        std::cerr << "lux: recursive generic instantiation: " << mangledName << "\n";
+        return typeRegistry_.lookup("int32");
+    }
+    instantiatedGenerics_.insert(mangledName);
+
+    std::unordered_map<std::string, const TypeInfo*> subst;
+    for (size_t i = 0; i < tmpl.typeParams.size() && i < typeArgs.size(); i++)
+        subst[tmpl.typeParams[i]] = typeArgs[i];
+
+    TypeInfo skeleton;
+    skeleton.name = mangledName;
+    skeleton.kind = TypeKind::Union;
+    skeleton.bitWidth = 0;
+    skeleton.isSigned = false;
+    skeleton.isGenericInstance = true;
+    skeleton.genericBaseName = baseName;
+    skeleton.typeParamNames = tmpl.typeParams;
+    skeleton.typeArgs = typeArgs;
+    skeleton.genericStructDecl = static_cast<antlr4::ParserRuleContext*>(tmpl.decl);
+    typeRegistry_.registerType(skeleton);
+
+    TypeInfo ti = skeleton;
+    uint64_t maxSize = 1;
+    for (auto* field : tmpl.decl->unionField()) {
+        auto* fieldTI = resolveTypeInfoWithSubst(field->typeSpec(), subst);
+        if (!fieldTI) fieldTI = typeRegistry_.lookup("int32");
+        ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI });
+
+        auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        maxSize = std::max<uint64_t>(maxSize,
+            module_->getDataLayout().getTypeAllocSize(fieldLLTy));
+    }
+
+    auto* i8Ty = llvm::Type::getInt8Ty(*context_);
+    auto* bodyTy = llvm::ArrayType::get(i8Ty, maxSize);
+    llvm::StructType::create(*context_, { bodyTy }, mangledName);
+
+    typeRegistry_.registerType(std::move(ti));
+    instantiatedGenerics_.erase(mangledName);
+    return typeRegistry_.lookup(mangledName);
 }
 
 llvm::Function* IRGen::instantiateGenericFunc(
@@ -14254,14 +14360,20 @@ std::any IRGen::visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext
         typeArgs.push_back(argTI);
     }
 
-    // Ensure the generic struct is instantiated
+    // Ensure the generic aggregate is instantiated
     auto structIt = genericStructTemplates_.find(baseName);
-    if (structIt == genericStructTemplates_.end()) {
-        std::cerr << "lux: '" << baseName << "' is not a generic struct\n";
+    auto unionIt = genericUnionTemplates_.find(baseName);
+    if (structIt == genericStructTemplates_.end() &&
+        unionIt == genericUnionTemplates_.end()) {
+        std::cerr << "lux: '" << baseName << "' is not a generic struct or union\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
-    auto* instanceTI = instantiateGenericStruct(baseName, structIt->second, typeArgs);
+    const TypeInfo* instanceTI = nullptr;
+    if (structIt != genericStructTemplates_.end())
+        instanceTI = instantiateGenericStruct(baseName, structIt->second, typeArgs);
+    else
+        instanceTI = instantiateGenericUnion(baseName, unionIt->second, typeArgs);
     if (!instanceTI) {
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -14269,8 +14381,53 @@ std::any IRGen::visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext
 
     auto mangledName = mangleGenericName(baseName, typeArgs);
     auto* structLLTy = llvm::StructType::getTypeByName(*context_, mangledName);
-    if (!structLLTy) {
+    if (!structLLTy && instanceTI->kind == TypeKind::Struct) {
         structLLTy = ensureGenericStructType(mangledName, instanceTI);
+    }
+
+    if (instanceTI->kind == TypeKind::Union) {
+        if (!structLLTy) {
+            std::cerr << "lux: generic union LLVM type missing for '" << mangledName << "'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        auto* alloca = builder_->CreateAlloca(structLLTy, nullptr, mangledName + ".tmp");
+        auto ids = ctx->IDENTIFIER();
+        auto exprs = ctx->expression();
+        if (!exprs.empty()) {
+            auto fieldName = ids[1]->getText();
+            const TypeInfo* fieldTI = nullptr;
+            for (auto& field : instanceTI->fields) {
+                if (field.name == fieldName) {
+                    fieldTI = field.typeInfo;
+                    break;
+                }
+            }
+            if (!fieldTI) {
+                std::cerr << "lux: unknown field '" << fieldName
+                          << "' in generic union literal '" << mangledName << "'\n";
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+
+            auto* val = castValue(visit(exprs[0]));
+            auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+            if (val->getType() != fieldLLTy) {
+                if (val->getType()->isIntegerTy() && fieldLLTy->isIntegerTy())
+                    val = builder_->CreateIntCast(val, fieldLLTy, true);
+                else if (val->getType()->isFloatingPointTy() && fieldLLTy->isFloatingPointTy()) {
+                    if (val->getType()->getPrimitiveSizeInBits() > fieldLLTy->getPrimitiveSizeInBits())
+                        val = builder_->CreateFPTrunc(val, fieldLLTy);
+                    else
+                        val = builder_->CreateFPExt(val, fieldLLTy);
+                }
+            }
+            builder_->CreateStore(val, alloca);
+        }
+
+        return static_cast<llvm::Value*>(
+            builder_->CreateLoad(structLLTy, alloca, "generic_union_lit"));
     }
 
     // Allocate the struct on the stack

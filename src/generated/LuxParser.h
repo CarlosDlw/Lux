@@ -363,6 +363,7 @@ public:
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
     antlr4::tree::TerminalNode *RBRACE();
+    TypeParamListContext *typeParamList();
     std::vector<UnionFieldContext *> unionField();
     UnionFieldContext* unionField(size_t i);
 

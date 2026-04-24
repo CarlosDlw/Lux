@@ -538,6 +538,22 @@ static std::string inferExprTypeName(
         if (!ids.empty()) return ids[0]->getText();
         return "";
     }
+
+    // Generic struct/union literal: Result<int32, string> { ... } → "Result<int32,string>"
+    if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
+        if (!gsl->IDENTIFIER().empty()) {
+            std::string base = gsl->IDENTIFIER(0)->getText();
+            std::string outType = base + "<";
+            auto args = gsl->typeSpec();
+            for (size_t i = 0; i < args.size(); i++) {
+                if (i > 0) outType += ",";
+                outType += args[i]->getText();
+            }
+            outType += ">";
+            return outType;
+        }
+        return "";
+    }
     return "";
 }
 
@@ -1457,7 +1473,22 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem>& items,
             CompletionItem item;
             item.label = name;
             item.kind = CompletionKind::Struct;
-            item.detail = "union " + name;
+            if (ud->typeParamList()) {
+                std::string params;
+                bool first = true;
+                for (auto* tp : ud->typeParamList()->typeParam()) {
+                    auto ids = tp->IDENTIFIER();
+                    if (!first) params += ", ";
+                    if (!ids.empty()) params += ids[0]->getText();
+                    if (tp->COLON() && ids.size() >= 2) params += ": " + ids[1]->getText();
+                    first = false;
+                }
+                item.detail = "union " + name + "<" + params + ">";
+                item.insertText = name + "<${1}>";
+                item.insertTextFormat = InsertTextFormat::Snippet;
+            } else {
+                item.detail = "union " + name;
+            }
             items.push_back(std::move(item));
         }
 
@@ -1900,34 +1931,75 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem>& items,
         return;
     }
 
+    // Same-file union
+    auto* ud = findUnionDecl(tree, lookupName);
+    if (ud) {
+        if (!args.empty() && ud->typeParamList()) {
+            auto tps = ud->typeParamList()->typeParam();
+            for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                auto ids = tps[i]->IDENTIFIER();
+                if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+            }
+        }
+        for (auto* field : ud->unionField()) {
+            CompletionItem ci;
+            ci.label = field->IDENTIFIER()->getText();
+            ci.kind = CompletionKind::Field;
+            ci.detail = substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
+            items.push_back(std::move(ci));
+        }
+        return;
+    }
+
     // Cross-file struct
     if (project && project->isValid()) {
         for (auto& ns : project->registry().allNamespaces()) {
             auto* sym = project->registry().findSymbol(ns, lookupName);
-            if (!sym || sym->kind != ExportedSymbol::Struct) continue;
-            auto* decl = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
-            if (!decl) continue;
-            if (!args.empty() && decl->typeParamList()) {
-                auto tps = decl->typeParamList()->typeParam();
-                for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
-                    auto ids = tps[i]->IDENTIFIER();
-                    if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+            if (!sym) continue;
+            if (sym->kind == ExportedSymbol::Struct) {
+                auto* decl = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+                if (!decl) continue;
+                if (!args.empty() && decl->typeParamList()) {
+                    auto tps = decl->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
                 }
+                for (auto* field : decl->structField()) {
+                    CompletionItem ci;
+                    ci.label = field->IDENTIFIER()->getText();
+                    ci.kind = CompletionKind::Field;
+                    ci.detail = substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
+                    items.push_back(std::move(ci));
+                }
+                return;
             }
-            for (auto* field : decl->structField()) {
-                CompletionItem ci;
-                ci.label = field->IDENTIFIER()->getText();
-                ci.kind = CompletionKind::Field;
-                ci.detail = substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
-                items.push_back(std::move(ci));
+            if (sym->kind == ExportedSymbol::Union) {
+                auto* decl = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
+                if (!decl) continue;
+                if (!args.empty() && decl->typeParamList()) {
+                    auto tps = decl->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
+                for (auto* field : decl->unionField()) {
+                    CompletionItem ci;
+                    ci.label = field->IDENTIFIER()->getText();
+                    ci.kind = CompletionKind::Field;
+                    ci.detail = substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
+                    items.push_back(std::move(ci));
+                }
+                return;
             }
-            return;
         }
     }
 
     // Built-in struct from TypeRegistry (e.g. Error)
     if (auto* ti = typeRegistry_.lookup(structName)) {
-        if (ti->kind == TypeKind::Struct) {
+        if (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union) {
             for (auto& field : ti->fields) {
                 CompletionItem ci;
                 ci.label = field.name;
@@ -2559,7 +2631,26 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem>& items,
         if (auto* ud = tld->unionDecl()) {
             std::string name = ud->IDENTIFIER()->getText();
             if (!matchesPrefix(name, prefix)) continue;
-            items.push_back({name, CompletionKind::Struct, "union " + name});
+            CompletionItem item;
+            item.label = name;
+            item.kind = CompletionKind::Struct;
+            if (ud->typeParamList()) {
+                std::string params;
+                bool first = true;
+                for (auto* tp : ud->typeParamList()->typeParam()) {
+                    auto ids = tp->IDENTIFIER();
+                    if (!first) params += ", ";
+                    if (!ids.empty()) params += ids[0]->getText();
+                    if (tp->COLON() && ids.size() >= 2) params += ": " + ids[1]->getText();
+                    first = false;
+                }
+                item.detail = "union " + name + "<" + params + ">";
+                item.insertText = name + "<${1}>";
+                item.insertTextFormat = InsertTextFormat::Snippet;
+            } else {
+                item.detail = "union " + name;
+            }
+            items.push_back(std::move(item));
         }
         if (auto* ta = tld->typeAliasDecl()) {
             std::string name = ta->IDENTIFIER()->getText();
@@ -2944,7 +3035,7 @@ std::string CompletionProvider::resolveFieldType(
     if (parseGenericInstance(receiverType, rBase, rArgs))
         receiverLookup = rBase;
 
-    // 1) Same-file user struct
+    // 1) Same-file user struct/union
     if (tree) {
         for (auto* tld : tree->topLevelDecl()) {
             if (auto* sd = tld->structDecl()) {
@@ -2961,33 +3052,65 @@ std::string CompletionProvider::resolveFieldType(
                         return substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
                 }
             }
+            if (auto* ud = tld->unionDecl()) {
+                if (!ud->IDENTIFIER() || ud->IDENTIFIER()->getText() != receiverLookup) continue;
+                if (!rArgs.empty() && ud->typeParamList()) {
+                    auto tps = ud->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(rArgs.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = rArgs[i];
+                    }
+                }
+                for (auto* field : ud->unionField()) {
+                    if (field->IDENTIFIER() && field->IDENTIFIER()->getText() == fieldName)
+                        return substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
+                }
+            }
         }
     }
 
-    // 2) Cross-file user struct
+    // 2) Cross-file user struct/union
     if (project && project->isValid()) {
         for (auto& ns : project->registry().allNamespaces()) {
             auto* sym = project->registry().findSymbol(ns, receiverLookup);
-            if (!sym || sym->kind != ExportedSymbol::Struct) continue;
-            auto* decl = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
-            if (!decl) continue;
-            if (!rArgs.empty() && decl->typeParamList()) {
-                auto tps = decl->typeParamList()->typeParam();
-                for (size_t i = 0; i < std::min(rArgs.size(), tps.size()); i++) {
-                    auto ids = tps[i]->IDENTIFIER();
-                    if (!ids.empty()) subst[ids[0]->getText()] = rArgs[i];
+            if (!sym) continue;
+            if (sym->kind == ExportedSymbol::Struct) {
+                auto* decl = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+                if (!decl) continue;
+                if (!rArgs.empty() && decl->typeParamList()) {
+                    auto tps = decl->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(rArgs.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = rArgs[i];
+                    }
+                }
+                for (auto* field : decl->structField()) {
+                    if (field->IDENTIFIER() && field->IDENTIFIER()->getText() == fieldName)
+                        return substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
                 }
             }
-            for (auto* field : decl->structField()) {
-                if (field->IDENTIFIER() && field->IDENTIFIER()->getText() == fieldName)
-                    return substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
+
+            if (sym->kind == ExportedSymbol::Union) {
+                auto* decl = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
+                if (!decl) continue;
+                if (!rArgs.empty() && decl->typeParamList()) {
+                    auto tps = decl->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(rArgs.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = rArgs[i];
+                    }
+                }
+                for (auto* field : decl->unionField()) {
+                    if (field->IDENTIFIER() && field->IDENTIFIER()->getText() == fieldName)
+                        return substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
+                }
             }
         }
     }
 
-    // 3) Built-in struct from TypeRegistry (e.g. Error)
+    // 3) Built-in struct/union from TypeRegistry (e.g. Error)
     if (auto* ti = typeRegistry_.lookup(receiverType)) {
-        if (ti->kind == TypeKind::Struct) {
+        if (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union) {
             for (auto& field : ti->fields) {
                 if (field.name == fieldName && field.typeInfo)
                     return field.typeInfo->name;
@@ -3098,6 +3221,17 @@ CompletionProvider::findStructDecl(LuxParser::ProgramContext* tree,
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {
             if (sd->IDENTIFIER()->getText() == name) return sd;
+        }
+    }
+    return nullptr;
+}
+
+LuxParser::UnionDeclContext*
+CompletionProvider::findUnionDecl(LuxParser::ProgramContext* tree,
+                                  const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* ud = tld->unionDecl()) {
+            if (ud->IDENTIFIER()->getText() == name) return ud;
         }
     }
     return nullptr;

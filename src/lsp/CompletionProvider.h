@@ -242,6 +242,9 @@ private:
     LuxParser::StructDeclContext*
     findStructDecl(LuxParser::ProgramContext* tree, const std::string& name);
 
+    LuxParser::UnionDeclContext*
+    findUnionDecl(LuxParser::ProgramContext* tree, const std::string& name);
+
     LuxParser::EnumDeclContext*
     findEnumDecl(LuxParser::ProgramContext* tree, const std::string& name);
 

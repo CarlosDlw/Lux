@@ -162,7 +162,7 @@ int32 main() {
 | [Arrays](docs/language/arrays.md) | Fixed-size `[N]T`, indexing, methods, list comprehensions |
 | [Structs](docs/language/structs.md) | Definition, instantiation, field access, `extend` methods |
 | [Enums](docs/language/enums.md) | Definition, variants, `::` access |
-| [Unions](docs/language/unions.md) | Definition, shared memory layout |
+| [Unions](docs/language/unions.md) | Definition, shared memory layout, generic unions |
 | [Tuples](docs/language/tuples.md) | Lightweight anonymous product types |
 
 #### Type System

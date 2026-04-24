@@ -72,7 +72,7 @@ structField
 
 // union Value { int32 i; float32 f; *void ptr; }
 unionDecl
-    : UNION IDENTIFIER LBRACE unionField* RBRACE
+    : UNION IDENTIFIER typeParamList? LBRACE unionField* RBRACE
     ;
 
 unionField

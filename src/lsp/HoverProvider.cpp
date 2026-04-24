@@ -1560,18 +1560,40 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                                     const std::string& fieldName) -> std::string {
             if (ownerType.empty()) return "";
 
+            std::string lookupType = ownerType;
+            std::unordered_map<std::string, std::string> subst;
+            std::string base;
+            std::vector<std::string> args;
+            if (parseGenericInstance(ownerType, base, args)) {
+                lookupType = base;
+            }
+
             // Same-file structs
-            if (auto* sd = findStructDecl(tree, ownerType)) {
+            if (auto* sd = findStructDecl(tree, lookupType)) {
+                if (!args.empty() && sd->typeParamList()) {
+                    auto tps = sd->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
                 for (auto* f : sd->structField()) {
                     if (f->IDENTIFIER()->getText() == fieldName)
-                        return typeSpecToString(f->typeSpec());
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
             // Same-file unions
-            if (auto* ud = findUnionDecl(tree, ownerType)) {
+            if (auto* ud = findUnionDecl(tree, lookupType)) {
+                if (!args.empty() && ud->typeParamList()) {
+                    auto tps = ud->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
                 for (auto* f : ud->unionField()) {
                     if (f->IDENTIFIER()->getText() == fieldName)
-                        return typeSpecToString(f->typeSpec());
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
             // Built-in struct types
@@ -1637,16 +1659,39 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
         auto resolveFieldType = [&](const std::string& ownerType,
                                     const std::string& fieldName) -> std::string {
             if (ownerType.empty()) return "";
-            if (auto* sd = findStructDecl(tree, ownerType)) {
+
+            std::string lookupType = ownerType;
+            std::unordered_map<std::string, std::string> subst;
+            std::string base;
+            std::vector<std::string> args;
+            if (parseGenericInstance(ownerType, base, args)) {
+                lookupType = base;
+            }
+
+            if (auto* sd = findStructDecl(tree, lookupType)) {
+                if (!args.empty() && sd->typeParamList()) {
+                    auto tps = sd->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
                 for (auto* f : sd->structField()) {
                     if (f->IDENTIFIER()->getText() == fieldName)
-                        return typeSpecToString(f->typeSpec());
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
-            if (auto* ud = findUnionDecl(tree, ownerType)) {
+            if (auto* ud = findUnionDecl(tree, lookupType)) {
+                if (!args.empty() && ud->typeParamList()) {
+                    auto tps = ud->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
                 for (auto* f : ud->unionField()) {
                     if (f->IDENTIFIER()->getText() == fieldName)
-                        return typeSpecToString(f->typeSpec());
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
             if (auto* ti = typeRegistry_.lookup(ownerType)) {
@@ -2691,15 +2736,33 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         receiverTypeName = inferExprTypeName(receiver, locals, &flc);
     }
 
+    std::string lookupReceiverType = receiverTypeName;
+    std::unordered_map<std::string, std::string> subst;
+    std::string receiverBase;
+    std::vector<std::string> receiverArgs;
+    if (parseGenericInstance(receiverTypeName, receiverBase, receiverArgs)) {
+        lookupReceiverType = receiverBase;
+    }
+
     // Search user structs for this field
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {
             std::string sName = sd->IDENTIFIER()->getText();
-            if (!receiverTypeName.empty() && sName != receiverTypeName)
+            if (!lookupReceiverType.empty() && sName != lookupReceiverType)
                 continue;
+
+            subst.clear();
+            if (!receiverArgs.empty() && sd->typeParamList()) {
+                auto tps = sd->typeParamList()->typeParam();
+                for (size_t i = 0; i < std::min(receiverArgs.size(), tps.size()); i++) {
+                    auto ids = tps[i]->IDENTIFIER();
+                    if (!ids.empty()) subst[ids[0]->getText()] = receiverArgs[i];
+                }
+            }
             for (auto* f : sd->structField()) {
                 if (f->IDENTIFIER()->getText() == fieldName) {
-                    std::string md = "```lux\n(field) " + typeSpecToString(f->typeSpec())
+                    std::string md = "```lux\n(field) "
+                                   + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + sName + "." + fieldName + "\n```";
                     return makeResult(token, md);
                 }
@@ -2711,11 +2774,21 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ud = tld->unionDecl()) {
             std::string uName = ud->IDENTIFIER()->getText();
-            if (!receiverTypeName.empty() && uName != receiverTypeName)
+            if (!lookupReceiverType.empty() && uName != lookupReceiverType)
                 continue;
+
+            subst.clear();
+            if (!receiverArgs.empty() && ud->typeParamList()) {
+                auto tps = ud->typeParamList()->typeParam();
+                for (size_t i = 0; i < std::min(receiverArgs.size(), tps.size()); i++) {
+                    auto ids = tps[i]->IDENTIFIER();
+                    if (!ids.empty()) subst[ids[0]->getText()] = receiverArgs[i];
+                }
+            }
             for (auto* f : ud->unionField()) {
                 if (f->IDENTIFIER()->getText() == fieldName) {
-                    std::string md = "```lux\n(field) " + typeSpecToString(f->typeSpec())
+                    std::string md = "```lux\n(field) "
+                                   + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + uName + "." + fieldName + "\n```";
                     return makeResult(token, md);
                 }
@@ -2726,7 +2799,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
     // Search built-in structs from TypeRegistry (e.g. Error)
     if (!receiverTypeName.empty()) {
         auto* ti = typeRegistry_.lookup(receiverTypeName);
-        if (ti && ti->kind == TypeKind::Struct) {
+        if (ti && (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union)) {
             for (auto& f : ti->fields) {
                 if (f.name == fieldName) {
                     std::string md = "```lux\n(field) " + f.typeInfo->name
@@ -2767,17 +2840,53 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         for (auto& ns : project->registry().allNamespaces()) {
             auto syms = project->registry().getNamespaceSymbols(ns);
             for (auto* sym : syms) {
-                if (sym->kind != ExportedSymbol::Struct) continue;
-                auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
-                if (!sd) continue;
-                if (!receiverTypeName.empty() &&
-                    sd->IDENTIFIER()->getText() != receiverTypeName)
-                    continue;
-                for (auto* f : sd->structField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName) {
-                        std::string md = "```lux\n(field) " + typeSpecToString(f->typeSpec())
-                                       + " " + sd->IDENTIFIER()->getText() + "." + fieldName + "\n```";
-                        return makeResult(token, md);
+                if (sym->kind == ExportedSymbol::Struct) {
+                    auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+                    if (!sd) continue;
+                    if (!lookupReceiverType.empty() &&
+                        sd->IDENTIFIER()->getText() != lookupReceiverType)
+                        continue;
+
+                    subst.clear();
+                    if (!receiverArgs.empty() && sd->typeParamList()) {
+                        auto tps = sd->typeParamList()->typeParam();
+                        for (size_t i = 0; i < std::min(receiverArgs.size(), tps.size()); i++) {
+                            auto ids = tps[i]->IDENTIFIER();
+                            if (!ids.empty()) subst[ids[0]->getText()] = receiverArgs[i];
+                        }
+                    }
+                    for (auto* f : sd->structField()) {
+                        if (f->IDENTIFIER()->getText() == fieldName) {
+                            std::string md = "```lux\n(field) "
+                                           + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
+                                           + " " + sd->IDENTIFIER()->getText() + "." + fieldName + "\n```";
+                            return makeResult(token, md);
+                        }
+                    }
+                }
+
+                if (sym->kind == ExportedSymbol::Union) {
+                    auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
+                    if (!ud) continue;
+                    if (!lookupReceiverType.empty() &&
+                        ud->IDENTIFIER()->getText() != lookupReceiverType)
+                        continue;
+
+                    subst.clear();
+                    if (!receiverArgs.empty() && ud->typeParamList()) {
+                        auto tps = ud->typeParamList()->typeParam();
+                        for (size_t i = 0; i < std::min(receiverArgs.size(), tps.size()); i++) {
+                            auto ids = tps[i]->IDENTIFIER();
+                            if (!ids.empty()) subst[ids[0]->getText()] = receiverArgs[i];
+                        }
+                    }
+                    for (auto* f : ud->unionField()) {
+                        if (f->IDENTIFIER()->getText() == fieldName) {
+                            std::string md = "```lux\n(field) "
+                                           + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
+                                           + " " + ud->IDENTIFIER()->getText() + "." + fieldName + "\n```";
+                            return makeResult(token, md);
+                        }
                     }
                 }
             }
@@ -3544,6 +3653,22 @@ static std::string inferExprTypeName(
         return "";
     }
 
+    // Generic struct/union literal: Result<int32, string> { ... } → "Result<int32,string>"
+    if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
+        if (!gsl->IDENTIFIER().empty()) {
+            std::string base = gsl->IDENTIFIER(0)->getText();
+            std::string outType = base + "<";
+            auto args = gsl->typeSpec();
+            for (size_t i = 0; i < args.size(); i++) {
+                if (i > 0) outType += ",";
+                outType += args[i]->getText();
+            }
+            outType += ">";
+            return outType;
+        }
+        return "";
+    }
+
     // Sizeof → int64
     if (dynamic_cast<LuxParser::SizeofExprContext*>(expr)) return "int64";
 
@@ -3976,7 +4101,20 @@ std::string HoverProvider::formatEnumDecl(LuxParser::EnumDeclContext* decl) {
 
 std::string HoverProvider::formatUnionDecl(LuxParser::UnionDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lux\nunion " << decl->IDENTIFIER()->getText() << " {\n";
+    ss << "```lux\nunion " << decl->IDENTIFIER()->getText();
+    if (auto* tpl = decl->typeParamList()) {
+        ss << "<";
+        bool first = true;
+        for (auto* tp : tpl->typeParam()) {
+            if (!first) ss << ", ";
+            auto ids = tp->IDENTIFIER();
+            if (!ids.empty()) ss << ids[0]->getText();
+            if (tp->COLON() && ids.size() >= 2) ss << ": " << ids[1]->getText();
+            first = false;
+        }
+        ss << ">";
+    }
+    ss << " {\n";
     for (auto* f : decl->unionField()) {
         ss << "    " << typeSpecToString(f->typeSpec()) << " "
            << f->IDENTIFIER()->getText() << "\n";

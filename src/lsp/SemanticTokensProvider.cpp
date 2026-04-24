@@ -174,6 +174,14 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                       static_cast<uint32_t>(SemanticTokenMod::Definition));
+        if (ctx->typeParamList()) {
+            for (auto* tp : ctx->typeParamList()->typeParam()) {
+                auto ids = tp->IDENTIFIER();
+                if (!ids.empty())
+                    classifyIdent(map, ids[0], SemanticTokenType::Type,
+                                  static_cast<uint32_t>(SemanticTokenMod::Declaration));
+            }
+        }
     }
     else if (auto* ctx = dynamic_cast<LuxParser::UnionFieldContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Property,

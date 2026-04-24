@@ -964,6 +964,10 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
         if (structIt != genericStructTemplates_.end()) {
             return instantiateGenericStruct(baseName, structIt->second, resolvedArgs, cur);
         }
+        auto unionIt = genericUnionTemplates_.find(baseName);
+        if (unionIt != genericUnionTemplates_.end()) {
+            return instantiateGenericUnion(baseName, unionIt->second, resolvedArgs, cur);
+        }
 
         // Fall through to known extended types (Task, etc.)
         auto* extDesc = extTypeRegistry_.lookup(baseName);
@@ -2727,13 +2731,21 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
         // Find template and instantiate
         auto structIt = genericStructTemplates_.find(baseName);
-        if (structIt == genericStructTemplates_.end()) {
-            error(expr, "'" + baseName + "' is not a generic struct");
+        auto unionIt = genericUnionTemplates_.find(baseName);
+        if (structIt == genericStructTemplates_.end() &&
+            unionIt == genericUnionTemplates_.end()) {
+            error(expr, "'" + baseName + "' is not a generic struct or union");
             return nullptr;
         }
 
-        auto* instanceTI = instantiateGenericStruct(baseName, structIt->second,
-                                                      typeArgs, expr);
+        const TypeInfo* instanceTI = nullptr;
+        if (structIt != genericStructTemplates_.end()) {
+            instanceTI = instantiateGenericStruct(baseName, structIt->second,
+                                                  typeArgs, expr);
+        } else {
+            instanceTI = instantiateGenericUnion(baseName, unionIt->second,
+                                                 typeArgs, expr);
+        }
         if (!instanceTI) return nullptr;
 
         // Validate field initializers
@@ -2744,7 +2756,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         for (auto& f : instanceTI->fields)
             fieldTypeMap[f.name] = f.typeInfo;
 
-        // ids[0] is the struct name, ids[1..n] are field names
+        if (instanceTI->kind == TypeKind::Union && fieldExprs.size() != 1) {
+            error(expr, "union '" + mangledName +
+                         "' literal must initialize exactly 1 field, got " +
+                         std::to_string(fieldExprs.size()));
+        }
+
+        // ids[0] is the type name, ids[1..n] are field names
         for (size_t i = 0; i < fieldExprs.size(); i++) {
             auto fieldName = ids[i + 1]->getText();
             auto* exprType = resolveExprType(fieldExprs[i]);
@@ -2906,12 +2924,14 @@ bool Checker::isKnownType(const std::string& name) const {
     if (typeRegistry_.lookup(name)) return true;
     // Check user-defined generic struct templates
     if (genericStructTemplates_.count(name)) return true;
+    if (genericUnionTemplates_.count(name)) return true;
     // Check user imports for struct/enum/alias
     if (userImports_.count(name)) return true;
     // Check same-namespace types from other files
     if (nsRegistry_ && !currentNamespace_.empty()) {
         auto* sym = nsRegistry_->findSymbol(currentNamespace_, name);
         if (sym && (sym->kind == ExportedSymbol::Struct ||
+                    sym->kind == ExportedSymbol::Union ||
                     sym->kind == ExportedSymbol::Enum ||
                     sym->kind == ExportedSymbol::TypeAlias) &&
             sym->sourceFile != currentFile_)
@@ -3111,6 +3131,19 @@ void Checker::checkStructDecl(LuxParser::StructDeclContext* decl) {
 
 void Checker::checkUnionDecl(LuxParser::UnionDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
+
+    if (auto* tpl = decl->typeParamList()) {
+        if (genericUnionTemplates_.count(name)) {
+            error(decl, "generic union '" + name + "' already defined");
+            return;
+        }
+        GenericUnionTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = decl;
+        genericUnionTemplates_[name] = std::move(tmpl);
+        return;
+    }
 
     if (typeRegistry_.lookup(name)) {
         error(decl, "type '" + name + "' already defined");
@@ -4673,6 +4706,12 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
             return instantiateGenericStruct(innerBaseName, structIt->second,
                                              resolvedArgs, typeSpec);
         }
+        auto unionIt = genericUnionTemplates_.find(innerBaseName);
+        if (unionIt != genericUnionTemplates_.end()) {
+            arrayDims = 0;
+            return instantiateGenericUnion(innerBaseName, unionIt->second,
+                                           resolvedArgs, typeSpec);
+        }
         // Otherwise fall back to normal resolution (built-in generics, etc.)
     }
     // Default: normal resolution (no substitution needed for this node)
@@ -4844,6 +4883,85 @@ const TypeInfo* Checker::instantiateGenericStruct(
 
     instantiatingGenerics_.erase(mangledName);
     return result;
+}
+
+const TypeInfo* Checker::instantiateGenericUnion(
+    const std::string& baseName,
+    const GenericUnionTemplate& tmpl,
+    const std::vector<const TypeInfo*>& typeArgs,
+    antlr4::ParserRuleContext* ctx) {
+
+    if (typeArgs.size() != tmpl.typeParams.size()) {
+        error(ctx, "generic union '" + baseName + "' expects " +
+                   std::to_string(tmpl.typeParams.size()) + " type parameter(s), got " +
+                   std::to_string(typeArgs.size()));
+        return nullptr;
+    }
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+
+    for (auto& dt : dynamicTypes_) {
+        if (dt->name == mangledName)
+            return dt.get();
+    }
+    if (auto* existing = typeRegistry_.lookup(mangledName))
+        return existing;
+
+    if (instantiatingGenerics_.count(mangledName)) {
+        error(ctx, "recursive generic instantiation detected for '" + mangledName + "'");
+        return nullptr;
+    }
+    instantiatingGenerics_.insert(mangledName);
+
+    std::unordered_map<std::string, const TypeInfo*> subst;
+    for (size_t i = 0; i < tmpl.typeParams.size(); i++) {
+        auto* tpCtx = tmpl.decl->typeParamList()->typeParam(i);
+        if (tpCtx->COLON()) {
+            auto constraintName = tpCtx->IDENTIFIER(1)->getText();
+            auto* constraint = resolveTypeParamConstraint(constraintName, ctx);
+            if (!satisfiesConstraint(typeArgs[i], constraint, tmpl.typeParams[i], ctx)) {
+                instantiatingGenerics_.erase(mangledName);
+                return nullptr;
+            }
+        }
+        subst[tmpl.typeParams[i]] = typeArgs[i];
+    }
+
+    TypeInfo skeleton;
+    skeleton.name = mangledName;
+    skeleton.kind = TypeKind::Union;
+    skeleton.bitWidth = 0;
+    skeleton.isSigned = false;
+    skeleton.isGenericInstance = true;
+    skeleton.genericBaseName = baseName;
+    skeleton.typeParamNames = tmpl.typeParams;
+    skeleton.typeArgs = typeArgs;
+    skeleton.genericStructDecl = static_cast<antlr4::ParserRuleContext*>(tmpl.decl);
+    typeRegistry_.registerType(skeleton);
+
+    TypeInfo ti = skeleton;
+    std::unordered_set<std::string> seen;
+    for (auto* field : tmpl.decl->unionField()) {
+        unsigned fieldDims = 0;
+        auto* fieldTI = resolveTypeSpecWithSubst(field->typeSpec(), subst, fieldDims);
+        if (!fieldTI) {
+            error(field, "cannot resolve field type in generic union '" + baseName + "'");
+            instantiatingGenerics_.erase(mangledName);
+            return nullptr;
+        }
+        auto fieldName = field->IDENTIFIER()->getText();
+        if (!seen.insert(fieldName).second) {
+            error(field, "duplicate field '" + fieldName +
+                         "' in generic union '" + baseName + "'");
+            instantiatingGenerics_.erase(mangledName);
+            return nullptr;
+        }
+        ti.fields.push_back({ fieldName, fieldTI });
+    }
+
+    typeRegistry_.registerType(std::move(ti));
+    instantiatingGenerics_.erase(mangledName);
+    return typeRegistry_.lookup(mangledName);
 }
 
 const TypeInfo* Checker::instantiateGenericFunc(

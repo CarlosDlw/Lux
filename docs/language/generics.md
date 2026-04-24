@@ -279,7 +279,7 @@ int32 result = await t;
 
 ## User-Defined Generics
 
-Beyond the built-in collection types, Lux supports user-defined generic structs, methods, and functions. Generics are resolved at compile time via **monomorphization** — each concrete instantiation (`Node<int32>`, `Node<string>`) becomes a fully independent type with no runtime overhead.
+Beyond the built-in collection types, Lux supports user-defined generic structs, unions, methods, and functions. Generics are resolved at compile time via **monomorphization** — each concrete instantiation (`Node<int32>`, `Node<string>`, `Result<int32, string>`) becomes a fully independent type with no runtime overhead.
 
 ---
 
@@ -299,6 +299,28 @@ struct Pair<A, B> {
 ```
 
 Type parameters can be any identifier. They act as placeholders for concrete types supplied at the call site.
+
+---
+
+### Generic Unions
+
+Generic unions use the same type parameter syntax:
+
+```lux
+union Result<T, E> {
+    T ok;
+    E err;
+}
+```
+
+Concrete instantiations can be used anywhere a normal type can be used:
+
+```lux
+Result<int32, string> value = Result<int32, string> { ok: 42 };
+Result<int32, string> failure = Result<int32, string> { err: "boom" };
+```
+
+Union semantics do not change with generics: all fields still share the same memory location, so generic unions are still raw unions rather than tagged variants.
 
 ---
 

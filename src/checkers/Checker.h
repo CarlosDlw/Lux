@@ -233,6 +233,10 @@ private:
         std::vector<std::string>      typeParams;  // e.g. {"T"} or {"K", "V"}
         LuxParser::StructDeclContext* decl;        // original AST node (non-owning)
     };
+    struct GenericUnionTemplate {
+        std::vector<std::string>     typeParams;
+        LuxParser::UnionDeclContext* decl;
+    };
     struct GenericFuncTemplate {
         std::vector<std::string>       typeParams;
         LuxParser::FunctionDeclContext* decl;
@@ -242,6 +246,7 @@ private:
         LuxParser::ExtendDeclContext*  decl;
     };
     std::unordered_map<std::string, GenericStructTemplate>  genericStructTemplates_;
+    std::unordered_map<std::string, GenericUnionTemplate>   genericUnionTemplates_;
     std::unordered_map<std::string, GenericFuncTemplate>    genericFuncTemplates_;
     std::unordered_map<std::string, GenericExtendTemplate>  genericExtendTemplates_;
     // Tracks instantiations in progress for cycle detection
@@ -256,6 +261,12 @@ private:
     const TypeInfo* instantiateGenericStruct(
         const std::string& baseName,
         const GenericStructTemplate& tmpl,
+        const std::vector<const TypeInfo*>& typeArgs,
+        antlr4::ParserRuleContext* ctx);
+
+    const TypeInfo* instantiateGenericUnion(
+        const std::string& baseName,
+        const GenericUnionTemplate& tmpl,
         const std::vector<const TypeInfo*>& typeArgs,
         antlr4::ParserRuleContext* ctx);
 

@@ -6,12 +6,17 @@ Unions are composite types where all fields share the same memory location. Writ
 
 ## Declaration
 
-A union is defined with the `union` keyword followed by a name and a block of typed fields:
+A union is defined with the `union` keyword followed by a name and a block of typed fields. Unions can also declare type parameters:
 
 ```tm
 union IntOrFloat {
     int32 i;
     float32 f;
+}
+
+union Result<T, E> {
+    T ok;
+    E err;
 }
 ```
 
@@ -26,7 +31,12 @@ Unions are instantiated with the same literal syntax as structs, specifying the 
 ```tm
 IntOrFloat u = IntOrFloat { i: 42 };
 printf(c"i = %d\n", u.i);   // i = 42
+
+Result<int32, string> ok = Result<int32, string> { ok: 42 };
+Result<int32, string> err = Result<int32, string> { err: "boom" };
 ```
+
+Union literals must initialize exactly one field, including for generic unions.
 
 ---
 

@@ -1400,23 +1400,49 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem>& items,
 
             CompletionItem ci;
             ci.label = sym->name;
-            ci.detail = "[" + currentNs + "]";
 
             switch (sym->kind) {
-                case ExportedSymbol::Function:
+                case ExportedSymbol::Function: {
                     ci.kind = CompletionKind::Function;
+                    auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                    if (fd) {
+                        ci.detail = formatFuncSignature(fd) + " [" + currentNs + "]";
+                        ci.documentation = "```lux\n" + formatFuncSignature(fd) + "\n```";
+
+                        if (auto* params = fd->paramList(); params && !params->param().empty()) {
+                            std::string snippet = sym->name + "(";
+                            auto pList = params->param();
+                            for (size_t i = 0; i < pList.size(); i++) {
+                                if (i > 0) snippet += ", ";
+                                snippet += "${" + std::to_string(i + 1) + ":" +
+                                           pList[i]->IDENTIFIER()->getText() + "}";
+                            }
+                            snippet += ")";
+                            ci.insertText = snippet;
+                            ci.insertTextFormat = InsertTextFormat::Snippet;
+                        } else {
+                            ci.insertText = sym->name + "()";
+                        }
+                    } else {
+                        ci.detail = "function [" + currentNs + "]";
+                    }
                     break;
+                }
                 case ExportedSymbol::Struct:
                     ci.kind = CompletionKind::Struct;
+                    ci.detail = "struct " + sym->name + " [" + currentNs + "]";
                     break;
                 case ExportedSymbol::Enum:
                     ci.kind = CompletionKind::Enum;
+                    ci.detail = "enum " + sym->name + " [" + currentNs + "]";
                     break;
                 case ExportedSymbol::Union:
                     ci.kind = CompletionKind::Struct;
+                    ci.detail = "union " + sym->name + " [" + currentNs + "]";
                     break;
                 case ExportedSymbol::TypeAlias:
                     ci.kind = CompletionKind::Class;
+                    ci.detail = "type " + sym->name + " [" + currentNs + "]";
                     break;
                 default:
                     continue;

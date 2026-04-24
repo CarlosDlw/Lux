@@ -16,6 +16,7 @@ void lux_println_f64(double val);
 void lux_println_bool(int val);
 void lux_println_char(char val);
 void lux_println_str(const char* data, unsigned long len);
+void lux_println_cstr(const char* str);  // C string (null-terminated)
 
 void lux_print_i1(int val);
 void lux_print_i8(signed char val);
@@ -28,6 +29,7 @@ void lux_print_f64(double val);
 void lux_print_bool(int val);
 void lux_print_char(char val);
 void lux_print_str(const char* data, unsigned long len);
+void lux_print_cstr(const char* str);  // C string (null-terminated)
 
 // std::log builtins — unsigned
 void lux_println_u1(int val);
@@ -56,6 +58,7 @@ void lux_eprintln_f64(double val);
 void lux_eprintln_bool(int val);
 void lux_eprintln_char(char val);
 void lux_eprintln_str(const char* data, unsigned long len);
+void lux_eprintln_cstr(const char* str);  // C string (null-terminated)
 
 // std::log builtins — eprint (stderr, no newline) — signed
 void lux_eprint_i1(int val);
@@ -69,6 +72,7 @@ void lux_eprint_f64(double val);
 void lux_eprint_bool(int val);
 void lux_eprint_char(char val);
 void lux_eprint_str(const char* data, unsigned long len);
+void lux_eprint_cstr(const char* str);  // C string (null-terminated)
 
 // std::log builtins — eprintln (stderr + newline) — unsigned
 void lux_eprintln_u1(int val);
@@ -99,6 +103,8 @@ void lux_dbg_bool(const char* file, unsigned long flen, int line, int val);
 void lux_dbg_char(const char* file, unsigned long flen, int line, char val);
 void lux_dbg_str(const char* file, unsigned long flen, int line,
                     const char* data, unsigned long len);
+void lux_dbg_cstr(const char* file, unsigned long flen, int line,
+                    const char* str);  // C string (null-terminated)
 
 void lux_dbg_u1(const char* file, unsigned long flen, int line, int val);
 void lux_dbg_u8(const char* file, unsigned long flen, int line, unsigned char val);

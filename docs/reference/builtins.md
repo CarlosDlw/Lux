@@ -19,6 +19,8 @@ use std::log::{println, print, eprintln, eprint, dbg, sprintf};
 | `dbg` **(P)** | `(_any) → _any` | Print value to stderr and return it |
 | `sprintf` **(P)(V)** | `(string, ...) → string` | Format string with arguments |
 
+`println`, `print`, `eprintln`, `eprint`, and `dbg` also accept C strings (`*char`) directly.
+
 ---
 
 ## std::io

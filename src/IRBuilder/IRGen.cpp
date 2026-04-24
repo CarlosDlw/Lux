@@ -9365,7 +9365,12 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
         ti.kind = TypeKind::Pointer;
         ti.bitWidth = 0;
         ti.isSigned = false;
-        ti.builtinSuffix = "ptr";
+        // For *char, use "cstr" suffix to support C string functions in std::log
+        if (pointeeTI && pointeeTI->name == "char") {
+            ti.builtinSuffix = "cstr";
+        } else {
+            ti.builtinSuffix = "ptr";
+        }
         ti.pointeeType = pointeeTI;
         typeRegistry_.registerType(std::move(ti));
         return typeRegistry_.lookup(ptrName);

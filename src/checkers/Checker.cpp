@@ -558,7 +558,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                         ti.pointeeType = charTI;
                         ti.bitWidth = 0;
                         ti.isSigned = false;
-                        ti.builtinSuffix = "ptr";
+                        ti.builtinSuffix = "cstr";  // *char uses cstr suffix for std::log
                         typeRegistry_.registerType(std::move(ti));
                         ptrTI = typeRegistry_.lookup(ptrName);
                     }
@@ -1080,7 +1080,12 @@ const TypeInfo* Checker::getPointerType(const TypeInfo* pointee) {
     ti->kind = TypeKind::Pointer;
     ti->bitWidth = 0;
     ti->isSigned = false;
-    ti->builtinSuffix = "ptr";
+    // For *char, use "cstr" suffix to support C string functions in std::log
+    if (pointee->name == "char") {
+        ti->builtinSuffix = "cstr";
+    } else {
+        ti->builtinSuffix = "ptr";
+    }
     ti->pointeeType = pointee;
     const TypeInfo* raw = ti.get();
     dynamicTypes_.push_back(std::move(ti));

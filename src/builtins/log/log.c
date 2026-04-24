@@ -18,6 +18,8 @@ void lux_println_bool(int val)        { printf("%s\n", (val & 1) ? "true" : "fal
 void lux_println_char(char val)        { printf("%c\n", val); }
 void lux_println_str(const char* data, unsigned long len) { printf("%.*s\n", (int)len, data); }
 
+void lux_println_cstr(const char* str) { printf("%s\n", str ? str : "(null)"); }
+
 static void print_i128_digits(__int128 val) {
     if (val > 9) print_i128_digits(val / 10);
     putchar('0' + (int)(val % 10));
@@ -44,6 +46,8 @@ void lux_print_f64(double val)       { printf("%.17g", val); }
 void lux_print_bool(int val)        { printf("%s", (val & 1) ? "true" : "false"); }
 void lux_print_char(char val)        { printf("%c", val); }
 void lux_print_str(const char* data, unsigned long len)   { printf("%.*s", (int)len, data); }
+
+void lux_print_cstr(const char* str) { printf("%s", str ? str : "(null)"); }
 
 void lux_print_i128(__int128 val) {
     if (val < 0) {
@@ -96,6 +100,8 @@ void lux_eprintln_bool(int val)        { fprintf(stderr, "%s\n", (val & 1) ? "tr
 void lux_eprintln_char(char val)       { fprintf(stderr, "%c\n", val); }
 void lux_eprintln_str(const char* data, unsigned long len) { fprintf(stderr, "%.*s\n", (int)len, data); }
 
+void lux_eprintln_cstr(const char* str) { fprintf(stderr, "%s\n", str ? str : "(null)"); }
+
 void lux_eprintln_i128(__int128 val) {
     if (val < 0) {
         fputc('-', stderr);
@@ -125,6 +131,8 @@ void lux_eprint_f64(double val)      { fprintf(stderr, "%.17g", val); }
 void lux_eprint_bool(int val)        { fprintf(stderr, "%s", (val & 1) ? "true" : "false"); }
 void lux_eprint_char(char val)       { fprintf(stderr, "%c", val); }
 void lux_eprint_str(const char* data, unsigned long len) { fprintf(stderr, "%.*s", (int)len, data); }
+
+void lux_eprint_cstr(const char* str) { fprintf(stderr, "%s", str ? str : "(null)"); }
 
 void lux_eprint_i128(__int128 val) {
     if (val < 0) {
@@ -217,6 +225,12 @@ void lux_dbg_str(const char* file, unsigned long flen, int line,
                     const char* data, unsigned long len) {
     fprintf(stderr, "[%.*s:%d] = \"%.*s\"\n",
             (int)flen, file, line, (int)len, data);
+}
+
+void lux_dbg_cstr(const char* file, unsigned long flen, int line,
+            const char* str) {
+    fprintf(stderr, "[%.*s:%d] = \"%s\"\n",
+        (int)flen, file, line, str ? str : "(null)");
 }
 
 void lux_dbg_i128(const char* file, unsigned long flen,

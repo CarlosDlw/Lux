@@ -41,7 +41,7 @@ void NamespaceRegistry::registerFile(const std::string& namespaceName,
         else if (auto* enumDecl = topLevel->enumDecl()) {
             ExportedSymbol sym;
             sym.kind          = ExportedSymbol::Enum;
-            sym.name          = enumDecl->IDENTIFIER(0)->getText();
+            sym.name          = enumDecl->IDENTIFIER()->getText();
             sym.namespaceName = namespaceName;
             sym.sourceFile    = filePath;
             sym.decl          = enumDecl;

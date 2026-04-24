@@ -39,6 +39,10 @@ public:
 
     virtual std::any visitEnumDecl(LuxParser::EnumDeclContext *context) = 0;
 
+    virtual std::any visitEnumVariant(LuxParser::EnumVariantContext *context) = 0;
+
+    virtual std::any visitEnumPayloadField(LuxParser::EnumPayloadFieldContext *context) = 0;
+
     virtual std::any visitStructDecl(LuxParser::StructDeclContext *context) = 0;
 
     virtual std::any visitStructField(LuxParser::StructFieldContext *context) = 0;
@@ -151,6 +155,8 @@ public:
 
     virtual std::any visitTypeofExpr(LuxParser::TypeofExprContext *context) = 0;
 
+    virtual std::any visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVariantExprContext *context) = 0;
+
     virtual std::any visitRshiftExpr(LuxParser::RshiftExprContext *context) = 0;
 
     virtual std::any visitArrowMethodCallExpr(LuxParser::ArrowMethodCallExprContext *context) = 0;
@@ -219,6 +225,8 @@ public:
 
     virtual std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext *context) = 0;
 
+    virtual std::any visitGenericEnumAccessExpr(LuxParser::GenericEnumAccessExprContext *context) = 0;
+
     virtual std::any visitEnumAccessExpr(LuxParser::EnumAccessExprContext *context) = 0;
 
     virtual std::any visitParenExpr(LuxParser::ParenExprContext *context) = 0;
@@ -228,6 +236,8 @@ public:
     virtual std::any visitArrayLitExpr(LuxParser::ArrayLitExprContext *context) = 0;
 
     virtual std::any visitMethodCallExpr(LuxParser::MethodCallExprContext *context) = 0;
+
+    virtual std::any visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext *context) = 0;
 
     virtual std::any visitStructLitExpr(LuxParser::StructLitExprContext *context) = 0;
 

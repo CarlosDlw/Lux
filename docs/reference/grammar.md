@@ -84,11 +84,25 @@ union Value {
 ### Enum
 
 ```
-enumDecl → 'enum' IDENTIFIER '{' IDENTIFIER (',' IDENTIFIER)* ','? '}'
+enumDecl → 'enum' IDENTIFIER typeParamList? '{' enumVariant (',' enumVariant)* ','? '}'
+enumVariant → IDENTIFIER
+            | IDENTIFIER '(' typeSpec (',' typeSpec)* ')'
+            | IDENTIFIER '{' enumPayloadField (',' enumPayloadField)* ','? '}'
+enumPayloadField → IDENTIFIER ':' typeSpec
 ```
 
 ```tm
 enum Color { Red, Green, Blue }
+
+enum Result<V, E> {
+    Ok(V),
+    Err(E),
+}
+
+enum Shape {
+    Circle { r: float64 },
+    Rect { w: float64, h: float64 },
+}
 ```
 
 ### Extern
@@ -303,7 +317,7 @@ expression '.' IDENTIFIER                       // field access
 expression '->' IDENTIFIER                      // arrow access
 expression '[' expression ']'                   // index
 expression 'as' typeSpec                        // cast
-expression 'is' typeSpec                        // type check
+expression 'is' typeSpec ('::' IDENTIFIER ('(' IDENTIFIER ')')?)?  // type/variant check
 expression '++'                                 // post-increment
 expression '--'                                 // post-decrement
 ```
@@ -313,6 +327,9 @@ expression '--'                                 // post-decrement
 ```
 IDENTIFIER '{' (IDENTIFIER ':' expression (',' IDENTIFIER ':' expression)*)? '}'  // struct literal
 IDENTIFIER '::' IDENTIFIER '(' argList? ')'                                        // static method
+IDENTIFIER '<' typeSpec (',' typeSpec)* '>' '::' IDENTIFIER                        // generic enum access
+IDENTIFIER '::' IDENTIFIER '{' (IDENTIFIER ':' expression (',' IDENTIFIER ':' expression)*)? '}' // enum named payload literal
+IDENTIFIER '<' typeSpec (',' typeSpec)* '>' '::' IDENTIFIER '{' (IDENTIFIER ':' expression (',' IDENTIFIER ':' expression)*)? '}' // generic enum named payload literal
 IDENTIFIER '::' IDENTIFIER                                                         // enum access
 ```
 

@@ -93,6 +93,9 @@ public:
     std::any visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) override;
     std::any visitArrowAccessExpr(LuxParser::ArrowAccessExprContext* ctx) override;
     std::any visitEnumAccessExpr(LuxParser::EnumAccessExprContext* ctx) override;
+    std::any visitGenericEnumAccessExpr(LuxParser::GenericEnumAccessExprContext* ctx) override;
+    std::any visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext* ctx) override;
+    std::any visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVariantExprContext* ctx) override;
     std::any visitStaticMethodCallExpr(LuxParser::StaticMethodCallExprContext* ctx) override;
     std::any visitNullLitExpr(LuxParser::NullLitExprContext* ctx)     override;
     std::any visitAddrOfExpr(LuxParser::AddrOfExprContext* ctx)       override;
@@ -267,6 +270,18 @@ private:
     // Function return TypeInfo cache (for tuple and complex return types)
     std::unordered_map<std::string, const TypeInfo*> fnReturnTypes_;
 
+    // Pending payload binding from `expr is EnumType::Variant(name)` expressions.
+    // Set by visitIsExpr when a binding identifier is present; consumed by
+    // visitIfStmt before emitting the true-branch body so the binding is
+    // accessible as a local variable inside that block.
+    struct PendingIsBinding {
+        std::string     name;       // binding variable name
+        llvm::Value*    payloadPtr; // bitcast pointer to the payload field
+        const TypeInfo* typeInfo;   // semantic type of the payload
+        llvm::Type*     llvmType;   // LLVM type of the payload
+    };
+    std::optional<PendingIsBinding> pendingIsBinding_;
+
     // Lazily declare a C function from CBindings when first called.
     llvm::Function* declareCFunction(const std::string& name);
 
@@ -289,6 +304,10 @@ private:
         std::vector<std::string>     typeParams;
         LuxParser::UnionDeclContext* decl;
     };
+    struct GenericEnumTemplate {
+        std::vector<std::string>    typeParams;
+        LuxParser::EnumDeclContext* decl;
+    };
     struct GenericFuncTemplate {
         std::vector<std::string>        typeParams;
         LuxParser::FunctionDeclContext* decl;
@@ -299,6 +318,7 @@ private:
     };
     std::unordered_map<std::string, GenericStructTemplate>  genericStructTemplates_;
     std::unordered_map<std::string, GenericUnionTemplate>   genericUnionTemplates_;
+    std::unordered_map<std::string, GenericEnumTemplate>    genericEnumTemplates_;
     std::unordered_map<std::string, GenericFuncTemplate>    genericFuncTemplates_;
     std::unordered_map<std::string, GenericExtendTemplate>  genericExtendTemplates_;
     // Prevents re-instantiation (also detects cycles)
@@ -332,6 +352,11 @@ private:
         const GenericUnionTemplate& tmpl,
         const std::vector<const TypeInfo*>& typeArgs);
 
+    const TypeInfo* instantiateGenericEnum(
+        const std::string& baseName,
+        const GenericEnumTemplate& tmpl,
+        const std::vector<const TypeInfo*>& typeArgs);
+
     // Instantiates a generic function (declares LLVM function, emits body).
     // Returns the LLVM Function* (or nullptr on error).
     llvm::Function* instantiateGenericFunc(
@@ -362,6 +387,10 @@ private:
     llvm::FunctionCallee declareBuiltin(const std::string& name,
                                         llvm::Type* retType,
                                         llvm::ArrayRef<llvm::Type*> argTypes);
+    llvm::Type*         getEnumVariantPayloadType(const EnumVariantInfo& variantInfo);
+    llvm::Value*        buildEnumVariantValue(const TypeInfo* enumType,
+                                             const EnumVariantInfo& variantInfo,
+                                             const std::vector<llvm::Value*>& payloadValues);
     llvm::StructType*   getOrCreateVecStructType();
     llvm::StructType*   getOrCreateMapStructType();
     llvm::StructType*   getOrCreateSetStructType();

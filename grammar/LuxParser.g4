@@ -56,8 +56,19 @@ typeAliasDecl
     ;
 
 // enum Color { Red, Green, Blue }
+// enum Result<T, E> { Ok(T), Err(E) }
 enumDecl
-    : ENUM IDENTIFIER LBRACE IDENTIFIER (COMMA IDENTIFIER)* COMMA? RBRACE
+    : ENUM IDENTIFIER typeParamList? LBRACE enumVariant (COMMA enumVariant)* COMMA? RBRACE
+    ;
+
+enumVariant
+    : IDENTIFIER
+    | IDENTIFIER LPAREN typeSpec (COMMA typeSpec)* RPAREN
+    | IDENTIFIER LBRACE enumPayloadField (COMMA enumPayloadField)* COMMA? RBRACE
+    ;
+
+enumPayloadField
+    : IDENTIFIER COLON typeSpec
     ;
 
 // struct Point { int32 x; int32 y; }
@@ -377,13 +388,16 @@ expression
     | expression ARROW FLOAT_LIT                               # chainedTupleArrowIndexExpr
     | expression LBRACKET expression RBRACKET                  # indexExpr
     | expression AS typeSpec                                   # castExpr
-    | expression IS typeSpec                                   # isExpr
+    | expression IS typeSpec (SCOPE IDENTIFIER (LPAREN IDENTIFIER RPAREN)?)?   # isExpr
     | expression INCR                                          # postIncrExpr
     | expression DECR                                          # postDecrExpr
     // Special syntax
     | IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # structLitExpr
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # genericStructLitExpr
     | IDENTIFIER SCOPE IDENTIFIER LPAREN argList? RPAREN        # staticMethodCallExpr
+    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER  # genericEnumAccessExpr
+    | IDENTIFIER SCOPE IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE # enumNamedVariantExpr
+    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE # genericEnumNamedVariantExpr
     | IDENTIFIER SCOPE IDENTIFIER                              # enumAccessExpr
     // Unary prefix
     | STAR expression                                          # derefExpr

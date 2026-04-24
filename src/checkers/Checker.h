@@ -237,6 +237,10 @@ private:
         std::vector<std::string>     typeParams;
         LuxParser::UnionDeclContext* decl;
     };
+    struct GenericEnumTemplate {
+        std::vector<std::string>    typeParams;
+        LuxParser::EnumDeclContext* decl;
+    };
     struct GenericFuncTemplate {
         std::vector<std::string>       typeParams;
         LuxParser::FunctionDeclContext* decl;
@@ -247,6 +251,7 @@ private:
     };
     std::unordered_map<std::string, GenericStructTemplate>  genericStructTemplates_;
     std::unordered_map<std::string, GenericUnionTemplate>   genericUnionTemplates_;
+    std::unordered_map<std::string, GenericEnumTemplate>    genericEnumTemplates_;
     std::unordered_map<std::string, GenericFuncTemplate>    genericFuncTemplates_;
     std::unordered_map<std::string, GenericExtendTemplate>  genericExtendTemplates_;
     // Tracks instantiations in progress for cycle detection
@@ -267,6 +272,12 @@ private:
     const TypeInfo* instantiateGenericUnion(
         const std::string& baseName,
         const GenericUnionTemplate& tmpl,
+        const std::vector<const TypeInfo*>& typeArgs,
+        antlr4::ParserRuleContext* ctx);
+
+    const TypeInfo* instantiateGenericEnum(
+        const std::string& baseName,
+        const GenericEnumTemplate& tmpl,
         const std::vector<const TypeInfo*>& typeArgs,
         antlr4::ParserRuleContext* ctx);
 

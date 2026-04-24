@@ -37,6 +37,19 @@ struct FieldInfo {
     bool            autoFill = false;  // compiler fills this field automatically
 };
 
+enum class EnumPayloadKind {
+    Unit,
+    Tuple,
+    Named,
+};
+
+struct EnumVariantInfo {
+    std::string name;
+    unsigned discriminant = 0;
+    EnumPayloadKind payloadKind = EnumPayloadKind::Unit;
+    std::vector<FieldInfo> payloadFields;
+};
+
 struct TypeInfo {
     std::string name;           // language name: "int32", "uint64", "float", etc.
     TypeKind    kind;
@@ -45,6 +58,7 @@ struct TypeInfo {
     std::string builtinSuffix;  // suffix for C builtins: "i32", "u64", "f32", "str", "bool"
     std::vector<FieldInfo> fields;          // non-empty only for Struct
     std::vector<std::string> enumVariants;  // non-empty only for Enum
+    std::vector<EnumVariantInfo> enumVariantInfos; // detailed variant metadata for Enum
     const TypeInfo* pointeeType = nullptr;   // non-null only for Pointer
     const TypeInfo* returnType = nullptr;                // non-null only for Function
     std::vector<const TypeInfo*> paramTypes;              // non-empty only for Function
@@ -64,6 +78,7 @@ struct TypeInfo {
     std::vector<const TypeInfo*> typeArgs;             // [int32] — resolved concrete types
     // Opaque pointer to the original struct AST node — cast to StructDeclContext* at use sites
     antlr4::ParserRuleContext* genericStructDecl = nullptr;
+    antlr4::ParserRuleContext* genericEnumDecl = nullptr;
 
     llvm::Type* toLLVMType(llvm::LLVMContext& ctx,
                            const llvm::DataLayout& dl) const;

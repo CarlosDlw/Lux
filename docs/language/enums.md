@@ -1,12 +1,14 @@
 # Enums
 
-Enums define a type with a fixed set of named variants. Each variant is represented as a sequential integer starting from 0.
+Enums define tagged variant types. A variant can be unit (no payload), tuple payload, or named payload. Enums can also be generic.
 
 ---
 
 ## Declaration
 
-An enum is defined with the `enum` keyword followed by a name and a block of comma-separated variants:
+An enum is defined with the `enum` keyword, a name, optional type parameters, and a comma-separated list of variants.
+
+### Unit variants
 
 ```tm
 enum Color {
@@ -25,7 +27,34 @@ enum Direction {
 }
 ```
 
-Variants are automatically assigned integer values starting from 0: `Red = 0`, `Green = 1`, `Blue = 2`.
+### Tuple payload variants
+
+```tm
+enum Token {
+    Eof,
+    Number(float64),
+    Ident(string),
+}
+```
+
+### Named payload variants
+
+```tm
+enum Shape {
+    Unit,
+    Circle { r: float64 },
+    Rect { w: float64, h: float64 },
+}
+```
+
+### Generic enums
+
+```tm
+enum Result<V, E> {
+    Ok(V),
+    Err(E),
+}
+```
 
 ---
 
@@ -42,6 +71,44 @@ println(g);   // 1
 
 Color b = Color::Blue;
 println(b);   // 2
+```
+
+For payload variants, construct values by passing payload data:
+
+```tm
+Token t1 = Token::Eof;
+Token t2 = Token::Number(42.0);
+Token t3 = Token::Ident("lux");
+
+Shape s1 = Shape::Circle { r: 4.0 };
+Shape s2 = Shape::Rect { w: 10.0, h: 6.0 };
+
+Result<int32, string> ok = Result<int32, string>::Ok(123);
+Result<int32, string> err = Result<int32, string>::Err("division by zero");
+```
+
+The generic enum access form is:
+
+```tm
+EnumName<T1, T2>::Variant
+```
+
+And with payload constructor:
+
+```tm
+EnumName<T1, T2>::Variant(...)
+```
+
+Named payload variants use braces:
+
+```tm
+EnumName::Variant { field: value }
+```
+
+or
+
+```tm
+EnumName<T>::Variant { field: value }
 ```
 
 ---
@@ -65,6 +132,32 @@ switch c {
     }
 }
 ```
+
+You can also switch on payload variants by matching against concrete constructor expressions when needed.
+
+---
+
+## Variant Checks with is
+
+`is` supports both type checks and enum variant identity checks.
+
+```tm
+Result<int32, string> res = Result<int32, string>::Err("boom");
+
+if res is Result<int32, string>::Err {
+    println("error variant");
+}
+```
+
+You can optionally bind payload in the condition:
+
+```tm
+if res is Result<int32, string>::Err(message) {
+    println(message);
+}
+```
+
+Binder variables are scoped to the branch block where the condition is true.
 
 ---
 
@@ -91,22 +184,17 @@ Particle p = Particle { pos: pos, speed: 1, color: Color::Red, active: true };
 
 ---
 
-## Enum Methods with `extend`
+## Extend Support
 
-Like structs, enums can have methods added via `extend` blocks:
+Enums do not support `extend` blocks.
+
+`extend` is reserved for structs and unions, while enums are constructed and checked through their variants:
 
 ```tm
-enum Direction {
-    North,
-    South,
-    East,
-    West,
-}
+Result<int32, string> value = Result<int32, string>::Ok(42);
 
-extend Direction {
-    bool isVertical(&self) {
-        ret *self == Direction::North || *self == Direction::South;
-    }
+if value is Result<int32, string>::Ok(number) {
+    println(number);
 }
 ```
 

@@ -5,6 +5,17 @@
 #include <functional>
 #include <limits>
 
+static const EnumVariantInfo* findEnumVariantInfo(const TypeInfo* enumType,
+                                                  const std::string& variantName) {
+    if (!enumType) return nullptr;
+
+    for (const auto& info : enumType->enumVariantInfos) {
+        if (info.name == variantName) return &info;
+    }
+
+    return nullptr;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Error helpers — attach line:col and full range to every diagnostic
 // ═══════════════════════════════════════════════════════════════════════
@@ -968,6 +979,10 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
         if (unionIt != genericUnionTemplates_.end()) {
             return instantiateGenericUnion(baseName, unionIt->second, resolvedArgs, cur);
         }
+        auto enumIt = genericEnumTemplates_.find(baseName);
+        if (enumIt != genericEnumTemplates_.end()) {
+            return instantiateGenericEnum(baseName, enumIt->second, resolvedArgs, cur);
+        }
 
         // Fall through to known extended types (Task, etc.)
         auto* extDesc = extTypeRegistry_.lookup(baseName);
@@ -1829,11 +1844,53 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return trueType ? trueType : falseType;
     }
 
-    // ── Is: expr is type ────────────────────────────────────────────
+    // ── Is: expr is type [::Variant] ────────────────────────────────
     if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(expr)) {
-        resolveExprType(isE->expression());
+        auto* lhsType = resolveExprType(isE->expression());
         unsigned dims = 0;
-        resolveTypeSpec(isE->typeSpec(), dims);
+        auto* rhsType = resolveTypeSpec(isE->typeSpec(), dims);
+
+        // Variant identity check: value is EnumType::Variant
+        if (isE->SCOPE()) {
+            auto* variantNode = isE->IDENTIFIER(0);
+            if (!variantNode) {
+                error(expr, "invalid enum variant check in 'is' expression");
+                return typeRegistry_.lookup("bool");
+            }
+
+            auto variantName = variantNode->getText();
+            if (!rhsType || rhsType->kind != TypeKind::Enum) {
+                error(expr, "right side of variant 'is' check must be an enum type");
+                return typeRegistry_.lookup("bool");
+            }
+            if (!lhsType || lhsType->kind != TypeKind::Enum) {
+                error(expr, "left side of variant 'is' check must be an enum value");
+                return typeRegistry_.lookup("bool");
+            }
+            if (lhsType != rhsType) {
+                error(expr, "enum type mismatch in variant 'is' check: left is '" +
+                             lhsType->name + "', right is '" + rhsType->name + "'");
+                return typeRegistry_.lookup("bool");
+            }
+
+            auto* variantInfo = findEnumVariantInfo(rhsType, variantName);
+            if (!variantInfo) {
+                error(expr, "enum '" + rhsType->name + "' has no variant '" +
+                             variantName + "'");
+            }
+
+            // Binding: value is EnumType::Variant(name) — validate the binding
+            if (isE->LPAREN() && isE->IDENTIFIER(1)) {
+                if (!variantInfo || variantInfo->payloadFields.empty()) {
+                    error(expr, "variant '" + variantName +
+                                "' has no payload to bind");
+                }
+                // Binding type resolution is handled in checkIfStmt.
+            }
+
+            return typeRegistry_.lookup("bool");
+        }
+
         return typeRegistry_.lookup("bool");
     }
 
@@ -2527,6 +2584,37 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 argTypes.push_back(resolveExprType(argExpr));
         }
 
+        auto* enumType = typeRegistry_.lookup(structName);
+        if (enumType && enumType->kind == TypeKind::Enum) {
+            auto* variantInfo = findEnumVariantInfo(enumType, methodName);
+            if (!variantInfo) {
+                error(expr, "enum '" + structName + "' has no variant '" + methodName +
+                             "'; enums do not support static methods via 'extend'");
+                return enumType;
+            }
+            if (variantInfo->payloadKind == EnumPayloadKind::Named) {
+                error(expr, "variant '" + structName + "::" + methodName +
+                             "' uses named payload; use braces instead of parentheses");
+                return enumType;
+            }
+            if (argTypes.size() != variantInfo->payloadFields.size()) {
+                error(expr, "variant '" + structName + "::" + methodName +
+                             "' expects " + std::to_string(variantInfo->payloadFields.size()) +
+                             " argument(s), got " + std::to_string(argTypes.size()));
+                return enumType;
+            }
+            for (size_t i = 0; i < argTypes.size(); i++) {
+                auto* expected = variantInfo->payloadFields[i].typeInfo;
+                if (argTypes[i] && expected && !isAssignable(expected, argTypes[i])) {
+                    error(expr, "variant '" + structName + "::" + methodName +
+                                 "' argument " + std::to_string(i + 1) +
+                                 " type mismatch: expected '" + expected->name +
+                                 "', got '" + argTypes[i]->name + "'");
+                }
+            }
+            return enumType;
+        }
+
         // Generic static method inference: Node::create(42)
         auto extIt = genericExtendTemplates_.find(structName);
         auto structIt = genericStructTemplates_.find(structName);
@@ -2678,6 +2766,47 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             typeArgs.push_back(argTI);
         }
 
+        auto enumIt = genericEnumTemplates_.find(structBaseName);
+        if (enumIt != genericEnumTemplates_.end()) {
+            auto* enumType = instantiateGenericEnum(structBaseName, enumIt->second, typeArgs, expr);
+            if (!enumType) return nullptr;
+
+            auto* variantInfo = findEnumVariantInfo(enumType, methodName);
+            if (!variantInfo) {
+                error(expr, "enum '" + enumType->name + "' has no variant '" + methodName +
+                             "'; enums do not support static methods via 'extend'");
+                return enumType;
+            }
+            if (variantInfo->payloadKind == EnumPayloadKind::Named) {
+                error(expr, "variant '" + enumType->name + "::" + methodName +
+                             "' uses named payload; use braces instead of parentheses");
+                return enumType;
+            }
+
+            std::vector<const TypeInfo*> argTypes;
+            if (auto* argList = gsmc->argList()) {
+                for (auto* argExpr : argList->expression())
+                    argTypes.push_back(resolveExprType(argExpr));
+            }
+
+            if (argTypes.size() != variantInfo->payloadFields.size()) {
+                error(expr, "variant '" + enumType->name + "::" + methodName +
+                             "' expects " + std::to_string(variantInfo->payloadFields.size()) +
+                             " argument(s), got " + std::to_string(argTypes.size()));
+                return enumType;
+            }
+            for (size_t i = 0; i < argTypes.size(); i++) {
+                auto* expected = variantInfo->payloadFields[i].typeInfo;
+                if (argTypes[i] && expected && !isAssignable(expected, argTypes[i])) {
+                    error(expr, "variant '" + enumType->name + "::" + methodName +
+                                 "' argument " + std::to_string(i + 1) +
+                                 " type mismatch: expected '" + expected->name +
+                                 "', got '" + argTypes[i]->name + "'");
+                }
+            }
+            return enumType;
+        }
+
         // Find the generic struct template
         auto structIt = genericStructTemplates_.find(structBaseName);
         if (structIt == genericStructTemplates_.end()) {
@@ -2778,6 +2907,155 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return instanceTI;
     }
 
+    // ── Enum named variant literal: Enum::Variant { field: value } ──────
+    if (auto* env = dynamic_cast<LuxParser::EnumNamedVariantExprContext*>(expr)) {
+        auto ids = env->IDENTIFIER();
+        auto enumName = ids[0]->getText();
+        auto variantName = ids[1]->getText();
+
+        auto* enumType = typeRegistry_.lookup(enumName);
+        if (!enumType) {
+            error(expr, "unknown enum type '" + enumName + "'");
+            return nullptr;
+        }
+        if (enumType->kind != TypeKind::Enum) {
+            error(expr, "'" + enumName + "' is not an enum type");
+            return nullptr;
+        }
+
+        auto* variantInfo = findEnumVariantInfo(enumType, variantName);
+        if (!variantInfo) {
+            error(expr, "enum '" + enumName + "' has no variant '" + variantName + "'");
+            return enumType;
+        }
+        if (variantInfo->payloadKind != EnumPayloadKind::Named) {
+            error(expr, "variant '" + enumName + "::" + variantName +
+                         "' does not use named payload");
+            return enumType;
+        }
+
+        auto fieldExprs = env->expression();
+        std::unordered_set<std::string> provided;
+        for (size_t i = 0; i < fieldExprs.size(); i++) {
+            auto fieldName = ids[i + 2]->getText();
+            if (!provided.insert(fieldName).second) {
+                error(expr, "duplicate payload field '" + fieldName +
+                             "' in variant '" + enumName + "::" + variantName + "'");
+                continue;
+            }
+
+            const FieldInfo* expectedField = nullptr;
+            for (const auto& field : variantInfo->payloadFields) {
+                if (field.name == fieldName) {
+                    expectedField = &field;
+                    break;
+                }
+            }
+            if (!expectedField) {
+                error(expr, "unknown payload field '" + fieldName +
+                             "' in variant '" + enumName + "::" + variantName + "'");
+                continue;
+            }
+
+            auto* exprType = resolveExprType(fieldExprs[i]);
+            if (exprType && expectedField->typeInfo &&
+                !isAssignable(expectedField->typeInfo, exprType)) {
+                error(expr, "payload field '" + fieldName +
+                             "' type mismatch: expected '" + expectedField->typeInfo->name +
+                             "', got '" + exprType->name + "'");
+            }
+        }
+
+        if (provided.size() != variantInfo->payloadFields.size()) {
+            for (const auto& field : variantInfo->payloadFields) {
+                if (!provided.count(field.name)) {
+                    error(expr, "missing payload field '" + field.name +
+                                 "' in variant '" + enumName + "::" + variantName + "'");
+                }
+            }
+        }
+
+        return enumType;
+    }
+
+    // ── Generic enum named variant literal: Enum<T>::Variant { ... } ─────
+    if (auto* genv = dynamic_cast<LuxParser::GenericEnumNamedVariantExprContext*>(expr)) {
+        auto ids = genv->IDENTIFIER();
+        auto baseName = ids[0]->getText();
+        auto variantName = ids[1]->getText();
+
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : genv->typeSpec()) {
+            unsigned dims = 0;
+            auto* argTI = resolveTypeSpec(ts, dims);
+            if (!argTI) return nullptr;
+            typeArgs.push_back(argTI);
+        }
+
+        auto enumIt = genericEnumTemplates_.find(baseName);
+        if (enumIt == genericEnumTemplates_.end()) {
+            error(expr, "'" + baseName + "' is not a generic enum");
+            return nullptr;
+        }
+
+        auto* enumType = instantiateGenericEnum(baseName, enumIt->second, typeArgs, expr);
+        if (!enumType) return nullptr;
+
+        auto* variantInfo = findEnumVariantInfo(enumType, variantName);
+        if (!variantInfo) {
+            error(expr, "enum '" + enumType->name + "' has no variant '" + variantName + "'");
+            return enumType;
+        }
+        if (variantInfo->payloadKind != EnumPayloadKind::Named) {
+            error(expr, "variant '" + enumType->name + "::" + variantName +
+                         "' does not use named payload");
+            return enumType;
+        }
+
+        auto fieldExprs = genv->expression();
+        std::unordered_set<std::string> provided;
+        for (size_t i = 0; i < fieldExprs.size(); i++) {
+            auto fieldName = ids[i + 2]->getText();
+            if (!provided.insert(fieldName).second) {
+                error(expr, "duplicate payload field '" + fieldName +
+                             "' in variant '" + enumType->name + "::" + variantName + "'");
+                continue;
+            }
+
+            const FieldInfo* expectedField = nullptr;
+            for (const auto& field : variantInfo->payloadFields) {
+                if (field.name == fieldName) {
+                    expectedField = &field;
+                    break;
+                }
+            }
+            if (!expectedField) {
+                error(expr, "unknown payload field '" + fieldName +
+                             "' in variant '" + enumType->name + "::" + variantName + "'");
+                continue;
+            }
+
+            auto* exprType = resolveExprType(fieldExprs[i]);
+            if (exprType && expectedField->typeInfo &&
+                !isAssignable(expectedField->typeInfo, exprType)) {
+                error(expr, "payload field '" + fieldName +
+                             "' type mismatch: expected '" + expectedField->typeInfo->name +
+                             "', got '" + exprType->name + "'");
+            }
+        }
+
+        if (provided.size() != variantInfo->payloadFields.size()) {
+            for (const auto& field : variantInfo->payloadFields) {
+                if (!provided.count(field.name)) {
+                    error(expr, "missing payload field '" + field.name +
+                                 "' in variant '" + enumType->name + "::" + variantName + "'");
+                }
+            }
+        }
+
+        return enumType;
+    }
+
     // ── Enum access: Enum::Variant ──────────────────────────────────
     if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
         auto ids = ea->IDENTIFIER();
@@ -2794,13 +3072,47 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             return nullptr;
         }
 
-        bool found = false;
-        for (auto& v : enumType->enumVariants) {
-            if (v == variant) { found = true; break; }
-        }
-        if (!found)
+        auto* variantInfo = findEnumVariantInfo(enumType, variant);
+        if (!variantInfo) {
             error(expr, "enum '" + enumName +
                              "' has no variant '" + variant + "'");
+        } else if (!variantInfo->payloadFields.empty()) {
+            error(expr, "variant '" + enumName + "::" + variant +
+                         "' requires payload construction");
+        }
+        return enumType;
+    }
+
+    // ── Generic enum access: Enum<T>::Variant ───────────────────────
+    if (auto* gea = dynamic_cast<LuxParser::GenericEnumAccessExprContext*>(expr)) {
+        auto ids = gea->IDENTIFIER();
+        auto baseName = ids[0]->getText();
+        auto variantName = ids[1]->getText();
+
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : gea->typeSpec()) {
+            unsigned dims = 0;
+            auto* argTI = resolveTypeSpec(ts, dims);
+            if (!argTI) return nullptr;
+            typeArgs.push_back(argTI);
+        }
+
+        auto enumIt = genericEnumTemplates_.find(baseName);
+        if (enumIt == genericEnumTemplates_.end()) {
+            error(expr, "'" + baseName + "' is not a generic enum");
+            return nullptr;
+        }
+
+        auto* enumType = instantiateGenericEnum(baseName, enumIt->second, typeArgs, expr);
+        if (!enumType) return nullptr;
+
+        auto* variantInfo = findEnumVariantInfo(enumType, variantName);
+        if (!variantInfo) {
+            error(expr, "enum '" + enumType->name + "' has no variant '" + variantName + "'");
+        } else if (!variantInfo->payloadFields.empty()) {
+            error(expr, "variant '" + enumType->name + "::" + variantName +
+                         "' requires payload construction");
+        }
         return enumType;
     }
 
@@ -2925,6 +3237,7 @@ bool Checker::isKnownType(const std::string& name) const {
     // Check user-defined generic struct templates
     if (genericStructTemplates_.count(name)) return true;
     if (genericUnionTemplates_.count(name)) return true;
+    if (genericEnumTemplates_.count(name)) return true;
     // Check user imports for struct/enum/alias
     if (userImports_.count(name)) return true;
     // Check same-namespace types from other files
@@ -3177,11 +3490,19 @@ void Checker::checkUnionDecl(LuxParser::UnionDeclContext* decl) {
 }
 
 void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
-    auto identifiers = decl->IDENTIFIER();
-    auto name = identifiers[0]->getText();
+    auto name = decl->IDENTIFIER()->getText();
 
-    if (typeRegistry_.lookup(name)) {
+    if (typeRegistry_.lookup(name) || genericEnumTemplates_.count(name)) {
         error(decl, "type '" + name + "' already defined");
+        return;
+    }
+
+    if (auto* tpl = decl->typeParamList()) {
+        GenericEnumTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = decl;
+        genericEnumTemplates_[name] = std::move(tmpl);
         return;
     }
 
@@ -3193,14 +3514,56 @@ void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
     ti.builtinSuffix = "i32";
 
     std::unordered_set<std::string> seen;
-    for (size_t i = 1; i < identifiers.size(); i++) {
-        auto variant = identifiers[i]->getText();
+    for (auto* variantDecl : decl->enumVariant()) {
+        auto variant = variantDecl->IDENTIFIER()->getText();
         if (!seen.insert(variant).second) {
             error(decl, "duplicate enum variant '" + variant +
                              "' in enum '" + name + "'");
             return;
         }
+
         ti.enumVariants.push_back(variant);
+
+        EnumVariantInfo info;
+        info.name = variant;
+        info.discriminant = static_cast<unsigned>(ti.enumVariantInfos.size());
+
+        if (variantDecl->LPAREN()) {
+            info.payloadKind = EnumPayloadKind::Tuple;
+            auto payloadTypes = variantDecl->typeSpec();
+            for (size_t i = 0; i < payloadTypes.size(); i++) {
+                unsigned fieldDims = 0;
+                auto* fieldTI = resolveTypeSpec(payloadTypes[i], fieldDims);
+                if (!fieldTI) {
+                    error(payloadTypes[i], "unknown payload type in enum variant '" +
+                                          name + "::" + variant + "'");
+                    return;
+                }
+                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI});
+            }
+        } else if (variantDecl->LBRACE()) {
+            info.payloadKind = EnumPayloadKind::Named;
+            std::unordered_set<std::string> fieldSeen;
+            for (auto* payloadField : variantDecl->enumPayloadField()) {
+                auto fieldName = payloadField->IDENTIFIER()->getText();
+                if (!fieldSeen.insert(fieldName).second) {
+                    error(payloadField, "duplicate payload field '" + fieldName +
+                                       "' in enum variant '" + name + "::" + variant + "'");
+                    return;
+                }
+
+                unsigned fieldDims = 0;
+                auto* fieldTI = resolveTypeSpec(payloadField->typeSpec(), fieldDims);
+                if (!fieldTI) {
+                    error(payloadField, "unknown payload type in enum variant '" +
+                                        name + "::" + variant + "'");
+                    return;
+                }
+                info.payloadFields.push_back({fieldName, fieldTI});
+            }
+        }
+
+        ti.enumVariantInfos.push_back(std::move(info));
     }
 
     typeRegistry_.registerType(std::move(ti));
@@ -3208,6 +3571,26 @@ void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
 
 void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
     auto structName = decl->IDENTIFIER()->getText();
+
+    bool isGenericStruct = genericStructTemplates_.count(structName) != 0;
+    bool isGenericEnum = genericEnumTemplates_.count(structName) != 0;
+    auto* targetTI = typeRegistry_.lookup(structName);
+    if (isGenericEnum) {
+        error(decl, "enum '" + structName + "' cannot be extended; only structs and unions support 'extend'");
+        return;
+    }
+    if (!targetTI && !isGenericStruct) {
+        error(decl, "cannot extend unknown type '" + structName + "'");
+        return;
+    }
+    if (targetTI && targetTI->kind == TypeKind::Enum) {
+        error(decl, "enum '" + structName + "' cannot be extended; only structs and unions support 'extend'");
+        return;
+    }
+    if (targetTI && targetTI->kind != TypeKind::Struct) {
+        error(decl, "only structs and unions can be extended; '" + structName + "' is not a supported extend target");
+        return;
+    }
 
     // Generic extend block — register as template and skip body registration
     if (auto* tpl = decl->typeParamList()) {
@@ -3220,16 +3603,6 @@ void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
         tmpl.decl = decl;
         genericExtendTemplates_[structName] = std::move(tmpl);
-        return;
-    }
-
-    auto* structTI = typeRegistry_.lookup(structName);
-    if (!structTI) {
-        error(decl, "cannot extend unknown type '" + structName + "'");
-        return;
-    }
-    if (structTI->kind != TypeKind::Struct) {
-        error(decl, "'" + structName + "' is not a struct type");
         return;
     }
 
@@ -3839,14 +4212,40 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
         }
     };
 
+    // Extract is-binding from an expression (if it's `expr is Type::Variant(name)`).
+    // Returns {bindingName, payloadTypeInfo} or {"", nullptr}.
+    auto extractIsBinding = [&](LuxParser::ExpressionContext* condExpr)
+            -> std::pair<std::string, const TypeInfo*> {
+        auto* isE = dynamic_cast<LuxParser::IsExprContext*>(condExpr);
+        if (!isE || !isE->SCOPE() || !isE->LPAREN() || !isE->IDENTIFIER(1))
+            return {"", nullptr};
+        auto variantName = isE->IDENTIFIER(0)->getText();
+        unsigned dims = 0;
+        auto* rhsType = resolveTypeSpec(isE->typeSpec(), dims);
+        if (!rhsType || rhsType->kind != TypeKind::Enum) return {"", nullptr};
+        auto* variantInfo = findEnumVariantInfo(rhsType, variantName);
+        if (!variantInfo || variantInfo->payloadFields.empty()) return {"", nullptr};
+        // Single-field tuple payload
+        if (variantInfo->payloadKind == EnumPayloadKind::Tuple &&
+            variantInfo->payloadFields.size() == 1) {
+            return {isE->IDENTIFIER(1)->getText(),
+                    variantInfo->payloadFields[0].typeInfo};
+        }
+        return {"", nullptr};
+    };
+
     // Check the if condition
     auto* condType = resolveExprType(stmt->expression());
     if (condType && !isConditionType(condType))
         error(stmt, "condition has type '" + condType->name +
                     "', expected 'bool' or numeric type");
 
-    // Check the if body
+    // Inject is-binding into scope for the true branch body
+    auto [ifBindName, ifBindTI] = extractIsBinding(stmt->expression());
+    if (!ifBindName.empty() && ifBindTI)
+        locals_[ifBindName] = {ifBindTI, 0, true, true, nullptr};
     checkIfBody(stmt->ifBody());
+    if (!ifBindName.empty()) locals_.erase(ifBindName);
 
     // Check else-if clauses
     for (auto* elseIf : stmt->elseIfClause()) {
@@ -3854,7 +4253,11 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
         if (eifCondType && !isConditionType(eifCondType))
             error(elseIf, "condition has type '" + eifCondType->name +
                           "', expected 'bool' or numeric type");
+        auto [eifBindName, eifBindTI] = extractIsBinding(elseIf->expression());
+        if (!eifBindName.empty() && eifBindTI)
+            locals_[eifBindName] = {eifBindTI, 0, true, true, nullptr};
         checkIfBody(elseIf->ifBody());
+        if (!eifBindName.empty()) locals_.erase(eifBindName);
     }
 
     // Check else clause
@@ -4957,6 +5360,124 @@ const TypeInfo* Checker::instantiateGenericUnion(
             return nullptr;
         }
         ti.fields.push_back({ fieldName, fieldTI });
+    }
+
+    typeRegistry_.registerType(std::move(ti));
+    instantiatingGenerics_.erase(mangledName);
+    return typeRegistry_.lookup(mangledName);
+}
+
+const TypeInfo* Checker::instantiateGenericEnum(
+    const std::string& baseName,
+    const GenericEnumTemplate& tmpl,
+    const std::vector<const TypeInfo*>& typeArgs,
+    antlr4::ParserRuleContext* ctx) {
+
+    if (typeArgs.size() != tmpl.typeParams.size()) {
+        error(ctx, "generic enum '" + baseName + "' expects " +
+                   std::to_string(tmpl.typeParams.size()) + " type parameter(s), got " +
+                   std::to_string(typeArgs.size()));
+        return nullptr;
+    }
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+
+    for (auto& dt : dynamicTypes_) {
+        if (dt->name == mangledName)
+            return dt.get();
+    }
+    if (auto* existing = typeRegistry_.lookup(mangledName))
+        return existing;
+
+    if (instantiatingGenerics_.count(mangledName)) {
+        error(ctx, "recursive generic instantiation detected for '" + mangledName + "'");
+        return nullptr;
+    }
+    instantiatingGenerics_.insert(mangledName);
+
+    std::unordered_map<std::string, const TypeInfo*> subst;
+    for (size_t i = 0; i < tmpl.typeParams.size(); i++) {
+        auto* tpCtx = tmpl.decl->typeParamList()->typeParam(i);
+        if (tpCtx->COLON()) {
+            auto constraintName = tpCtx->IDENTIFIER(1)->getText();
+            auto* constraint = resolveTypeParamConstraint(constraintName, ctx);
+            if (!satisfiesConstraint(typeArgs[i], constraint, tmpl.typeParams[i], ctx)) {
+                instantiatingGenerics_.erase(mangledName);
+                return nullptr;
+            }
+        }
+        subst[tmpl.typeParams[i]] = typeArgs[i];
+    }
+
+    TypeInfo skeleton;
+    skeleton.name = mangledName;
+    skeleton.kind = TypeKind::Enum;
+    skeleton.bitWidth = 32;
+    skeleton.isSigned = false;
+    skeleton.builtinSuffix = "i32";
+    skeleton.isGenericInstance = true;
+    skeleton.genericBaseName = baseName;
+    skeleton.typeParamNames = tmpl.typeParams;
+    skeleton.typeArgs = typeArgs;
+    skeleton.genericEnumDecl = static_cast<antlr4::ParserRuleContext*>(tmpl.decl);
+    typeRegistry_.registerType(skeleton);
+
+    TypeInfo ti = skeleton;
+    std::unordered_set<std::string> seen;
+    for (auto* variantDecl : tmpl.decl->enumVariant()) {
+        auto variantName = variantDecl->IDENTIFIER()->getText();
+        if (!seen.insert(variantName).second) {
+            error(variantDecl, "duplicate enum variant '" + variantName +
+                               "' in generic enum '" + baseName + "'");
+            instantiatingGenerics_.erase(mangledName);
+            return nullptr;
+        }
+
+        ti.enumVariants.push_back(variantName);
+
+        EnumVariantInfo info;
+        info.name = variantName;
+        info.discriminant = static_cast<unsigned>(ti.enumVariantInfos.size());
+
+        if (variantDecl->LPAREN()) {
+            info.payloadKind = EnumPayloadKind::Tuple;
+            auto payloadTypes = variantDecl->typeSpec();
+            for (size_t i = 0; i < payloadTypes.size(); i++) {
+                unsigned fieldDims = 0;
+                auto* fieldTI = resolveTypeSpecWithSubst(payloadTypes[i], subst, fieldDims);
+                if (!fieldTI) {
+                    error(payloadTypes[i], "cannot resolve payload type in generic enum '" +
+                                           baseName + "'");
+                    instantiatingGenerics_.erase(mangledName);
+                    return nullptr;
+                }
+                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI});
+            }
+        } else if (variantDecl->LBRACE()) {
+            info.payloadKind = EnumPayloadKind::Named;
+            std::unordered_set<std::string> fieldSeen;
+            for (auto* payloadField : variantDecl->enumPayloadField()) {
+                auto fieldName = payloadField->IDENTIFIER()->getText();
+                if (!fieldSeen.insert(fieldName).second) {
+                    error(payloadField, "duplicate payload field '" + fieldName +
+                                       "' in enum variant '" + baseName + "::" + variantName + "'");
+                    instantiatingGenerics_.erase(mangledName);
+                    return nullptr;
+                }
+
+                unsigned fieldDims = 0;
+                auto* fieldTI = resolveTypeSpecWithSubst(payloadField->typeSpec(), subst, fieldDims);
+                if (!fieldTI) {
+                    error(payloadField, "cannot resolve payload type in generic enum '" +
+                                        baseName + "'");
+                    instantiatingGenerics_.erase(mangledName);
+                    return nullptr;
+                }
+                info.payloadFields.push_back({fieldName, fieldTI});
+            }
+        }
+
+        ti.enumVariantInfos.push_back(std::move(info));
     }
 
     typeRegistry_.registerType(std::move(ti));

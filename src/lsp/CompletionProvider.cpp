@@ -30,6 +30,57 @@ static bool cursorInsideNode(antlr4::ParserRuleContext* node, size_t cursorLine0
     return cursorLine0 >= startLine && cursorLine0 <= stopLine;
 }
 
+static std::string substituteTypeParams(
+    const std::string& type,
+    const std::unordered_map<std::string, std::string>& subst);
+
+static std::string inferIsBindingPayloadType(
+    LuxParser::ExpressionContext* cond,
+    LuxParser::ProgramContext* tree) {
+    auto* isE = dynamic_cast<LuxParser::IsExprContext*>(cond);
+    if (!isE || !isE->SCOPE() || !isE->LPAREN() || !isE->IDENTIFIER(1)) return "";
+
+    auto* rhsType = isE->typeSpec();
+    if (!rhsType || !rhsType->IDENTIFIER()) return "";
+
+    auto enumName = rhsType->IDENTIFIER()->getText();
+    LuxParser::EnumDeclContext* enumDecl = nullptr;
+    if (tree) {
+        for (auto* tld : tree->topLevelDecl()) {
+            if (auto* ed = tld->enumDecl(); ed && ed->IDENTIFIER() &&
+                ed->IDENTIFIER()->getText() == enumName) {
+                enumDecl = ed;
+                break;
+            }
+        }
+    }
+    if (!enumDecl) return "";
+
+    auto variantName = isE->IDENTIFIER(0) ? isE->IDENTIFIER(0)->getText() : "";
+    if (variantName.empty()) return "";
+
+    for (auto* variant : enumDecl->enumVariant()) {
+        auto* vId = variant->IDENTIFIER();
+        if (!vId || vId->getText() != variantName) continue;
+        if (!variant->LPAREN() || variant->typeSpec().size() != 1) return "";
+
+        auto payloadType = variant->typeSpec(0)->getText();
+        if (rhsType->LT() && enumDecl->typeParamList()) {
+            std::unordered_map<std::string, std::string> subst;
+            auto tps = enumDecl->typeParamList()->typeParam();
+            auto args = rhsType->typeSpec();
+            for (size_t i = 0; i < tps.size() && i < args.size(); i++) {
+                auto ids = tps[i]->IDENTIFIER();
+                if (!ids.empty()) subst[ids[0]->getText()] = args[i]->getText();
+            }
+            payloadType = substituteTypeParams(payloadType, subst);
+        }
+        return payloadType;
+    }
+
+    return "";
+}
+
 // Context for resolving function/method call return types during auto inference.
 struct FuncLookupCtx {
     LuxParser::ProgramContext* tree = nullptr;
@@ -600,21 +651,45 @@ static void collectLocalsFromStmts(
         if (auto* ifS = stmt->ifStmt()) {
             if (auto* body = ifS->ifBody()) {
                 if (auto* b = body->block()) {
-                    if (cursorInsideNode(b, beforeLine))
+                    if (cursorInsideNode(b, beforeLine)) {
+                        if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
+                            isE && isE->IDENTIFIER(1)) {
+                            auto bindType = inferIsBindingPayloadType(ifS->expression(), flc ? flc->tree : nullptr);
+                            out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                        }
                         collectLocalsFromBlock(b, beforeLine, out, flc);
+                    }
                 } else if (auto* s = body->statement()) {
-                    if (cursorInsideNode(s, beforeLine))
+                    if (cursorInsideNode(s, beforeLine)) {
+                        if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
+                            isE && isE->IDENTIFIER(1)) {
+                            auto bindType = inferIsBindingPayloadType(ifS->expression(), flc ? flc->tree : nullptr);
+                            out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                        }
                         collectLocalsFromStmts({s}, beforeLine, out, flc);
+                    }
                 }
             }
             for (auto* elif : ifS->elseIfClause()) {
                 if (auto* body = elif->ifBody()) {
                     if (auto* b = body->block()) {
-                        if (cursorInsideNode(b, beforeLine))
+                        if (cursorInsideNode(b, beforeLine)) {
+                            if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
+                                isE && isE->IDENTIFIER(1)) {
+                                auto bindType = inferIsBindingPayloadType(elif->expression(), flc ? flc->tree : nullptr);
+                                out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                            }
                             collectLocalsFromBlock(b, beforeLine, out, flc);
+                        }
                     } else if (auto* s = body->statement()) {
-                        if (cursorInsideNode(s, beforeLine))
+                        if (cursorInsideNode(s, beforeLine)) {
+                            if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
+                                isE && isE->IDENTIFIER(1)) {
+                                auto bindType = inferIsBindingPayloadType(elif->expression(), flc ? flc->tree : nullptr);
+                                out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                            }
                             collectLocalsFromStmts({s}, beforeLine, out, flc);
+                        }
                     }
                 }
             }
@@ -1454,9 +1529,8 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem>& items,
 
         // Enums
         if (auto* ed = tld->enumDecl()) {
-            auto ids = ed->IDENTIFIER();
-            if (ids.empty()) continue;
-            std::string name = ids[0]->getText();
+            if (!ed->IDENTIFIER()) continue;
+            std::string name = ed->IDENTIFIER()->getText();
             if (!matchesPrefix(name, prefix)) continue;
             CompletionItem item;
             item.label = name;
@@ -2457,12 +2531,13 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem>& items,
     // Same-file enum
     auto* ed = findEnumDecl(tree, enumName);
     if (ed) {
-        auto ids = ed->IDENTIFIER();
-        for (size_t i = 1; i < ids.size(); i++) {
+        for (auto* variant : ed->enumVariant()) {
+            auto* v = variant->IDENTIFIER();
+            if (!v) continue;
             CompletionItem ci;
-            ci.label = ids[i]->getText();
+            ci.label = v->getText();
             ci.kind = CompletionKind::EnumMember;
-            ci.detail = enumName + "::" + ids[i]->getText();
+            ci.detail = enumName + "::" + v->getText();
             items.push_back(std::move(ci));
         }
         return;
@@ -2475,12 +2550,13 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem>& items,
             if (!sym || sym->kind != ExportedSymbol::Enum) continue;
             auto* decl = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
             if (!decl) continue;
-            auto ids = decl->IDENTIFIER();
-            for (size_t i = 1; i < ids.size(); i++) {
+            for (auto* variant : decl->enumVariant()) {
+                auto* v = variant->IDENTIFIER();
+                if (!v) continue;
                 CompletionItem ci;
-                ci.label = ids[i]->getText();
+                ci.label = v->getText();
                 ci.kind = CompletionKind::EnumMember;
-                ci.detail = enumName + "::" + ids[i]->getText();
+                ci.detail = enumName + "::" + v->getText();
                 items.push_back(std::move(ci));
             }
             return;
@@ -2622,9 +2698,8 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem>& items,
             items.push_back({name, CompletionKind::Struct, "struct " + name});
         }
         if (auto* ed = tld->enumDecl()) {
-            auto ids = ed->IDENTIFIER();
-            if (ids.empty()) continue;
-            std::string name = ids[0]->getText();
+            if (!ed->IDENTIFIER()) continue;
+            std::string name = ed->IDENTIFIER()->getText();
             if (!matchesPrefix(name, prefix)) continue;
             items.push_back({name, CompletionKind::Enum, "enum " + name});
         }
@@ -3242,8 +3317,7 @@ CompletionProvider::findEnumDecl(LuxParser::ProgramContext* tree,
                                  const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl()) {
-            auto ids = ed->IDENTIFIER();
-            if (!ids.empty() && ids[0]->getText() == name) return ed;
+            if (ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name) return ed;
         }
     }
     return nullptr;

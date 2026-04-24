@@ -24,6 +24,8 @@ int32 main() {
 - **Concurrency** — `spawn`/`await`, `Task<T>`, `Mutex`, `lock` statement
 - **Error handling** — `try`/`catch`/`finally`, `throw`, built-in `Error` type
 - **Type methods** — dot notation on all primitive types, structs, and arrays
+- **Rich enums** — unit, tuple payload, named payload, and generic enums (e.g., `Result<V, E>`)
+- **Enum variant checks** — `is` supports type checks, variant identity checks, and variant binding like `value is Result<int32, string>::Err(msg)`
 - **Manual memory** — explicit allocation, `defer` cleanup, auto-cleanup for collections
 - **List comprehensions** — `[x * 2 | for int32 x in items if x > 0]`
 - **LSP support** — semantic highlighting, hover, completions, and signature help via the included language server

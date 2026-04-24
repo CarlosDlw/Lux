@@ -55,6 +55,14 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitEnumVariant(LuxParser::EnumVariantContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEnumPayloadField(LuxParser::EnumPayloadFieldContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitStructDecl(LuxParser::StructDeclContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -279,6 +287,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVariantExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitRshiftExpr(LuxParser::RshiftExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -415,6 +427,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitGenericEnumAccessExpr(LuxParser::GenericEnumAccessExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitEnumAccessExpr(LuxParser::EnumAccessExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -432,6 +448,10 @@ public:
   }
 
   virtual std::any visitMethodCallExpr(LuxParser::MethodCallExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

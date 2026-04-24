@@ -41,22 +41,23 @@ public:
   enum {
     RuleProgram = 0, RulePreambleDecl = 1, RuleNamespaceDecl = 2, RuleUseDecl = 3, 
     RuleModulePath = 4, RuleIncludeDecl = 5, RuleTopLevelDecl = 6, RuleTypeAliasDecl = 7, 
-    RuleEnumDecl = 8, RuleStructDecl = 9, RuleStructField = 10, RuleUnionDecl = 11, 
-    RuleUnionField = 12, RuleExternDecl = 13, RuleExternParamList = 14, 
-    RuleExternParam = 15, RuleFunctionDecl = 16, RuleExtendDecl = 17, RuleTypeParamList = 18, 
-    RuleTypeParam = 19, RuleExtendMethod = 20, RuleParamList = 21, RuleParam = 22, 
-    RuleBlock = 23, RuleStatement = 24, RuleDeferStmt = 25, RuleNakedBlockStmt = 26, 
-    RuleInlineBlockStmt = 27, RuleScopeBlockStmt = 28, RuleScopeCallbackList = 29, 
-    RuleScopeCallback = 30, RuleExprStmt = 31, RuleVarDeclStmt = 32, RuleAssignStmt = 33, 
-    RuleCompoundAssignStmt = 34, RuleFieldAssignStmt = 35, RuleFieldCompoundAssignStmt = 36, 
-    RuleIndexFieldAssignStmt = 37, RuleDerefAssignStmt = 38, RuleArrowAssignStmt = 39, 
-    RuleArrowCompoundAssignStmt = 40, RuleCallStmt = 41, RuleArgList = 42, 
-    RuleReturnStmt = 43, RuleIfStmt = 44, RuleElseIfClause = 45, RuleElseClause = 46, 
-    RuleIfBody = 47, RuleForStmt = 48, RuleBreakStmt = 49, RuleContinueStmt = 50, 
-    RuleLoopStmt = 51, RuleWhileStmt = 52, RuleDoWhileStmt = 53, RuleLockStmt = 54, 
-    RuleTryCatchStmt = 55, RuleCatchClause = 56, RuleFinallyClause = 57, 
-    RuleThrowStmt = 58, RuleSwitchStmt = 59, RuleCaseClause = 60, RuleDefaultClause = 61, 
-    RuleExpression = 62, RuleTypeSpec = 63, RuleFnTypeSpec = 64, RulePrimitiveType = 65
+    RuleEnumDecl = 8, RuleEnumVariant = 9, RuleEnumPayloadField = 10, RuleStructDecl = 11, 
+    RuleStructField = 12, RuleUnionDecl = 13, RuleUnionField = 14, RuleExternDecl = 15, 
+    RuleExternParamList = 16, RuleExternParam = 17, RuleFunctionDecl = 18, 
+    RuleExtendDecl = 19, RuleTypeParamList = 20, RuleTypeParam = 21, RuleExtendMethod = 22, 
+    RuleParamList = 23, RuleParam = 24, RuleBlock = 25, RuleStatement = 26, 
+    RuleDeferStmt = 27, RuleNakedBlockStmt = 28, RuleInlineBlockStmt = 29, 
+    RuleScopeBlockStmt = 30, RuleScopeCallbackList = 31, RuleScopeCallback = 32, 
+    RuleExprStmt = 33, RuleVarDeclStmt = 34, RuleAssignStmt = 35, RuleCompoundAssignStmt = 36, 
+    RuleFieldAssignStmt = 37, RuleFieldCompoundAssignStmt = 38, RuleIndexFieldAssignStmt = 39, 
+    RuleDerefAssignStmt = 40, RuleArrowAssignStmt = 41, RuleArrowCompoundAssignStmt = 42, 
+    RuleCallStmt = 43, RuleArgList = 44, RuleReturnStmt = 45, RuleIfStmt = 46, 
+    RuleElseIfClause = 47, RuleElseClause = 48, RuleIfBody = 49, RuleForStmt = 50, 
+    RuleBreakStmt = 51, RuleContinueStmt = 52, RuleLoopStmt = 53, RuleWhileStmt = 54, 
+    RuleDoWhileStmt = 55, RuleLockStmt = 56, RuleTryCatchStmt = 57, RuleCatchClause = 58, 
+    RuleFinallyClause = 59, RuleThrowStmt = 60, RuleSwitchStmt = 61, RuleCaseClause = 62, 
+    RuleDefaultClause = 63, RuleExpression = 64, RuleTypeSpec = 65, RuleFnTypeSpec = 66, 
+    RulePrimitiveType = 67
   };
 
   explicit LuxParser(antlr4::TokenStream *input);
@@ -85,6 +86,8 @@ public:
   class TopLevelDeclContext;
   class TypeAliasDeclContext;
   class EnumDeclContext;
+  class EnumVariantContext;
+  class EnumPayloadFieldContext;
   class StructDeclContext;
   class StructFieldContext;
   class UnionDeclContext;
@@ -307,10 +310,12 @@ public:
     EnumDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ENUM();
-    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
-    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
+    std::vector<EnumVariantContext *> enumVariant();
+    EnumVariantContext* enumVariant(size_t i);
     antlr4::tree::TerminalNode *RBRACE();
+    TypeParamListContext *typeParamList();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
 
@@ -320,6 +325,44 @@ public:
   };
 
   EnumDeclContext* enumDecl();
+
+  class  EnumVariantContext : public antlr4::ParserRuleContext {
+  public:
+    EnumVariantContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LPAREN();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *RPAREN();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+    antlr4::tree::TerminalNode *LBRACE();
+    std::vector<EnumPayloadFieldContext *> enumPayloadField();
+    EnumPayloadFieldContext* enumPayloadField(size_t i);
+    antlr4::tree::TerminalNode *RBRACE();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  EnumVariantContext* enumVariant();
+
+  class  EnumPayloadFieldContext : public antlr4::ParserRuleContext {
+  public:
+    EnumPayloadFieldContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *COLON();
+    TypeSpecContext *typeSpec();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  EnumPayloadFieldContext* enumPayloadField();
 
   class  StructDeclContext : public antlr4::ParserRuleContext {
   public:
@@ -1352,6 +1395,29 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  GenericEnumNamedVariantExprContext : public ExpressionContext {
+  public:
+    GenericEnumNamedVariantExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *SCOPE();
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COLON();
+    antlr4::tree::TerminalNode* COLON(size_t i);
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  RshiftExprContext : public ExpressionContext {
   public:
     RshiftExprContext(ExpressionContext *ctx);
@@ -1491,6 +1557,11 @@ public:
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *IS();
     TypeSpecContext *typeSpec();
+    antlr4::tree::TerminalNode *SCOPE();
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1759,6 +1830,23 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  GenericEnumAccessExprContext : public ExpressionContext {
+  public:
+    GenericEnumAccessExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *SCOPE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  EnumAccessExprContext : public ExpressionContext {
   public:
     EnumAccessExprContext(ExpressionContext *ctx);
@@ -1815,6 +1903,25 @@ public:
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *RPAREN();
     ArgListContext *argList();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  EnumNamedVariantExprContext : public ExpressionContext {
+  public:
+    EnumNamedVariantExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *SCOPE();
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<antlr4::tree::TerminalNode *> COLON();
+    antlr4::tree::TerminalNode* COLON(size_t i);
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

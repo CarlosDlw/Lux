@@ -151,6 +151,17 @@ Enum variants are accessed with `::` scope resolution:
 
 ```tm
 Color c = Color::Red;
+
+Result<int32, string> ok = Result<int32, string>::Ok(10);
+Shape s = Shape::Circle { r: 4.0 };
+```
+
+Variant checks also work inside expressions via `is`:
+
+```tm
+if ok is Result<int32, string>::Ok(value) {
+	println(value);
+}
 ```
 
 See [Enums](enums.md) for details.

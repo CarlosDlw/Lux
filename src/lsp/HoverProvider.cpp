@@ -238,16 +238,17 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Enum declaration name ───────────────────────────────────
         if (auto* ed = tld->enumDecl()) {
-            auto ids = ed->IDENTIFIER();
-            if (ids.empty()) continue;
-            if (ids[0]->getSymbol() == hoveredToken) {
+            auto* enumName = ed->IDENTIFIER();
+            if (!enumName) continue;
+            if (enumName->getSymbol() == hoveredToken) {
                 return makeResult(hoveredToken, withDoc(formatEnumDecl(ed), ed->getStart()->getLine() - 1));
             }
             // Hover on variant name
-            for (size_t i = 1; i < ids.size(); i++) {
-                if (ids[i]->getSymbol() == hoveredToken) {
-                    std::string md = "```lux\n(variant) " + ids[0]->getText()
-                                   + "::" + ids[i]->getText() + "\n```";
+            for (auto* variant : ed->enumVariant()) {
+                auto* v = variant->IDENTIFIER();
+                if (v && v->getSymbol() == hoveredToken) {
+                    std::string md = "```lux\n(variant) " + enumName->getText()
+                                   + "::" + v->getText() + "\n```";
                     return makeResult(hoveredToken, md);
                 }
             }
@@ -941,6 +942,46 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── Generic enum access: Type<T>::Variant ──────────────────────
+    if (auto* gea = dynamic_cast<LuxParser::GenericEnumAccessExprContext*>(expr)) {
+        auto ids = gea->IDENTIFIER();
+        if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
+            return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings,
+                               cursorLine, project);
+        }
+        if (ids.size() >= 2 && ids[1]->getSymbol() == hoveredToken) {
+            std::string baseName = ids[0]->getText();
+            std::string variantName = ids[1]->getText();
+
+            std::string fullType = baseName + "<";
+            auto args = gea->typeSpec();
+            for (size_t i = 0; i < args.size(); i++) {
+                if (i > 0) fullType += ", ";
+                fullType += typeSpecToString(args[i]);
+            }
+            fullType += ">";
+
+            // Validate against local enum declaration (generic base enum)
+            auto* ed = findEnumDecl(tree, baseName);
+            if (ed) {
+                for (auto* variant : ed->enumVariant()) {
+                    auto* v = variant->IDENTIFIER();
+                    if (v && v->getText() == variantName) {
+                        std::string md = "```lux\n(variant) " + fullType + "::" +
+                                         variantName + "\n```";
+                        size_t declLine = ed->getStart()->getLine();
+                        md = appendDocToHover(md, docComments_, declLine);
+                        return makeResult(hoveredToken, md);
+                    }
+                }
+            }
+
+            return makeResult(hoveredToken,
+                "```lux\n(variant) " + fullType + "::" + variantName + "\n```");
+        }
+        return std::nullopt;
+    }
+
     // ── Static method call: Type::method(args) ─────────────────────
     if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
@@ -1295,6 +1336,61 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             if (r) return r;
         }
         return walkExprForHover(cast->expression(), hoveredToken, tokenText,
+                                 tree, bindings, cursorLine, project);
+    }
+
+    // ── Is: expr is Type [::Variant] ────────────────────────────────
+    if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(expr)) {
+        if (auto* ts = isE->typeSpec()) {
+            auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
+            if (r) return r;
+        }
+
+        if (isE->SCOPE() && isE->IDENTIFIER(0) &&
+            isE->IDENTIFIER(0)->getSymbol() == hoveredToken) {
+            auto variantName = isE->IDENTIFIER(0)->getText();
+            auto* ts = isE->typeSpec();
+            std::string fullType = ts ? typeSpecToString(ts) : std::string("?");
+
+            std::string md = "```lux\n(variant) " + fullType + "::" +
+                             variantName + "\n```";
+            return makeResult(hoveredToken, md);
+        }
+
+        if (isE->LPAREN() && isE->IDENTIFIER(1) &&
+            isE->IDENTIFIER(1)->getSymbol() == hoveredToken) {
+            std::string bindType = "auto";
+            if (auto* ts = isE->typeSpec(); ts && ts->IDENTIFIER() && isE->IDENTIFIER(0)) {
+                auto enumName = ts->IDENTIFIER()->getText();
+                auto variantName = isE->IDENTIFIER(0)->getText();
+                if (auto* ed = findEnumDecl(tree, enumName)) {
+                    for (auto* variant : ed->enumVariant()) {
+                        auto* vId = variant->IDENTIFIER();
+                        if (!vId || vId->getText() != variantName) continue;
+                        if (variant->LPAREN() && variant->typeSpec().size() == 1) {
+                            bindType = variant->typeSpec(0)->getText();
+                            if (ts->LT() && ed->typeParamList()) {
+                                std::unordered_map<std::string, std::string> subst;
+                                auto tps = ed->typeParamList()->typeParam();
+                                auto args = ts->typeSpec();
+                                for (size_t i = 0; i < tps.size() && i < args.size(); i++) {
+                                    auto ids = tps[i]->IDENTIFIER();
+                                    if (!ids.empty()) subst[ids[0]->getText()] = args[i]->getText();
+                                }
+                                bindType = substituteTypeParams(bindType, subst);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            std::string md = "```lux\n(variable) " + bindType + " " +
+                             isE->IDENTIFIER(1)->getText() + "\n```";
+            return makeResult(hoveredToken, md);
+        }
+
+        return walkExprForHover(isE->expression(), hoveredToken, tokenText,
                                  tree, bindings, cursorLine, project);
     }
 
@@ -2940,9 +3036,9 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
             if (!sym || sym->kind != ExportedSymbol::Enum) continue;
             auto* enumCtx = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
             if (!enumCtx) continue;
-            auto enumIds = enumCtx->IDENTIFIER();
-            for (size_t i = 1; i < enumIds.size(); i++) {
-                if (enumIds[i]->getText() == variantName) {
+            for (auto* variant : enumCtx->enumVariant()) {
+                auto* v = variant->IDENTIFIER();
+                if (v && v->getText() == variantName) {
                     std::string md = "```lux\n(variant) " + typeName + "::" + variantName + "\n```";
                     // Read doc-comments from source file
                     if (!sym->sourceFile.empty()) {
@@ -3428,6 +3524,21 @@ static std::string inferExprTypeName(
         return "";
     }
 
+    // Generic enum access: Result<int32, string>::Unit → "Result<int32,string>"
+    if (auto* gea = dynamic_cast<LuxParser::GenericEnumAccessExprContext*>(expr)) {
+        auto ids = gea->IDENTIFIER();
+        if (ids.empty()) return "";
+
+        std::string outType = ids[0]->getText() + "<";
+        auto args = gea->typeSpec();
+        for (size_t i = 0; i < args.size(); i++) {
+            if (i > 0) outType += ",";
+            outType += args[i]->getText();
+        }
+        outType += ">";
+        return outType;
+    }
+
     // Static method call: Type::method(...) → look up return type from extend blocks
     if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
@@ -3632,6 +3743,10 @@ static std::string inferExprTypeName(
     if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
         return cast->typeSpec()->getText();
 
+    // Is expression always returns bool
+    if (dynamic_cast<LuxParser::IsExprContext*>(expr))
+        return "bool";
+
     // Ternary: type of true branch
     if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr))
         return inferExprTypeName(tern->expression(1), locals, flc);
@@ -3769,6 +3884,58 @@ static void collectLocalsFromStmts(
         size_t beforeLine,
         std::unordered_map<std::string, HoverProvider::LocalVar>& out,
         const FuncLookupCtx* flc = nullptr) {
+
+    auto cursorInsideNode = [](antlr4::ParserRuleContext* node, size_t cursorLine0) {
+        if (!node) return false;
+        auto* start = node->getStart();
+        auto* stop  = node->getStop();
+        if (!start || !stop) return false;
+        size_t startLine = start->getLine() - 1;
+        size_t stopLine  = stop->getLine() - 1;
+        return cursorLine0 >= startLine && cursorLine0 <= stopLine;
+    };
+
+    auto inferIsBindingPayloadType = [&](LuxParser::ExpressionContext* cond) -> std::string {
+        auto* isE = dynamic_cast<LuxParser::IsExprContext*>(cond);
+        if (!isE || !isE->SCOPE() || !isE->LPAREN() || !isE->IDENTIFIER(1)) return "";
+
+        auto* rhsType = isE->typeSpec();
+        if (!rhsType || !rhsType->IDENTIFIER() || !flc || !flc->tree) return "";
+
+        auto enumName = rhsType->IDENTIFIER()->getText();
+        LuxParser::EnumDeclContext* enumDecl = nullptr;
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            if (auto* ed = tld->enumDecl(); ed && ed->IDENTIFIER() &&
+                ed->IDENTIFIER()->getText() == enumName) {
+                enumDecl = ed;
+                break;
+            }
+        }
+        if (!enumDecl || !isE->IDENTIFIER(0)) return "";
+
+        auto variantName = isE->IDENTIFIER(0)->getText();
+        for (auto* variant : enumDecl->enumVariant()) {
+            auto* vId = variant->IDENTIFIER();
+            if (!vId || vId->getText() != variantName) continue;
+            if (!variant->LPAREN() || variant->typeSpec().size() != 1) return "";
+
+            auto payloadType = variant->typeSpec(0)->getText();
+            if (rhsType->LT() && enumDecl->typeParamList()) {
+                std::unordered_map<std::string, std::string> subst;
+                auto tps = enumDecl->typeParamList()->typeParam();
+                auto args = rhsType->typeSpec();
+                for (size_t i = 0; i < tps.size() && i < args.size(); i++) {
+                    auto ids = tps[i]->IDENTIFIER();
+                    if (!ids.empty()) subst[ids[0]->getText()] = args[i]->getText();
+                }
+                payloadType = substituteTypeParams(payloadType, subst);
+            }
+            return payloadType;
+        }
+
+        return "";
+    };
+
     for (auto* stmt : stmts) {
         // Stop collecting if statement starts after the cursor line
         auto* start = stmt->getStart();
@@ -3806,25 +3973,58 @@ static void collectLocalsFromStmts(
         // Recurse into nested blocks
         if (auto* ifS = stmt->ifStmt()) {
             if (auto* body = ifS->ifBody()) {
-                if (auto* b = body->block())
-                    collectLocalsFromBlock(b, beforeLine, out, flc);
-                else if (auto* s = body->statement())
-                    collectLocalsFromStmts({s}, beforeLine, out, flc);
+                if (auto* b = body->block()) {
+                    if (cursorInsideNode(b, beforeLine)) {
+                        if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
+                            isE && isE->IDENTIFIER(1)) {
+                            auto bindType = inferIsBindingPayloadType(ifS->expression());
+                            out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                        }
+                        collectLocalsFromBlock(b, beforeLine, out, flc);
+                    }
+                } else if (auto* s = body->statement()) {
+                    if (cursorInsideNode(s, beforeLine)) {
+                        if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
+                            isE && isE->IDENTIFIER(1)) {
+                            auto bindType = inferIsBindingPayloadType(ifS->expression());
+                            out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                        }
+                        collectLocalsFromStmts({s}, beforeLine, out, flc);
+                    }
+                }
             }
             for (auto* elif : ifS->elseIfClause()) {
                 if (auto* body = elif->ifBody()) {
-                    if (auto* b = body->block())
-                        collectLocalsFromBlock(b, beforeLine, out, flc);
-                    else if (auto* s = body->statement())
-                        collectLocalsFromStmts({s}, beforeLine, out, flc);
+                    if (auto* b = body->block()) {
+                        if (cursorInsideNode(b, beforeLine)) {
+                            if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
+                                isE && isE->IDENTIFIER(1)) {
+                                auto bindType = inferIsBindingPayloadType(elif->expression());
+                                out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                            }
+                            collectLocalsFromBlock(b, beforeLine, out, flc);
+                        }
+                    } else if (auto* s = body->statement()) {
+                        if (cursorInsideNode(s, beforeLine)) {
+                            if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
+                                isE && isE->IDENTIFIER(1)) {
+                                auto bindType = inferIsBindingPayloadType(elif->expression());
+                                out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                            }
+                            collectLocalsFromStmts({s}, beforeLine, out, flc);
+                        }
+                    }
                 }
             }
             if (ifS->elseClause()) {
                 if (auto* body = ifS->elseClause()->ifBody()) {
-                    if (auto* b = body->block())
-                        collectLocalsFromBlock(b, beforeLine, out, flc);
-                    else if (auto* s = body->statement())
-                        collectLocalsFromStmts({s}, beforeLine, out, flc);
+                    if (auto* b = body->block()) {
+                        if (cursorInsideNode(b, beforeLine))
+                            collectLocalsFromBlock(b, beforeLine, out, flc);
+                    } else if (auto* s = body->statement()) {
+                        if (cursorInsideNode(s, beforeLine))
+                            collectLocalsFromStmts({s}, beforeLine, out, flc);
+                    }
                 }
             }
         }
@@ -3965,7 +4165,7 @@ HoverProvider::findEnumDecl(LuxParser::ProgramContext* tree,
                             const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl()) {
-            if (ed->IDENTIFIER()[0]->getText() == name)
+            if (ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name)
                 return ed;
         }
     }
@@ -4087,12 +4287,44 @@ std::string HoverProvider::formatStructDecl(LuxParser::StructDeclContext* decl) 
 }
 
 std::string HoverProvider::formatEnumDecl(LuxParser::EnumDeclContext* decl) {
-    auto ids = decl->IDENTIFIER();
     std::ostringstream ss;
-    ss << "```lux\nenum " << ids[0]->getText() << " {\n";
-    for (size_t i = 1; i < ids.size(); i++) {
-        ss << "    " << ids[i]->getText();
-        if (i + 1 < ids.size()) ss << ",";
+    ss << "```lux\nenum " << decl->IDENTIFIER()->getText();
+    if (auto* tpl = decl->typeParamList()) {
+        ss << "<";
+        bool first = true;
+        for (auto* tp : tpl->typeParam()) {
+            if (!first) ss << ", ";
+            auto ids = tp->IDENTIFIER();
+            if (!ids.empty()) ss << ids[0]->getText();
+            if (tp->COLON() && ids.size() >= 2) ss << ": " << ids[1]->getText();
+            first = false;
+        }
+        ss << ">";
+    }
+    ss << " {\n";
+    auto variants = decl->enumVariant();
+    for (size_t i = 0; i < variants.size(); i++) {
+        auto* v = variants[i];
+        ss << "    " << v->IDENTIFIER()->getText();
+        if (v->LPAREN()) {
+            ss << "(";
+            auto tys = v->typeSpec();
+            for (size_t j = 0; j < tys.size(); j++) {
+                if (j) ss << ", ";
+                ss << typeSpecToString(tys[j]);
+            }
+            ss << ")";
+        } else if (v->LBRACE()) {
+            ss << " { ";
+            auto fields = v->enumPayloadField();
+            for (size_t j = 0; j < fields.size(); j++) {
+                if (j) ss << ", ";
+                ss << fields[j]->IDENTIFIER()->getText() << ": "
+                   << typeSpecToString(fields[j]->typeSpec());
+            }
+            ss << " }";
+        }
+        if (i + 1 < variants.size()) ss << ",";
         ss << "\n";
     }
     ss << "}\n```";

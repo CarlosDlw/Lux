@@ -190,14 +190,16 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 
     // ── enum ──
     else if (auto* ctx = dynamic_cast<LuxParser::EnumDeclContext*>(node)) {
-        auto ids = ctx->IDENTIFIER();
-        if (!ids.empty()) {
-            classifyIdent(map, ids[0], SemanticTokenType::Enum,
+        if (ctx->IDENTIFIER()) {
+            classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Enum,
                           static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                           static_cast<uint32_t>(SemanticTokenMod::Definition));
-            for (size_t i = 1; i < ids.size(); ++i)
-                classifyIdent(map, ids[i], SemanticTokenType::EnumMember,
-                              static_cast<uint32_t>(SemanticTokenMod::Declaration));
+            for (auto* variant : ctx->enumVariant()) {
+                if (variant->IDENTIFIER()) {
+                    classifyIdent(map, variant->IDENTIFIER(), SemanticTokenType::EnumMember,
+                                  static_cast<uint32_t>(SemanticTokenMod::Declaration));
+                }
+            }
         }
     }
 
@@ -375,6 +377,46 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         if (ids.size() >= 2) {
             classifyIdent(map, ids[0], SemanticTokenType::Enum);
             classifyIdent(map, ids[1], SemanticTokenType::EnumMember);
+        }
+    }
+
+    // ── generic enum access: Result<int32, string>::Unit ──
+    else if (auto* ctx = dynamic_cast<LuxParser::GenericEnumAccessExprContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        if (ids.size() >= 2) {
+            classifyIdent(map, ids[0], SemanticTokenType::Enum);
+            classifyIdent(map, ids[1], SemanticTokenType::EnumMember);
+        }
+    }
+
+    // ── enum named variant literals ──
+    else if (auto* ctx = dynamic_cast<LuxParser::EnumNamedVariantExprContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        if (ids.size() >= 2) {
+            classifyIdent(map, ids[0], SemanticTokenType::Enum);
+            classifyIdent(map, ids[1], SemanticTokenType::EnumMember);
+            for (size_t i = 2; i < ids.size(); ++i)
+                classifyIdent(map, ids[i], SemanticTokenType::Property);
+        }
+    }
+    else if (auto* ctx = dynamic_cast<LuxParser::GenericEnumNamedVariantExprContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        if (ids.size() >= 2) {
+            classifyIdent(map, ids[0], SemanticTokenType::Enum);
+            classifyIdent(map, ids[1], SemanticTokenType::EnumMember);
+            for (size_t i = 2; i < ids.size(); ++i)
+                classifyIdent(map, ids[i], SemanticTokenType::Property);
+        }
+    }
+
+    // ── is variant check: expr is Type::Variant ──
+    else if (auto* ctx = dynamic_cast<LuxParser::IsExprContext*>(node)) {
+        if (ctx->SCOPE() && ctx->IDENTIFIER(0)) {
+            classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::EnumMember);
+        }
+        if (ctx->LPAREN() && ctx->IDENTIFIER(1)) {
+            classifyIdent(map, ctx->IDENTIFIER(1), SemanticTokenType::Variable,
+                          static_cast<uint32_t>(SemanticTokenMod::Declaration));
         }
     }
 

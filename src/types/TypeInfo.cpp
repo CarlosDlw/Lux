@@ -5,6 +5,27 @@
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/LLVMContext.h>
 
+static llvm::Type* buildEnumVariantPayloadType(const EnumVariantInfo& variant,
+                                               llvm::LLVMContext& ctx,
+                                               const llvm::DataLayout& dl) {
+    if (variant.payloadFields.empty()) return nullptr;
+
+    if (variant.payloadKind == EnumPayloadKind::Tuple && variant.payloadFields.size() == 1)
+        return variant.payloadFields[0].typeInfo->toLLVMType(ctx, dl);
+
+    std::vector<llvm::Type*> fieldTypes;
+    for (const auto& field : variant.payloadFields)
+        fieldTypes.push_back(field.typeInfo->toLLVMType(ctx, dl));
+    return llvm::StructType::get(ctx, fieldTypes);
+}
+
+static bool enumHasPayload(const TypeInfo& typeInfo) {
+    for (const auto& variant : typeInfo.enumVariantInfos) {
+        if (!variant.payloadFields.empty()) return true;
+    }
+    return false;
+}
+
 llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
                                  const llvm::DataLayout& dl) const {
     // Fixed-size inline array: [N x elemTy]
@@ -59,8 +80,36 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
     case TypeKind::Union:
         return llvm::StructType::getTypeByName(ctx, name);
 
-    case TypeKind::Enum:
-        return llvm::Type::getInt32Ty(ctx);
+    case TypeKind::Enum: {
+        if (!enumHasPayload(*this))
+            return llvm::Type::getInt32Ty(ctx);
+
+        auto* existing = llvm::StructType::getTypeByName(ctx, name);
+        if (existing) return existing;
+
+        llvm::Type* storageTy = nullptr;
+        llvm::TypeSize maxSize = llvm::TypeSize::getFixed(0);
+        llvm::Align maxAlign(1);
+
+        for (const auto& variant : enumVariantInfos) {
+            auto* payloadTy = buildEnumVariantPayloadType(variant, ctx, dl);
+            if (!payloadTy) continue;
+
+            auto size = dl.getTypeAllocSize(payloadTy);
+            auto align = dl.getABITypeAlign(payloadTy);
+            if (!storageTy || size > maxSize || (size == maxSize && align > maxAlign)) {
+                storageTy = payloadTy;
+                maxSize = size;
+                maxAlign = align;
+            }
+        }
+
+        if (!storageTy)
+            return llvm::Type::getInt32Ty(ctx);
+
+        return llvm::StructType::create(ctx,
+            {llvm::Type::getInt32Ty(ctx), storageTy}, name);
+    }
 
     case TypeKind::Pointer:
         return llvm::PointerType::getUnqual(ctx);

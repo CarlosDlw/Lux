@@ -26,6 +26,16 @@ static void collectLocalsFromStmts(
     const std::vector<LuxParser::StatementContext*>& stmts, size_t beforeLine,
     std::unordered_map<std::string, DefinitionProvider::LocalVar>& out) {
 
+    auto cursorInsideNode = [](antlr4::ParserRuleContext* node, size_t cursorLine0) {
+        if (!node) return false;
+        auto* start = node->getStart();
+        auto* stop  = node->getStop();
+        if (!start || !stop) return false;
+        size_t startLine = start->getLine() - 1;
+        size_t stopLine  = stop->getLine() - 1;
+        return cursorLine0 >= startLine && cursorLine0 <= stopLine;
+    };
+
     for (auto* stmt : stmts) {
         auto* start = stmt->getStart();
         if (start && start->getLine() > beforeLine + 1) break;
@@ -43,25 +53,58 @@ static void collectLocalsFromStmts(
         // Recurse into nested blocks
         if (auto* ifS = stmt->ifStmt()) {
             if (auto* body = ifS->ifBody()) {
-                if (auto* b = body->block())
-                    collectLocalsFromBlock(b, beforeLine, out);
-                else if (auto* s = body->statement())
-                    collectLocalsFromStmts({s}, beforeLine, out);
+                if (auto* b = body->block()) {
+                    if (cursorInsideNode(b, beforeLine)) {
+                        if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
+                            isE && isE->IDENTIFIER(1)) {
+                            auto* bindId = isE->IDENTIFIER(1);
+                            out[bindId->getText()] = {"auto", 0, bindId->getSymbol()};
+                        }
+                        collectLocalsFromBlock(b, beforeLine, out);
+                    }
+                } else if (auto* s = body->statement()) {
+                    if (cursorInsideNode(s, beforeLine)) {
+                        if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
+                            isE && isE->IDENTIFIER(1)) {
+                            auto* bindId = isE->IDENTIFIER(1);
+                            out[bindId->getText()] = {"auto", 0, bindId->getSymbol()};
+                        }
+                        collectLocalsFromStmts({s}, beforeLine, out);
+                    }
+                }
             }
             for (auto* elif : ifS->elseIfClause()) {
                 if (auto* body = elif->ifBody()) {
-                    if (auto* b = body->block())
-                        collectLocalsFromBlock(b, beforeLine, out);
-                    else if (auto* s = body->statement())
-                        collectLocalsFromStmts({s}, beforeLine, out);
+                    if (auto* b = body->block()) {
+                        if (cursorInsideNode(b, beforeLine)) {
+                            if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
+                                isE && isE->IDENTIFIER(1)) {
+                                auto* bindId = isE->IDENTIFIER(1);
+                                out[bindId->getText()] = {"auto", 0, bindId->getSymbol()};
+                            }
+                            collectLocalsFromBlock(b, beforeLine, out);
+                        }
+                    } else if (auto* s = body->statement()) {
+                        if (cursorInsideNode(s, beforeLine)) {
+                            if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
+                                isE && isE->IDENTIFIER(1)) {
+                                auto* bindId = isE->IDENTIFIER(1);
+                                out[bindId->getText()] = {"auto", 0, bindId->getSymbol()};
+                            }
+                            collectLocalsFromStmts({s}, beforeLine, out);
+                        }
+                    }
                 }
             }
             if (ifS->elseClause()) {
                 if (auto* body = ifS->elseClause()->ifBody()) {
-                    if (auto* b = body->block())
-                        collectLocalsFromBlock(b, beforeLine, out);
-                    else if (auto* s = body->statement())
-                        collectLocalsFromStmts({s}, beforeLine, out);
+                    if (auto* b = body->block()) {
+                        if (cursorInsideNode(b, beforeLine))
+                            collectLocalsFromBlock(b, beforeLine, out);
+                    } else if (auto* s = body->statement()) {
+                        if (cursorInsideNode(s, beforeLine))
+                            collectLocalsFromStmts({s}, beforeLine, out);
+                    }
                 }
             }
         }
@@ -280,7 +323,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
 
         // Enum name
         if (auto* ed = tld->enumDecl()) {
-            if (!ed->IDENTIFIER().empty() && ed->IDENTIFIER()[0]->getSymbol() == hoveredToken)
+            if (ed->IDENTIFIER() && ed->IDENTIFIER()->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
         }
 
@@ -456,7 +499,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
     // 5) Enum
     auto* enumDecl = findEnumDecl(tree, name);
     if (enumDecl)
-        return makeResult(enumDecl->IDENTIFIER()[0]->getSymbol(), filePath);
+        return makeResult(enumDecl->IDENTIFIER()->getSymbol(), filePath);
 
     // 6) Union
     auto* unionDecl = findUnionDecl(tree, name);
@@ -476,10 +519,10 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
     // 9) Enum variant (Name inside EnumName::Name or standalone imported)
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl()) {
-            auto ids = ed->IDENTIFIER();
-            for (size_t i = 1; i < ids.size(); i++) {
-                if (ids[i]->getText() == name)
-                    return makeResult(ids[i]->getSymbol(), filePath);
+            for (auto* variant : ed->enumVariant()) {
+                auto* v = variant->IDENTIFIER();
+                if (v && v->getText() == name)
+                    return makeResult(v->getSymbol(), filePath);
             }
         }
     }
@@ -600,7 +643,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveTypeName(
     if (auto* sd = findStructDecl(tree, name))
         return makeResult(sd->IDENTIFIER()->getSymbol(), filePath);
     if (auto* ed = findEnumDecl(tree, name))
-        return makeResult(ed->IDENTIFIER()[0]->getSymbol(), filePath);
+        return makeResult(ed->IDENTIFIER()->getSymbol(), filePath);
     if (auto* ud = findUnionDecl(tree, name))
         return makeResult(ud->IDENTIFIER()->getSymbol(), filePath);
     if (auto* ta = findTypeAliasDecl(tree, name))
@@ -856,10 +899,10 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
             std::string enumName = ids[0]->getText();
             auto* enumDecl = findEnumDecl(tree, enumName);
             if (enumDecl) {
-                auto allIds = enumDecl->IDENTIFIER();
-                for (size_t i = 1; i < allIds.size(); i++) {
-                    if (allIds[i]->getText() == ids[1]->getText())
-                        return makeResult(allIds[i]->getSymbol(), filePath);
+                for (auto* variant : enumDecl->enumVariant()) {
+                    auto* v = variant->IDENTIFIER();
+                    if (v && v->getText() == ids[1]->getText())
+                        return makeResult(v->getSymbol(), filePath);
                 }
             }
             // Cross-file enum
@@ -869,10 +912,10 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                     if (!sym || sym->kind != ExportedSymbol::Enum) continue;
                     auto* ed = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
                     if (!ed) continue;
-                    auto allIds = ed->IDENTIFIER();
-                    for (size_t i = 1; i < allIds.size(); i++) {
-                        if (allIds[i]->getText() == ids[1]->getText())
-                            return makeResult(allIds[i]->getSymbol(), filePath,
+                    for (auto* variant : ed->enumVariant()) {
+                        auto* v = variant->IDENTIFIER();
+                        if (v && v->getText() == ids[1]->getText())
+                            return makeResult(v->getSymbol(), filePath,
                                               sym->sourceFile);
                     }
                 }
@@ -1703,7 +1746,7 @@ DefinitionProvider::findEnumDecl(LuxParser::ProgramContext* tree,
                                  const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl())
-            if (ed->IDENTIFIER()[0]->getText() == name)
+            if (ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name)
                 return ed;
     }
     return nullptr;

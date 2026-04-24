@@ -2128,8 +2128,8 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem>& items,
                                       const std::string& prefix) {
     // Primitive types
     static const char* primitives[] = {
-        "int8", "int16", "int32", "int64", "int128", "isize",
-        "uint8", "uint16", "uint32", "uint64", "uint128", "usize",
+        "int1", "int8", "int16", "int32", "int64", "int128", "intinf", "isize",
+        "uint1", "uint8", "uint16", "uint32", "uint64", "uint128", "usize",
         "float32", "float64", "float80", "float128", "double",
         "bool", "char", "void", "string", "cstring",
     };

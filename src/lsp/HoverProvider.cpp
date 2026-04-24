@@ -1417,6 +1417,143 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
         }
     }
 
+    // Check arrow assignment statements: ptr->field = expr;
+    if (auto* aas = stmt->arrowAssignStmt()) {
+        auto* baseId = aas->IDENTIFIER(0);
+        auto* fieldId = aas->IDENTIFIER(1);
+
+        // Hover on base identifier (e.g., self)
+        if (baseId && baseId->getSymbol() == hoveredToken) {
+            return hoverIdent(baseId->getText(), hoveredToken, tree,
+                              bindings, cursorLine, project);
+        }
+
+        // Hover on field identifier on LHS (e.g., self->done)
+        if (fieldId && fieldId->getSymbol() == hoveredToken && baseId) {
+            std::string fieldName = fieldId->getText();
+            std::string ptrTypeName;
+
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                auto it = locals.find(baseId->getText());
+                if (it != locals.end()) ptrTypeName = it->second.typeName;
+            }
+
+            // In extend instance methods, self is the implicit receiver.
+            if (ptrTypeName.empty() && baseId->getText() == "self") {
+                size_t tokenLine = cursorLine + 1;
+                for (auto* tld : tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    for (auto* method : ext->extendMethod()) {
+                        auto* ms = method->getStart();
+                        auto* me = method->getStop();
+                        if (!ms || !me) continue;
+                        if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
+                        if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
+                            method->IDENTIFIER(1)->getText() == "self") {
+                            ptrTypeName = "*" + ext->IDENTIFIER()->getText();
+                            break;
+                        }
+                    }
+                    if (!ptrTypeName.empty()) break;
+                }
+            }
+
+            std::string structName;
+            if (!ptrTypeName.empty() && ptrTypeName[0] == '*')
+                structName = ptrTypeName.substr(1);
+
+            if (!structName.empty()) {
+                if (auto* sd = findStructDecl(tree, structName)) {
+                    for (auto* f : sd->structField()) {
+                        if (f->IDENTIFIER()->getText() == fieldName) {
+                            std::string md = "```lux\n(field) "
+                                + typeSpecToString(f->typeSpec()) + " "
+                                + structName + "." + fieldName + "\n```";
+                            return makeResult(fieldId->getSymbol(), md);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recurse into RHS expression to resolve method/field hover there
+        if (auto* rhs = aas->expression()) {
+            auto r = walkExprForHover(rhs, hoveredToken, tokenText,
+                                      tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+    }
+
+    // Check arrow compound assignment statements: ptr->field += expr;
+    if (auto* acs = stmt->arrowCompoundAssignStmt()) {
+        auto* baseId = acs->IDENTIFIER(0);
+        auto* fieldId = acs->IDENTIFIER(1);
+
+        if (baseId && baseId->getSymbol() == hoveredToken) {
+            return hoverIdent(baseId->getText(), hoveredToken, tree,
+                              bindings, cursorLine, project);
+        }
+
+        if (fieldId && fieldId->getSymbol() == hoveredToken && baseId) {
+            std::string fieldName = fieldId->getText();
+            std::string ptrTypeName;
+
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                auto it = locals.find(baseId->getText());
+                if (it != locals.end()) ptrTypeName = it->second.typeName;
+            }
+
+            // In extend instance methods, self is the implicit receiver.
+            if (ptrTypeName.empty() && baseId->getText() == "self") {
+                size_t tokenLine = cursorLine + 1;
+                for (auto* tld : tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    for (auto* method : ext->extendMethod()) {
+                        auto* ms = method->getStart();
+                        auto* me = method->getStop();
+                        if (!ms || !me) continue;
+                        if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
+                        if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
+                            method->IDENTIFIER(1)->getText() == "self") {
+                            ptrTypeName = "*" + ext->IDENTIFIER()->getText();
+                            break;
+                        }
+                    }
+                    if (!ptrTypeName.empty()) break;
+                }
+            }
+
+            std::string structName;
+            if (!ptrTypeName.empty() && ptrTypeName[0] == '*')
+                structName = ptrTypeName.substr(1);
+
+            if (!structName.empty()) {
+                if (auto* sd = findStructDecl(tree, structName)) {
+                    for (auto* f : sd->structField()) {
+                        if (f->IDENTIFIER()->getText() == fieldName) {
+                            std::string md = "```lux\n(field) "
+                                + typeSpecToString(f->typeSpec()) + " "
+                                + structName + "." + fieldName + "\n```";
+                            return makeResult(fieldId->getSymbol(), md);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (auto* rhs = acs->expression()) {
+            auto r = walkExprForHover(rhs, hoveredToken, tokenText,
+                                      tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+    }
+
     // Check call statements (standalone function calls)
     if (auto* cs = stmt->callStmt()) {
         if (auto* al = cs->argList()) {

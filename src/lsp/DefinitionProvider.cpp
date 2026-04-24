@@ -1147,6 +1147,125 @@ std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
         return std::nullopt;
     }
 
+    // ── Arrow assign statement: ptr->field = expr ───────────────
+    if (auto* aas = stmt->arrowAssignStmt()) {
+        auto* baseId = aas->IDENTIFIER(0);
+        auto* fieldId = aas->IDENTIFIER(1);
+
+        if (baseId && baseId->getSymbol() == hoveredToken) {
+            return resolveIdent(baseId->getText(), tree, bindings, cursorLine,
+                                filePath, project);
+        }
+
+        if (fieldId && fieldId->getSymbol() == hoveredToken && baseId) {
+            std::string structName;
+
+            auto* encFunc = findEnclosingFunction(tree, cursorLine);
+            if (encFunc) {
+                auto locals = collectLocals(encFunc, cursorLine);
+                auto it = locals.find(baseId->getText());
+                if (it != locals.end()) {
+                    structName = it->second.typeName;
+                    while (!structName.empty() && structName.front() == '*')
+                        structName.erase(structName.begin());
+                }
+            }
+
+            // In extend instance methods, self points to the extended struct.
+            if (structName.empty() && baseId->getText() == "self") {
+                size_t tokenLine = cursorLine + 1;
+                for (auto* tld : tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    for (auto* method : ext->extendMethod()) {
+                        auto* ms = method->getStart();
+                        auto* me = method->getStop();
+                        if (!ms || !me) continue;
+                        if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
+                        if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
+                            method->IDENTIFIER(1)->getText() == "self") {
+                            structName = ext->IDENTIFIER()->getText();
+                            break;
+                        }
+                    }
+                    if (!structName.empty()) break;
+                }
+            }
+
+            if (!structName.empty()) {
+                if (auto r = resolveStructField(structName, fieldId->getText(), tree,
+                                                bindings, filePath, project))
+                    return r;
+            }
+        }
+
+        if (auto* rhs = aas->expression()) {
+            if (auto r = walkExprForDef(rhs, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Arrow compound assign statement: ptr->field += expr ─────
+    if (auto* acs = stmt->arrowCompoundAssignStmt()) {
+        auto* baseId = acs->IDENTIFIER(0);
+        auto* fieldId = acs->IDENTIFIER(1);
+
+        if (baseId && baseId->getSymbol() == hoveredToken) {
+            return resolveIdent(baseId->getText(), tree, bindings, cursorLine,
+                                filePath, project);
+        }
+
+        if (fieldId && fieldId->getSymbol() == hoveredToken && baseId) {
+            std::string structName;
+
+            auto* encFunc = findEnclosingFunction(tree, cursorLine);
+            if (encFunc) {
+                auto locals = collectLocals(encFunc, cursorLine);
+                auto it = locals.find(baseId->getText());
+                if (it != locals.end()) {
+                    structName = it->second.typeName;
+                    while (!structName.empty() && structName.front() == '*')
+                        structName.erase(structName.begin());
+                }
+            }
+
+            if (structName.empty() && baseId->getText() == "self") {
+                size_t tokenLine = cursorLine + 1;
+                for (auto* tld : tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext) continue;
+                    for (auto* method : ext->extendMethod()) {
+                        auto* ms = method->getStart();
+                        auto* me = method->getStop();
+                        if (!ms || !me) continue;
+                        if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
+                        if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
+                            method->IDENTIFIER(1)->getText() == "self") {
+                            structName = ext->IDENTIFIER()->getText();
+                            break;
+                        }
+                    }
+                    if (!structName.empty()) break;
+                }
+            }
+
+            if (!structName.empty()) {
+                if (auto r = resolveStructField(structName, fieldId->getText(), tree,
+                                                bindings, filePath, project))
+                    return r;
+            }
+        }
+
+        if (auto* rhs = acs->expression()) {
+            if (auto r = walkExprForDef(rhs, hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
     // ── If statement ─────────────────────────────────────────────
     if (auto* ifS = stmt->ifStmt()) {
         if (auto* cond = ifS->expression()) {

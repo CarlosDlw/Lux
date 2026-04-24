@@ -236,15 +236,18 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
     else if (auto* ctx = dynamic_cast<LuxParser::ExtendMethodContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
-        if (ids.size() >= 2) {
-            // ids[0] is return type (or self param name), ids[1] is method name
-            classifyIdent(map, ids[1], SemanticTokenType::Method,
-                          static_cast<uint32_t>(SemanticTokenMod::Declaration) |
-                          static_cast<uint32_t>(SemanticTokenMod::Definition));
-        } else if (ids.size() == 1) {
+        if (!ids.empty()) {
+            // extendMethod grammar always places the method name at IDENTIFIER[0]
             classifyIdent(map, ids[0], SemanticTokenType::Method,
                           static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                           static_cast<uint32_t>(SemanticTokenMod::Definition));
+
+            // Instance method form: type name(&self, ...)
+            // Mark the self identifier as a parameter declaration.
+            if (ctx->AMPERSAND() && ids.size() >= 2) {
+                classifyIdent(map, ids[1], SemanticTokenType::Parameter,
+                              static_cast<uint32_t>(SemanticTokenMod::Declaration));
+            }
         }
     }
 
@@ -280,6 +283,32 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     else if (auto* ctx = dynamic_cast<LuxParser::CatchClauseContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Variable,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
+    }
+
+    // ── self usage in member assignment statements (LHS) ──
+    else if (auto* ctx = dynamic_cast<LuxParser::ArrowAssignStmtContext*>(node)) {
+        auto* base = ctx->IDENTIFIER(0);
+        if (base && base->getText() == "self") {
+            classifyIdent(map, base, SemanticTokenType::Parameter);
+        }
+    }
+    else if (auto* ctx = dynamic_cast<LuxParser::ArrowCompoundAssignStmtContext*>(node)) {
+        auto* base = ctx->IDENTIFIER(0);
+        if (base && base->getText() == "self") {
+            classifyIdent(map, base, SemanticTokenType::Parameter);
+        }
+    }
+    else if (auto* ctx = dynamic_cast<LuxParser::FieldAssignStmtContext*>(node)) {
+        auto* base = ctx->IDENTIFIER(0);
+        if (base && base->getText() == "self") {
+            classifyIdent(map, base, SemanticTokenType::Parameter);
+        }
+    }
+    else if (auto* ctx = dynamic_cast<LuxParser::FieldCompoundAssignStmtContext*>(node)) {
+        auto* base = ctx->IDENTIFIER(0);
+        if (base && base->getText() == "self") {
+            classifyIdent(map, base, SemanticTokenType::Parameter);
+        }
     }
 
     // ── function/method call expressions ──
@@ -369,6 +398,14 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         // Generic type: Vec<int32> — the IDENTIFIER before LT
         else if (ctx->IDENTIFIER() && ctx->LT()) {
             classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Type);
+        }
+    }
+
+    // ── self identifier usage inside extend instance methods ──
+    else if (auto* ctx = dynamic_cast<LuxParser::IdentExprContext*>(node)) {
+        auto* id = ctx->IDENTIFIER();
+        if (id && id->getText() == "self") {
+            classifyIdent(map, id, SemanticTokenType::Parameter);
         }
     }
 

@@ -138,7 +138,7 @@ Some functions are available without any `use` import:
 | `fromCStr(*char)` | Convert from C string |
 | `fromCStrCopy(*char)` | Convert from C string with owned copy |
 | `fromCStrLen(*char, usize)` | Convert from C string with length |
-| `freeStr(string)` | Free string buffer allocated by `fromCStrCopy` |
+| `freeStr(string)` | Free an owned string buffer, including values returned by `fromCStrCopy`, `sprintf`, and string methods that allocate a new string |
 
 ---
 

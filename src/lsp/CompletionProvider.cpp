@@ -647,12 +647,16 @@ std::vector<CompletionItem> CompletionProvider::complete(
                 varType = resolved;
             }
 
-            // Resolve method chain: x.abs().toString().| → walk each call
+            // Resolve member chain: x.field.method().| → walk each step
             if (!req.methodChain.empty() && !varType.empty()) {
-                for (auto& methodName : req.methodChain) {
+                for (auto& memberName : req.methodChain) {
                     std::string retType = resolveMethodReturnType(
-                        varType, methodName, parsed.tree, project);
-                    if (retType.empty()) break; // unknown method, stop
+                        varType, memberName, parsed.tree, project);
+                    if (retType.empty()) {
+                        retType = resolveFieldType(
+                            varType, memberName, parsed.tree, cBindingsPtr, project);
+                    }
+                    if (retType.empty()) break; // unknown member, stop
                     varType = retType;
                 }
             }
@@ -929,9 +933,10 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
             size_t dotPos = idEnd - 1;
             size_t recEnd = dotPos;
 
-            // Walk backwards through the expression, collecting method chain
+            // Walk backwards through the expression, collecting member chain
             // Patterns to handle:
             //   .name(...)   → method call, record name in chain
+            //   .field       → field access, record name in chain
             //   [...]        → array index, increment indexDepth
             //   identifier   → base variable, stop
             std::vector<std::string> chain;
@@ -978,6 +983,28 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
                     if (depth != 0) break;
                     recEnd = p;
                     ++indexDepth;
+                }
+                // Try: ...field_name
+                else if (std::isalnum(static_cast<unsigned char>(before[recEnd - 1])) ||
+                         before[recEnd - 1] == '_') {
+                    size_t nameEnd = recEnd;
+                    size_t nameStart = nameEnd;
+                    while (nameStart > 0 &&
+                           (std::isalnum(static_cast<unsigned char>(before[nameStart - 1])) ||
+                            before[nameStart - 1] == '_')) {
+                        --nameStart;
+                    }
+
+                    if (nameStart == nameEnd) break;
+
+                    // If preceded by a dot, this identifier is an intermediate
+                    // field access in the chain; otherwise it is the base variable.
+                    if (nameStart > 0 && before[nameStart - 1] == '.') {
+                        chain.push_back(before.substr(nameStart, nameEnd - nameStart));
+                        recEnd = nameStart - 1; // continue before the dot
+                    } else {
+                        break;
+                    }
                 }
                 // Otherwise: base variable identifier
                 else {
@@ -1603,6 +1630,20 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem>& items,
                 ci.label = field->IDENTIFIER()->getText();
                 ci.kind = CompletionKind::Field;
                 ci.detail = typeSpecToString(field->typeSpec());
+                items.push_back(std::move(ci));
+            }
+            return;
+        }
+    }
+
+    // Built-in struct from TypeRegistry (e.g. Error)
+    if (auto* ti = typeRegistry_.lookup(structName)) {
+        if (ti->kind == TypeKind::Struct) {
+            for (auto& field : ti->fields) {
+                CompletionItem ci;
+                ci.label = field.name;
+                ci.kind = CompletionKind::Field;
+                if (field.typeInfo) ci.detail = field.typeInfo->name;
                 items.push_back(std::move(ci));
             }
             return;
@@ -2549,6 +2590,63 @@ std::string CompletionProvider::resolveMethodReturnType(
                         return "void";
                     }
                 }
+            }
+        }
+    }
+
+    return "";
+}
+
+std::string CompletionProvider::resolveFieldType(
+    const std::string& receiverType, const std::string& fieldName,
+    LuxParser::ProgramContext* tree, const CBindings* bindings,
+    const ProjectContext* project) {
+
+    if (receiverType.empty() || fieldName.empty()) return "";
+
+    // 1) Same-file user struct
+    if (tree) {
+        for (auto* tld : tree->topLevelDecl()) {
+            if (auto* sd = tld->structDecl()) {
+                if (!sd->IDENTIFIER() || sd->IDENTIFIER()->getText() != receiverType) continue;
+                for (auto* field : sd->structField()) {
+                    if (field->IDENTIFIER() && field->IDENTIFIER()->getText() == fieldName)
+                        return typeSpecToString(field->typeSpec());
+                }
+            }
+        }
+    }
+
+    // 2) Cross-file user struct
+    if (project && project->isValid()) {
+        for (auto& ns : project->registry().allNamespaces()) {
+            auto* sym = project->registry().findSymbol(ns, receiverType);
+            if (!sym || sym->kind != ExportedSymbol::Struct) continue;
+            auto* decl = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+            if (!decl) continue;
+            for (auto* field : decl->structField()) {
+                if (field->IDENTIFIER() && field->IDENTIFIER()->getText() == fieldName)
+                    return typeSpecToString(field->typeSpec());
+            }
+        }
+    }
+
+    // 3) Built-in struct from TypeRegistry (e.g. Error)
+    if (auto* ti = typeRegistry_.lookup(receiverType)) {
+        if (ti->kind == TypeKind::Struct) {
+            for (auto& field : ti->fields) {
+                if (field.name == fieldName && field.typeInfo)
+                    return field.typeInfo->name;
+            }
+        }
+    }
+
+    // 4) C struct
+    if (bindings) {
+        if (auto* cs = bindings->findStruct(receiverType)) {
+            for (auto& field : cs->fields) {
+                if (field.name == fieldName && field.typeInfo)
+                    return field.typeInfo->name;
             }
         }
     }

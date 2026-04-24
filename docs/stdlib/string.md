@@ -2,6 +2,37 @@
 
 String utility functions that operate on `string` values.
 
+## Ownership Note
+
+Most transformation functions in `std::str` return a new owned `string` buffer.
+That includes APIs such as `toUpper`, `toLower`, `trim`, `reverse`, `replace`,
+`substring`, `slice`, `repeat`, and similar functions that produce a modified
+string value.
+
+If you keep the result, release it with `freeStr(...)` when you're done:
+
+```lux
+use std::str::{ toUpper };
+use std::log::{ println };
+
+int32 main() {
+    string upper = toUpper("hello");
+    defer freeStr(upper);
+
+    println(upper);
+    ret 0;
+}
+```
+
+If a string is borrowed from elsewhere, such as a field access like
+`err.message`, do not free the borrowed value itself. Only free the new owned
+string returned by the transformation:
+
+```lux
+string msg = err.message.capitalize();
+defer freeStr(msg);
+```
+
 ## Import
 
 ```tm

@@ -10842,7 +10842,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
     }
 
     // ── String method dispatch ───────────────────────────────────────
-    if (receiverTI && receiverTI->kind == TypeKind::String && !receiverVarName.empty()) {
+    if (receiverTI && receiverTI->kind == TypeKind::String) {
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* i1Ty    = llvm::Type::getInt1Ty(*context_);
@@ -10851,11 +10851,19 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         auto* i64Ty   = llvm::Type::getInt64Ty(*context_);
         auto* strTy   = llvm::StructType::get(*context_, {ptrTy, usizeTy});
 
-        // Load receiver string struct from its alloca
-        auto recvIt = locals_.find(receiverVarName);
-        if (recvIt != locals_.end()) {
-            auto* strVal = builder_->CreateLoad(strTy, recvIt->second.alloca,
-                                                receiverVarName + "_strval");
+        llvm::Value* strVal = nullptr;
+        if (!receiverVarName.empty()) {
+            auto recvIt = locals_.find(receiverVarName);
+            if (recvIt != locals_.end()) {
+                strVal = builder_->CreateLoad(strTy, recvIt->second.alloca,
+                                              receiverVarName + "_strval");
+            }
+        }
+        if (!strVal) {
+            strVal = castValue(visit(baseExpr));
+        }
+
+        if (strVal) {
             auto* strPtr = builder_->CreateExtractValue(strVal, 0, "str_ptr");
             auto* strLen = builder_->CreateExtractValue(strVal, 1, "str_len");
 

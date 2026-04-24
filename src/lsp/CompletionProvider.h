@@ -104,7 +104,7 @@ private:
         std::string scopeName;       // for Name::| — the type/enum name
         std::string modulePath;      // for use: accumulated path (e.g. "std::log")
         unsigned    indexDepth = 0;   // for dot: number of [..] index accesses on receiver
-        std::vector<std::string> methodChain; // for dot: chained method calls (e.g. {"abs", "toString"})
+        std::vector<std::string> methodChain; // for dot: chained members (fields/methods), e.g. {"message", "len"}
         bool closingCharPresent = false; // for IncludeHeader: '>' or '"' already exists after cursor
     };
 
@@ -211,6 +211,12 @@ private:
     std::string resolveMethodReturnType(
         const std::string& receiverType, const std::string& methodName,
         LuxParser::ProgramContext* tree, const ProjectContext* project);
+
+    // Resolve the type of a field access on a given receiver type.
+    std::string resolveFieldType(
+        const std::string& receiverType, const std::string& fieldName,
+        LuxParser::ProgramContext* tree, const CBindings* bindings,
+        const ProjectContext* project);
 
     // Collect locals from a function body.
     std::unordered_map<std::string, LocalVar>

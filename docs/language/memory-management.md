@@ -132,6 +132,51 @@ Multiple callbacks run in reverse order (LIFO):
 
 ---
 
+## Owned Strings and `freeStr`
+
+Lux `string` values are not all equivalent from a lifetime perspective.
+
+- String literals like `"hello"` do not need `freeStr`.
+- Borrowed strings such as `Error.message` do not need `freeStr` by themselves.
+- Owned strings returned by APIs that allocate a new buffer must be released manually with `freeStr`.
+
+Common sources of owned strings:
+
+- `fromCStrCopy(...)`
+- `sprintf(...)`
+- string transformation methods that return a new `string`, such as `toUpper()`, `toLower()`, `trim()`, `reverse()`, `capitalize()`, `replace()`, `substring()`, `slice()`, `concat()`, and similar APIs that produce a fresh buffer
+
+If you store the result in a variable, free it when you're done:
+
+```lux
+use std::log::{ println };
+
+int32 main() {
+    string msg = "an error occurred".capitalize();
+    println(msg);
+    freeStr(msg);
+    ret 0;
+}
+```
+
+`defer` is the recommended way to make this robust:
+
+```lux
+use std::log::{ println };
+
+int32 main() {
+    string msg = "an error occurred".capitalize();
+    defer freeStr(msg);
+
+    println(msg);
+    ret 0;
+}
+```
+
+Do not call `freeStr` on borrowed strings unless you know the API returned owned memory.
+
+---
+
 ## Automatic Cleanup for Collections
 
 `vec<T>`, `map<K, V>`, and `set<T>` are automatically freed when the function they're declared in exits. This prevents memory leaks for the common case of local collections.

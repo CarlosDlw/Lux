@@ -160,6 +160,9 @@ use std::str::{contains, split, replace, trim, parseInt};
 
 ### Transform
 
+Methods and functions in this section that return `string` produce a new owned buffer.
+Store the result and release it with `freeStr(...)` when you are done using it.
+
 | Function | Signature |
 |----------|-----------|
 | `toUpper` **(P)** | `(_any) → _any` |

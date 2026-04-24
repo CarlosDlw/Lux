@@ -2323,6 +2323,8 @@ void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem>& items,
          "Copies a null-terminated C string into owned Lux string memory."},
         {"fromCStrLen",  "(*char ptr, usize len)",     "string",  "fromCStrLen(${1:ptr}, ${2:len})",
          "Converts a C string with explicit length to a Lux string."},
+        {"freeStr",      "(string s)",                 "void",    "freeStr(${1:s})",
+         "Frees memory of a string allocated by fromCStrCopy. Only call on owned strings."},
     };
 
     for (auto& g : globals) {

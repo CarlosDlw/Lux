@@ -145,7 +145,7 @@ int32 main() {
 
 ## String conversion builtins
 
-Three global builtins handle conversion between TM `string` and C `*char`.
+Four global builtins handle conversion between TM `string` and C `*char`.
 They are always available — no `use` import needed.
 
 ### `cstr(s)` — string → *char
@@ -202,6 +202,20 @@ string s = fromCStrLen(c"Hello World!!!!", 5);
 ```
 
 - **Cost**: Zero. Just wraps the pointer and length.
+
+### `freeStr(s)` — free owned Lux string buffer
+
+Frees the backing memory of a Lux string previously created by
+`fromCStrCopy()`.
+
+```tm
+*char raw = c"Hello from C";
+string s = fromCStrCopy(raw);
+freeStr(s);
+```
+
+- **Cost**: One `free()` call. O(1).
+- **Ownership**: Only valid for strings that own heap memory from `fromCStrCopy()`.
 
 ---
 

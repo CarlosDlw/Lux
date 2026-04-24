@@ -4218,6 +4218,10 @@ void Checker::registerGlobalBuiltins() {
     // fromCStrLen(*char, usize) -> string
     functions_["fromCStrLen"] = makeFunctionType(strTy, { charPtrTy, usizeTy });
     globalBuiltins_.insert("fromCStrLen");
+
+    // freeStr(string) -> void
+    functions_["freeStr"] = makeFunctionType(voidTy, { strTy });
+    globalBuiltins_.insert("freeStr");
 }
 
 // ═══════════════════════════════════════════════════════════════════════

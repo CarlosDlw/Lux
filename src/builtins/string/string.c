@@ -603,6 +603,11 @@ lux_str_result lux_fromCStrLen(const char* cstr, size_t len) {
     return (lux_str_result){ cstr, len };
 }
 
+void lux_freeStr(const char* ptr, size_t len) {
+    if (ptr && len > 0)
+        free((void*)ptr);
+}
+
 // ── Additional String Methods ───────────────────────────────────────────────
 
 lux_str_result lux_trimChar(const char* s, size_t sLen, char ch) {

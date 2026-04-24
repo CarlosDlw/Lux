@@ -136,7 +136,7 @@ std::unique_ptr<IRModule> IRGen::generate(LuxParser::ProgramContext* tree,
     externCFunctions_.clear();
     globalBuiltins_ = {"exit", "panic", "assert", "assertMsg",
                         "unreachable", "toInt", "toFloat", "toBool", "toString",
-                        "cstr", "fromCStr", "fromCStrCopy", "fromCStrLen"};
+                        "cstr", "fromCStr", "fromCStrCopy", "fromCStrLen", "freeStr"};
 
     visitProgram(tree);
 
@@ -2299,6 +2299,12 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             auto callee = declareBuiltin("lux_unreachable", voidTy,
                                          {ptrTy, usizeTy, i32Ty});
             builder_->CreateCall(callee, {fileGlobal, fileLen, lineNo});
+        } else if (funcName == "freeStr") {
+            if (!requireArgs(funcName, args, 1)) return {};
+            auto* strPtr = builder_->CreateExtractValue(args[0], 0, "freeStr_ptr");
+            auto* strLen = builder_->CreateExtractValue(args[0], 1, "freeStr_len");
+            auto callee = declareBuiltin("lux_freeStr", voidTy, {ptrTy, usizeTy});
+            builder_->CreateCall(callee, {strPtr, strLen});
         }
         return {};
     }
@@ -5528,6 +5534,16 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 strStruct = builder_->CreateInsertValue(strStruct, retPtr, 0, "str_ptr");
                 strStruct = builder_->CreateInsertValue(strStruct, retLen, 1, "str_len");
                 return static_cast<llvm::Value*>(strStruct);
+            }
+
+            // ── freeStr(string) -> void ──
+            if (calleeName == "freeStr") {
+                if (!requireArgs(calleeName, args, 1)) return {};
+                auto* strPtr = builder_->CreateExtractValue(args[0], 0, "freeStr_ptr");
+                auto* strLen = builder_->CreateExtractValue(args[0], 1, "freeStr_len");
+                auto callee = declareBuiltin("lux_freeStr", llvm::Type::getVoidTy(*context_), {ptrTy, usizeTy});
+                builder_->CreateCall(callee, {strPtr, strLen});
+                return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
             }
 
             // ── fromCStrLen(*char, usize) -> string ──

@@ -89,6 +89,7 @@ char*             lux_cstr(const char* s, size_t sLen);
 lux_str_result  lux_fromCStr(const char* cstr);
 lux_str_result  lux_fromCStrCopy(const char* cstr);
 lux_str_result  lux_fromCStrLen(const char* cstr, size_t len);
+void            lux_freeStr(const char* ptr, size_t len);
 
 // ── Additional String Methods ───────────────────────────────────────────────
 

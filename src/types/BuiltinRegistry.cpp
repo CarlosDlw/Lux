@@ -454,4 +454,5 @@ BuiltinRegistry::BuiltinRegistry() {
     add("fromCStr",      "string",  {"*char"});
     add("fromCStrCopy",  "string",  {"*char"});
     add("fromCStrLen",   "string",  {"*char", "usize"});
+    add("freeStr",       "void",    {"string"});
 }

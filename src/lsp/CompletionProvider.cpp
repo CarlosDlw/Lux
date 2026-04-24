@@ -684,6 +684,7 @@ std::vector<CompletionItem> CompletionProvider::complete(
         case CompletionContext::General: {
             addLocals(items, parsed.tree, line, *cBindingsPtr, req.prefix);
             addLocalDecls(items, parsed.tree, req.prefix);
+            addProjectSymbols(items, project, filePath, req.prefix);
             addImportedSymbols(items, parsed.tree, project, req.prefix);
             addGlobalBuiltins(items, req.prefix);
             addCSymbols(items, *cBindingsPtr, req.prefix);
@@ -1388,16 +1389,18 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem>& items,
 
     std::string currentNs = project->namespaceFor(filePath);
 
-    for (auto& ns : project->registry().allNamespaces()) {
-        if (ns == currentNs) continue; // skip same-file symbols
-        auto syms = project->registry().getNamespaceSymbols(ns);
-        for (auto* sym : syms) {
+    // Same-namespace symbols declared in OTHER files.
+    // This is what makes `log()` from another file in `namespace Main`
+    // appear in general completion without requiring `use`.
+    if (!currentNs.empty()) {
+        auto sameNsExternal = project->registry().getExternalSymbols(currentNs, filePath);
+        for (auto* sym : sameNsExternal) {
             if (sym->kind == ExportedSymbol::ExtendBlock) continue;
             if (!matchesPrefix(sym->name, prefix)) continue;
 
             CompletionItem ci;
             ci.label = sym->name;
-            ci.detail = "[" + ns + "]";
+            ci.detail = "[" + currentNs + "]";
 
             switch (sym->kind) {
                 case ExportedSymbol::Function:

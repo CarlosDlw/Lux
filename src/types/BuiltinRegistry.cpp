@@ -188,6 +188,7 @@ BuiltinRegistry::BuiltinRegistry() {
     add("randFloatRange", "float64", {"float64", "float64"});
     add("randBool",       "bool",    {});
     add("randChar",       "char",    {});
+    add("uuid_v4",        "string",  {});
 
     // ═════════════════════════════════════════════════════════════════════
     // std::time

@@ -6606,6 +6606,13 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(ret);
             }
 
+            // ── std::random — uuid_v4: () → string ─────────────────────────
+            if (calleeName == "uuid_v4") {
+                auto callee = declareBuiltin("lux_uuid_v4", strTy, {});
+                auto* ret = builder_->CreateCall(callee, {}, "uuid_v4");
+                return static_cast<llvm::Value*>(buildString(ret));
+            }
+
             // ── std::time — no-arg, returns uint64 ─────────────────────────
             if (calleeName == "now") {
                 auto callee = declareBuiltin("lux_now", i64Ty, {});

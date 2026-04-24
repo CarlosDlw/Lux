@@ -406,12 +406,13 @@ use std::random::{seed, seedTime, randInt, randIntRange, randFloat};
 | `seed` | `(uint64) → void` | Seed RNG with value |
 | `seedTime` | `() → void` | Seed RNG with current time |
 | `randInt` | `() → int64` | Random integer |
-| `randIntRange` | `(int64, int64) → int64` | Random integer in [min, max) |
+| `randIntRange` | `(int64, int64) → int64` | Random integer in [min, max] |
 | `randUint` | `() → uint64` | Random unsigned integer |
 | `randFloat` | `() → float64` | Random float in [0, 1) |
 | `randFloatRange` | `(float64, float64) → float64` | Random float in [min, max) |
 | `randBool` | `() → bool` | Random boolean |
 | `randChar` | `() → char` | Random printable character |
+| `uuid_v4` | `() → string` | Random UUID v4 string |
 
 ---
 

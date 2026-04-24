@@ -41,7 +41,7 @@ ImportResolver::knownModules_ = {
     { "std::random", { "seed", "seedTime",
                        "randInt", "randIntRange",
                        "randUint", "randFloat", "randFloatRange",
-                       "randBool", "randChar" } },
+                       "randBool", "randChar", "uuid_v4" } },
     { "std::time", { "now", "nowNanos", "nowMicros",
                      "sleep", "sleepMicros", "clock",
                      "year", "month", "day",

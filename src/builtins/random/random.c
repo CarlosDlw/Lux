@@ -1,6 +1,7 @@
 #include "random/random.h"
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 
 // xoshiro256** state
 static uint64_t rng_state[4] = {0};
@@ -83,4 +84,35 @@ int32_t lux_randBool(void) {
 uint8_t lux_randChar(void) {
     // Printable ASCII: 32 ('space') to 126 ('~') = 95 chars
     return (uint8_t)(32 + (next_random() % 95));
+}
+
+lux_random_str_result lux_uuid_v4(void) {
+    static const char hex[] = "0123456789abcdef";
+    uint8_t bytes[16];
+
+    uint64_t r0 = next_random();
+    uint64_t r1 = next_random();
+    memcpy(bytes, &r0, 8);
+    memcpy(bytes + 8, &r1, 8);
+
+    bytes[6] = (uint8_t)((bytes[6] & 0x0F) | 0x40);
+    bytes[8] = (uint8_t)((bytes[8] & 0x3F) | 0x80);
+
+    char* out = (char*)malloc(37);
+    if (!out) {
+        lux_random_str_result r = {"", 0};
+        return r;
+    }
+
+    int bi = 0;
+    int oi = 0;
+    for (; bi < 16; ++bi) {
+        out[oi++] = hex[(bytes[bi] >> 4) & 0x0F];
+        out[oi++] = hex[bytes[bi] & 0x0F];
+        if (bi == 3 || bi == 5 || bi == 7 || bi == 9) out[oi++] = '-';
+    }
+    out[36] = '\0';
+
+    lux_random_str_result r = {out, 36};
+    return r;
 }

@@ -266,6 +266,25 @@ private:
         const std::vector<const TypeInfo*>& typeArgs,
         antlr4::ParserRuleContext* ctx);
 
+    // Infers concrete type arguments for a generic call from formal parameters.
+    std::optional<std::vector<const TypeInfo*>> inferGenericTypeArgs(
+        const std::string& displayName,
+        const std::vector<std::string>& typeParams,
+        LuxParser::TypeParamListContext* typeParamList,
+        const std::vector<LuxParser::ParamContext*>& formalParams,
+        const std::vector<const TypeInfo*>& argTypes,
+        antlr4::ParserRuleContext* ctx);
+
+    // Unifies a formal type spec against an actual argument type for inference.
+    bool unifyGenericTypeArg(
+        LuxParser::TypeSpecContext* formalType,
+        const TypeInfo* actualType,
+        const std::unordered_set<std::string>& genericParams,
+        std::unordered_map<std::string, const TypeInfo*>& inferred,
+        antlr4::ParserRuleContext* ctx,
+        const std::string& displayName,
+        bool& emittedSpecificError);
+
     // Resolves a type spec under a substitution map (typeParam → concrete TypeInfo*).
     const TypeInfo* resolveTypeSpecWithSubst(
         LuxParser::TypeSpecContext* typeSpec,

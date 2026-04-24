@@ -24,6 +24,24 @@ void IRGen::setCBindings(const CBindings* bindings) {
     cBindings_ = bindings;
 }
 
+static bool typeSpecMentionsGenericParam(
+    LuxParser::TypeSpecContext* typeSpec,
+    const std::unordered_set<std::string>& genericParams) {
+    if (!typeSpec) return false;
+
+    if (!typeSpec->LBRACKET() && !typeSpec->STAR() && !typeSpec->LT() &&
+        !typeSpec->VEC() && !typeSpec->MAP() && !typeSpec->SET() &&
+        !typeSpec->TUPLE() && !typeSpec->AUTO() && !typeSpec->fnTypeSpec()) {
+        return genericParams.count(typeSpec->getText()) > 0;
+    }
+
+    for (auto* inner : typeSpec->typeSpec()) {
+        if (typeSpecMentionsGenericParam(inner, genericParams))
+            return true;
+    }
+    return false;
+}
+
 llvm::Function* IRGen::declareCFunction(const std::string& name) {
     // Already declared in this module?
     if (auto* fn = module_->getFunction(name))
@@ -2241,6 +2259,12 @@ std::any IRGen::visitExprStmt(LuxParser::ExprStmtContext* ctx) {
 std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
     auto funcName = ctx->IDENTIFIER()->getText();
 
+    std::vector<const TypeInfo*> argTypes;
+    if (auto* argList = ctx->argList()) {
+        for (auto* exprCtx : argList->expression())
+            argTypes.push_back(resolveExprTypeInfo(exprCtx));
+    }
+
     // ── Global builtins (always available, no import required) ──────────
     if (globalBuiltins_.count(funcName)) {
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
@@ -2307,6 +2331,44 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             builder_->CreateCall(callee, {strPtr, strLen});
         }
         return {};
+    }
+
+    if (auto fit = genericFuncTemplates_.find(funcName);
+        fit != genericFuncTemplates_.end()) {
+        std::vector<LuxParser::ParamContext*> formalParams;
+        if (auto* paramList = fit->second.decl->paramList())
+            formalParams = paramList->param();
+
+        auto inferred = inferGenericTypeArgs(fit->second.typeParams, formalParams, argTypes);
+        if (inferred) {
+            if (auto* genericFn = instantiateGenericFunc(funcName, fit->second, *inferred)) {
+                std::vector<llvm::Value*> args;
+                if (auto* argList = ctx->argList()) {
+                    auto* fnType = genericFn->getFunctionType();
+                    size_t paramIdx = 0;
+                    for (auto* exprCtx : argList->expression()) {
+                        auto* argVal = castValue(visit(exprCtx));
+                        if (paramIdx < fnType->getNumParams()) {
+                            auto* paramTy = fnType->getParamType(paramIdx);
+                            if (argVal->getType() != paramTy) {
+                                if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                                    argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                                else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy()) {
+                                    if (argVal->getType()->getPrimitiveSizeInBits() > paramTy->getPrimitiveSizeInBits())
+                                        argVal = builder_->CreateFPTrunc(argVal, paramTy);
+                                    else
+                                        argVal = builder_->CreateFPExt(argVal, paramTy);
+                                }
+                            }
+                        }
+                        args.push_back(argVal);
+                        paramIdx++;
+                    }
+                }
+                builder_->CreateCall(genericFn, args);
+                return {};
+            }
+        }
     }
 
     // ── User-defined or extern C function called as statement ──────
@@ -5165,6 +5227,67 @@ std::any IRGen::visitStaticMethodCallExpr(
     auto ids = ctx->IDENTIFIER();
     auto structName = ids[0]->getText();
     auto methodName = ids[1]->getText();
+
+    std::vector<const TypeInfo*> argTypes;
+    if (auto* argList = ctx->argList()) {
+        for (auto* argExpr : argList->expression())
+            argTypes.push_back(resolveExprTypeInfo(argExpr));
+    }
+
+    auto extIt = genericExtendTemplates_.find(structName);
+    auto structIt = genericStructTemplates_.find(structName);
+    if (extIt != genericExtendTemplates_.end() && structIt != genericStructTemplates_.end()) {
+        for (auto* method : extIt->second.decl->extendMethod()) {
+            if (method->AMPERSAND()) continue;
+            if (method->IDENTIFIER(0)->getText() != methodName) continue;
+
+            std::vector<LuxParser::ParamContext*> formalParams;
+            if (auto* paramList = method->paramList())
+                formalParams = paramList->param();
+
+            auto inferred = inferGenericTypeArgs(extIt->second.typeParams, formalParams, argTypes);
+            if (!inferred) break;
+
+            auto* instanceTI = instantiateGenericStruct(structName, structIt->second, *inferred);
+            if (!instanceTI) break;
+
+            auto smIt = staticStructMethods_.find(instanceTI->name);
+            if (smIt == staticStructMethods_.end()) break;
+
+            auto mIt = smIt->second.find(methodName);
+            if (mIt == smIt->second.end()) break;
+
+            auto* fn = mIt->second;
+            std::vector<llvm::Value*> callArgs;
+            if (auto* argList = ctx->argList()) {
+                auto* fnType = fn->getFunctionType();
+                size_t paramIdx = 0;
+                for (auto* argExpr : argList->expression()) {
+                    auto* argVal = castValue(visit(argExpr));
+                    if (paramIdx < fnType->getNumParams()) {
+                        auto* paramTy = fnType->getParamType(paramIdx);
+                        if (argVal->getType() != paramTy) {
+                            if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                                argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                            else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                                argVal = builder_->CreateFPCast(argVal, paramTy);
+                        }
+                    }
+                    callArgs.push_back(argVal);
+                    paramIdx++;
+                }
+            }
+
+            auto* retTy = fn->getReturnType();
+            if (retTy->isVoidTy()) {
+                builder_->CreateCall(fn, callArgs);
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(fn, callArgs, "static_call"));
+        }
+    }
 
     auto smIt = staticStructMethods_.find(structName);
     if (smIt == staticStructMethods_.end()) {
@@ -8180,10 +8303,29 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
             }
         }
 
+        if (!fnTI) {
+            std::vector<const TypeInfo*> argTypes;
+            if (auto* argList = ctx->argList()) {
+                for (auto* exprCtx : argList->expression())
+                    argTypes.push_back(resolveExprTypeInfo(exprCtx));
+            }
+
+            auto fit = genericFuncTemplates_.find(calleeName);
+            if (fit != genericFuncTemplates_.end()) {
+                std::vector<LuxParser::ParamContext*> formalParams;
+                if (auto* paramList = fit->second.decl->paramList())
+                    formalParams = paramList->param();
+
+                auto inferred = inferGenericTypeArgs(fit->second.typeParams, formalParams, argTypes);
+                if (inferred)
+                    directFn = instantiateGenericFunc(calleeName, fit->second, *inferred);
+            }
+        }
+
         auto it = locals_.find(calleeName);
         if (it != locals_.end() && it->second.typeInfo->kind == TypeKind::Function) {
             fnTI = it->second.typeInfo;
-        } else if (!fnTI) {
+        } else if (!fnTI && !directFn) {
             // Check module-level functions for direct call (with mangled name)
             auto resolvedName = resolveCallTarget(calleeName);
             directFn = module_->getFunction(resolvedName);
@@ -9854,6 +9996,30 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(callee)) {
             auto fname = ident->IDENTIFIER()->getText();
 
+            auto fit = genericFuncTemplates_.find(fname);
+            if (fit != genericFuncTemplates_.end()) {
+                std::vector<const TypeInfo*> argTypes;
+                if (auto* argList = call->argList()) {
+                    for (auto* exprCtx : argList->expression())
+                        argTypes.push_back(resolveExprTypeInfo(exprCtx));
+                }
+
+                std::vector<LuxParser::ParamContext*> formalParams;
+                if (auto* paramList = fit->second.decl->paramList())
+                    formalParams = paramList->param();
+
+                auto inferred = inferGenericTypeArgs(fit->second.typeParams, formalParams, argTypes);
+                if (inferred) {
+                    auto* fn = instantiateGenericFunc(fname, fit->second, *inferred);
+                    auto mangledName = mangleGenericName(fname, *inferred);
+                    if (fn) {
+                        auto retIt = fnReturnTypes_.find(mangledName);
+                        if (retIt != fnReturnTypes_.end())
+                            return retIt->second;
+                    }
+                }
+            }
+
             // Check C FFI bindings first (has accurate TypeInfo with pointers)
             if (cBindings_) {
                 if (auto* cfunc = cBindings_->findFunction(fname))
@@ -9896,6 +10062,54 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         auto ids = smc->IDENTIFIER();
         auto structName = ids[0]->getText();
         auto methodName = ids[1]->getText();
+
+        auto extIt = genericExtendTemplates_.find(structName);
+        auto structIt = genericStructTemplates_.find(structName);
+        if (extIt != genericExtendTemplates_.end() && structIt != genericStructTemplates_.end()) {
+            std::vector<const TypeInfo*> argTypes;
+            if (auto* argList = smc->argList()) {
+                for (auto* argExpr : argList->expression())
+                    argTypes.push_back(resolveExprTypeInfo(argExpr));
+            }
+
+            for (auto* method : extIt->second.decl->extendMethod()) {
+                if (method->AMPERSAND()) continue;
+                if (method->IDENTIFIER(0)->getText() != methodName) continue;
+
+                std::vector<LuxParser::ParamContext*> formalParams;
+                if (auto* paramList = method->paramList())
+                    formalParams = paramList->param();
+
+                auto inferred = inferGenericTypeArgs(extIt->second.typeParams, formalParams, argTypes);
+                if (!inferred) break;
+
+                auto* instanceTI = instantiateGenericStruct(structName, structIt->second, *inferred);
+                if (!instanceTI) break;
+
+                auto smIt = staticStructMethods_.find(instanceTI->name);
+                if (smIt != staticStructMethods_.end()) {
+                    auto mIt = smIt->second.find(methodName);
+                    if (mIt != smIt->second.end()) {
+                        auto* fn = mIt->second;
+                        auto* retTy = fn->getReturnType();
+                        if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
+                        if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
+                        if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
+                        if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
+                        if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
+                        if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
+                        if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
+                        if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
+                        if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
+                        if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
+                            if (st->hasName())
+                                return typeRegistry_.lookup(st->getName().str());
+                    }
+                }
+                break;
+            }
+        }
+
         auto smIt = staticStructMethods_.find(structName);
         if (smIt != staticStructMethods_.end()) {
             auto mIt = smIt->second.find(methodName);
@@ -13759,6 +13973,144 @@ llvm::Function* IRGen::instantiateGenericFunc(
 
     instantiatedGenerics_.erase(mangledName);
     return fn;
+}
+
+std::optional<std::vector<const TypeInfo*>> IRGen::inferGenericTypeArgs(
+    const std::vector<std::string>& typeParams,
+    const std::vector<LuxParser::ParamContext*>& formalParams,
+    const std::vector<const TypeInfo*>& argTypes) {
+
+    if (formalParams.size() != argTypes.size())
+        return std::nullopt;
+
+    std::unordered_set<std::string> genericParamSet(typeParams.begin(), typeParams.end());
+    std::unordered_map<std::string, const TypeInfo*> inferred;
+
+    for (size_t i = 0; i < formalParams.size(); i++) {
+        auto* formalParam = formalParams[i];
+        auto* actualType = argTypes[i];
+        if (!formalParam || !formalParam->typeSpec())
+            continue;
+
+        if (!typeSpecMentionsGenericParam(formalParam->typeSpec(), genericParamSet))
+            continue;
+
+        if (!unifyGenericTypeArg(formalParam->typeSpec(), actualType, genericParamSet, inferred))
+            return std::nullopt;
+    }
+
+    std::vector<const TypeInfo*> typeArgs;
+    for (auto& typeParam : typeParams) {
+        auto it = inferred.find(typeParam);
+        if (it == inferred.end())
+            return std::nullopt;
+        typeArgs.push_back(it->second);
+    }
+
+    return typeArgs;
+}
+
+bool IRGen::unifyGenericTypeArg(
+    LuxParser::TypeSpecContext* formalType,
+    const TypeInfo* actualType,
+    const std::unordered_set<std::string>& genericParams,
+    std::unordered_map<std::string, const TypeInfo*>& inferred) {
+
+    if (!formalType) return true;
+    if (!typeSpecMentionsGenericParam(formalType, genericParams)) return true;
+    if (!actualType) return false;
+
+    if (!formalType->LBRACKET() && !formalType->STAR() && !formalType->LT() &&
+        !formalType->VEC() && !formalType->MAP() && !formalType->SET() &&
+        !formalType->TUPLE() && !formalType->AUTO() && !formalType->fnTypeSpec()) {
+        auto name = formalType->getText();
+        if (genericParams.count(name)) {
+            auto it = inferred.find(name);
+            if (it == inferred.end()) {
+                inferred[name] = actualType;
+                return true;
+            }
+            return it->second == actualType || it->second->name == actualType->name;
+        }
+        return true;
+    }
+
+    if (formalType->STAR() && formalType->typeSpec().size() == 1) {
+        if (actualType->kind != TypeKind::Pointer || !actualType->pointeeType)
+            return false;
+        return unifyGenericTypeArg(formalType->typeSpec(0), actualType->pointeeType,
+                                   genericParams, inferred);
+    }
+
+    if (formalType->VEC()) {
+        if (actualType->kind != TypeKind::Extended || actualType->extendedKind != "Vec" ||
+            !actualType->elementType || formalType->typeSpec().size() != 1)
+            return false;
+        return unifyGenericTypeArg(formalType->typeSpec(0), actualType->elementType,
+                                   genericParams, inferred);
+    }
+
+    if (formalType->SET()) {
+        if (actualType->kind != TypeKind::Extended || actualType->extendedKind != "Set" ||
+            !actualType->elementType || formalType->typeSpec().size() != 1)
+            return false;
+        return unifyGenericTypeArg(formalType->typeSpec(0), actualType->elementType,
+                                   genericParams, inferred);
+    }
+
+    if (formalType->MAP()) {
+        if (actualType->kind != TypeKind::Extended || actualType->extendedKind != "Map" ||
+            !actualType->keyType || !actualType->valueType || formalType->typeSpec().size() != 2)
+            return false;
+        return unifyGenericTypeArg(formalType->typeSpec(0), actualType->keyType,
+                                   genericParams, inferred)
+            && unifyGenericTypeArg(formalType->typeSpec(1), actualType->valueType,
+                                   genericParams, inferred);
+    }
+
+    if (formalType->TUPLE()) {
+        if (actualType->kind != TypeKind::Tuple ||
+            actualType->tupleElements.size() != formalType->typeSpec().size())
+            return false;
+        for (size_t i = 0; i < formalType->typeSpec().size(); i++) {
+            if (!unifyGenericTypeArg(formalType->typeSpec(i), actualType->tupleElements[i],
+                                     genericParams, inferred))
+                return false;
+        }
+        return true;
+    }
+
+    if (formalType->LT()) {
+        auto baseName = formalType->IDENTIFIER()->getText();
+        std::vector<const TypeInfo*> actualArgs;
+
+        if (actualType->isGenericInstance && actualType->genericBaseName == baseName) {
+            actualArgs = actualType->typeArgs;
+        } else if (actualType->kind == TypeKind::Extended && actualType->extendedKind == baseName) {
+            if (formalType->typeSpec().size() == 1 && actualType->elementType) {
+                actualArgs.push_back(actualType->elementType);
+            } else if (formalType->typeSpec().size() == 2 && actualType->keyType && actualType->valueType) {
+                actualArgs.push_back(actualType->keyType);
+                actualArgs.push_back(actualType->valueType);
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        if (actualArgs.size() != formalType->typeSpec().size())
+            return false;
+
+        for (size_t i = 0; i < formalType->typeSpec().size(); i++) {
+            if (!unifyGenericTypeArg(formalType->typeSpec(i), actualArgs[i], genericParams,
+                                     inferred))
+                return false;
+        }
+        return true;
+    }
+
+    return true;
 }
 
 // ── Generic expression visitors ──────────────────────────────────────────

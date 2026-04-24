@@ -19,7 +19,7 @@ int32 main() {
 
 - **Native compilation** — LLVM backend targeting x86-64, ARM, and more; full `-o1`/`-o2`/`-o3` optimization pipeline
 - **C FFI** — call any C function with `extern`, include headers with `#include`, pass structs by value; zero glue code
-- **User-defined generics** — monomorphized `struct Node<T>`, `extend Node<T>` methods, and generic functions `T max<T>(T a, T b)`
+- **User-defined generics** — monomorphized `struct Node<T>`, `extend Node<T>` methods, generic functions `T max<T>(T a, T b)`, and type inference from call arguments when possible
 - **Built-in collections** — `vec<T>`, `map<K, V>`, `set<T>` with full method suites
 - **Concurrency** — `spawn`/`await`, `Task<T>`, `Mutex`, `lock` statement
 - **Error handling** — `try`/`catch`/`finally`, `throw`, built-in `Error` type
@@ -108,9 +108,9 @@ T max<T>(T a, T b) {
 }
 
 int32 main() {
-    Node<int32> n = Node<int32>::create(42);
+    Node<int32> n = Node::create(42);
     int32 val = n.getValue();
-    int32 m = max<int32>(3, 7);
+    int32 m = max(3, 7);
     println(val);   // 42
     println(m);     // 7
     ret 0;

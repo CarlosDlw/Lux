@@ -30,6 +30,60 @@ T provides four built-in generic types:
 
 ---
 
+## Generic Type Inference
+
+Lux can infer type arguments for user-defined generic functions and generic static methods when every type parameter appears in at least one formal parameter.
+
+```tm
+T identity<T>(T value) {
+    ret value;
+}
+
+struct Box<T> {
+    T value;
+}
+
+extend Box<T> {
+    Box<T> make(T value) {
+        ret Box<T>{ value: value };
+    }
+}
+
+int32 main() {
+    int32 a = identity(10);        // T => int32
+    float64 b = identity(3.2);     // T => float64
+    Box<int32> box = Box::make(42); // T => int32
+    ret 0;
+}
+```
+
+Inference is intentionally strict:
+
+- Type arguments are inferred only from formal parameters.
+- Every generic parameter must appear in at least one argument position.
+- If the same type parameter is inferred as different concrete types, compilation fails.
+- Lux does not guess from the return type alone.
+
+These calls are rejected:
+
+```tm
+T pick<T>(T a, T b) {
+    ret a;
+}
+
+T make<T>() {
+    ret 0 as T;
+}
+
+int32 main() {
+    auto x = pick(10, 10.0); // error: T inferred as int32 and float64
+    auto y = make();         // error: T does not appear in parameters
+    ret 0;
+}
+```
+
+---
+
 ## vec\<T\> — Dynamic Array
 
 A growable, heap-allocated array. Initialized from an array literal or empty `[]`:

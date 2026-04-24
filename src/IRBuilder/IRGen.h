@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <any>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -327,6 +328,17 @@ private:
         const std::string& baseName,
         const GenericFuncTemplate& tmpl,
         const std::vector<const TypeInfo*>& typeArgs);
+
+    std::optional<std::vector<const TypeInfo*>> inferGenericTypeArgs(
+        const std::vector<std::string>& typeParams,
+        const std::vector<LuxParser::ParamContext*>& formalParams,
+        const std::vector<const TypeInfo*>& argTypes);
+
+    bool unifyGenericTypeArg(
+        LuxParser::TypeSpecContext* formalType,
+        const TypeInfo* actualType,
+        const std::unordered_set<std::string>& genericParams,
+        std::unordered_map<std::string, const TypeInfo*>& inferred);
 
     // Helpers
     const TypeInfo*    resolveTypeInfo(LuxParser::TypeSpecContext* ctx);

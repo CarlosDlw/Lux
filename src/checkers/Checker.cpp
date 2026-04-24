@@ -2236,7 +2236,6 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     // ── Function call: expr(args) ───────────────────────────────────
     if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
         auto* callee = call->expression();
-        auto* calleeType = resolveExprType(callee);
 
         // Detect callee name for polymorphic builtin detection
         std::string calleeName;
@@ -2251,6 +2250,36 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 argTypes.push_back(resolveExprType(argExpr));
             }
         }
+
+        // Generic function call with inferred type arguments: foo(10)
+        if (!calleeName.empty()) {
+            auto funcIt = genericFuncTemplates_.find(calleeName);
+            if (funcIt != genericFuncTemplates_.end()) {
+                std::vector<LuxParser::ParamContext*> formalParams;
+                if (auto* paramList = funcIt->second.decl->paramList())
+                    formalParams = paramList->param();
+
+                if (argTypes.size() != formalParams.size()) {
+                    error(expr, "generic function '" + calleeName +
+                                 "' expects " + std::to_string(formalParams.size()) +
+                                 " argument(s), got " + std::to_string(argTypes.size()));
+                    return nullptr;
+                }
+
+                auto inferred = inferGenericTypeArgs(
+                    calleeName,
+                    funcIt->second.typeParams,
+                    funcIt->second.decl->typeParamList(),
+                    formalParams,
+                    argTypes,
+                    expr);
+                if (!inferred) return nullptr;
+
+                return instantiateGenericFunc(calleeName, funcIt->second, *inferred, expr);
+            }
+        }
+
+        auto* calleeType = resolveExprType(callee);
 
         // User-defined function with full type info
         if (calleeType && calleeType->kind == TypeKind::Function) {
@@ -2488,6 +2517,72 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         auto structName = ids[0]->getText();
         auto methodName = ids[1]->getText();
 
+        std::vector<const TypeInfo*> argTypes;
+        if (auto* argList = smc->argList()) {
+            for (auto* argExpr : argList->expression())
+                argTypes.push_back(resolveExprType(argExpr));
+        }
+
+        // Generic static method inference: Node::create(42)
+        auto extIt = genericExtendTemplates_.find(structName);
+        auto structIt = genericStructTemplates_.find(structName);
+        if (extIt != genericExtendTemplates_.end() && structIt != genericStructTemplates_.end()) {
+            for (auto* method : extIt->second.decl->extendMethod()) {
+                if (method->AMPERSAND()) continue;
+                if (method->IDENTIFIER(0)->getText() != methodName) continue;
+
+                std::vector<LuxParser::ParamContext*> formalParams;
+                if (auto* paramList = method->paramList())
+                    formalParams = paramList->param();
+
+                if (argTypes.size() != formalParams.size()) {
+                    error(expr, "static method '" + structName + "::" + methodName +
+                                 "' expects " + std::to_string(formalParams.size()) +
+                                 " argument(s), got " + std::to_string(argTypes.size()));
+                    return nullptr;
+                }
+
+                auto inferred = inferGenericTypeArgs(
+                    structName + "::" + methodName,
+                    extIt->second.typeParams,
+                    extIt->second.decl->typeParamList(),
+                    formalParams,
+                    argTypes,
+                    expr);
+                if (!inferred) return nullptr;
+
+                auto* instanceTI = instantiateGenericStruct(structName, structIt->second,
+                                                            *inferred, expr);
+                if (!instanceTI) return nullptr;
+
+                auto smIt = structMethods_.find(instanceTI->name);
+                if (smIt == structMethods_.end()) {
+                    error(expr, "struct '" + instanceTI->name + "' has no static methods");
+                    return nullptr;
+                }
+
+                for (auto& sm : smIt->second) {
+                    if (sm.name == methodName && sm.isStatic) {
+                        for (size_t i = 0; i < argTypes.size(); i++) {
+                            if (!argTypes[i] || !sm.paramTypes[i]) continue;
+                            if (!isAssignable(sm.paramTypes[i], argTypes[i])) {
+                                error(expr, "static method '" + structName + "::" +
+                                    methodName + "' argument " +
+                                    std::to_string(i + 1) + " type mismatch: expected '" +
+                                    sm.paramTypes[i]->name + "', got '" +
+                                    argTypes[i]->name + "'");
+                            }
+                        }
+                        return sm.returnType;
+                    }
+                }
+
+                error(expr, "struct '" + instanceTI->name +
+                            "' has no static method '" + methodName + "'");
+                return nullptr;
+            }
+        }
+
         auto* structType = typeRegistry_.lookup(structName);
         if (!structType) {
             error(expr, "unknown type '" + structName + "'");
@@ -2510,11 +2605,6 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
         for (auto& sm : smIt->second) {
             if (sm.name == methodName && sm.isStatic) {
-                std::vector<const TypeInfo*> argTypes;
-                if (auto* argList = smc->argList()) {
-                    for (auto* argExpr : argList->expression())
-                        argTypes.push_back(resolveExprType(argExpr));
-                }
                 if (argTypes.size() != sm.paramTypes.size()) {
                     error(expr, "static method '" + structName + "::" + methodName +
                         "' expects " + std::to_string(sm.paramTypes.size()) +
@@ -2794,6 +2884,8 @@ void Checker::setCBindings(const CBindings* bindings) {
 bool Checker::isKnownFunction(const std::string& name) const {
     // 1. Local file function
     if (functions_.count(name)) return true;
+    // 1b. Local generic function template
+    if (genericFuncTemplates_.count(name)) return true;
     // 2. Builtin
     if (globalBuiltins_.count(name)) return true;
     // 3. Std import
@@ -2823,6 +2915,24 @@ bool Checker::isKnownType(const std::string& name) const {
                     sym->kind == ExportedSymbol::Enum ||
                     sym->kind == ExportedSymbol::TypeAlias) &&
             sym->sourceFile != currentFile_)
+            return true;
+    }
+    return false;
+}
+
+static bool typeSpecMentionsGenericParam(
+    LuxParser::TypeSpecContext* typeSpec,
+    const std::unordered_set<std::string>& genericParams) {
+    if (!typeSpec) return false;
+
+    if (!typeSpec->LBRACKET() && !typeSpec->STAR() && !typeSpec->LT() &&
+        !typeSpec->VEC() && !typeSpec->MAP() && !typeSpec->SET() &&
+        !typeSpec->TUPLE() && !typeSpec->AUTO() && !typeSpec->fnTypeSpec()) {
+        return genericParams.count(typeSpec->getText()) > 0;
+    }
+
+    for (auto* inner : typeSpec->typeSpec()) {
+        if (typeSpecMentionsGenericParam(inner, genericParams))
             return true;
     }
     return false;
@@ -4309,6 +4419,33 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
         }
     }
 
+    // Generic function call with inferred type arguments: foo(10);
+    auto gfit = genericFuncTemplates_.find(name);
+    if (gfit != genericFuncTemplates_.end()) {
+        std::vector<LuxParser::ParamContext*> formalParams;
+        if (auto* paramList = gfit->second.decl->paramList())
+            formalParams = paramList->param();
+
+        if (argTypes.size() != formalParams.size()) {
+            error(stmt, "generic function '" + name + "' expects " +
+                         std::to_string(formalParams.size()) +
+                         " argument(s), got " + std::to_string(argTypes.size()));
+            return;
+        }
+
+        auto inferred = inferGenericTypeArgs(
+            name,
+            gfit->second.typeParams,
+            gfit->second.decl->typeParamList(),
+            formalParams,
+            argTypes,
+            stmt);
+        if (!inferred) return;
+
+        instantiateGenericFunc(name, gfit->second, *inferred, stmt);
+        return;
+    }
+
     // Check user-defined function signatures
     auto fit = functions_.find(name);
     if (fit != functions_.end() && fit->second->kind == TypeKind::Function) {
@@ -4803,4 +4940,183 @@ const TypeInfo* Checker::instantiateGenericFunc(
 
     // Return the function's return type (not the function type itself)
     return retType;
+}
+
+std::optional<std::vector<const TypeInfo*>> Checker::inferGenericTypeArgs(
+    const std::string& displayName,
+    const std::vector<std::string>& typeParams,
+    LuxParser::TypeParamListContext* typeParamList,
+    const std::vector<LuxParser::ParamContext*>& formalParams,
+    const std::vector<const TypeInfo*>& argTypes,
+    antlr4::ParserRuleContext* ctx) {
+
+    if (formalParams.size() != argTypes.size())
+        return std::nullopt;
+
+    std::unordered_set<std::string> genericParamSet(typeParams.begin(), typeParams.end());
+    std::unordered_map<std::string, const TypeInfo*> inferred;
+
+    for (size_t i = 0; i < formalParams.size(); i++) {
+        auto* formalParam = formalParams[i];
+        auto* actualType = argTypes[i];
+        if (!formalParam || !formalParam->typeSpec())
+            continue;
+
+        if (!typeSpecMentionsGenericParam(formalParam->typeSpec(), genericParamSet))
+            continue;
+
+        bool emittedSpecificError = false;
+        if (!unifyGenericTypeArg(formalParam->typeSpec(), actualType, genericParamSet,
+                                 inferred, ctx, displayName, emittedSpecificError)) {
+            if (!emittedSpecificError) {
+                error(ctx, "cannot infer generic type parameter(s) for '" +
+                             displayName + "' from argument " +
+                             std::to_string(i + 1) + " of type '" +
+                             (actualType ? actualType->name : "<unknown>") + "'");
+            }
+            return std::nullopt;
+        }
+    }
+
+    std::vector<const TypeInfo*> typeArgs;
+    for (size_t i = 0; i < typeParams.size(); i++) {
+        auto it = inferred.find(typeParams[i]);
+        if (it == inferred.end()) {
+            error(ctx, "cannot infer generic type parameter '" + typeParams[i] +
+                         "' for '" + displayName + "'");
+            return std::nullopt;
+        }
+
+        if (typeParamList && i < typeParamList->typeParam().size()) {
+            auto* tpCtx = typeParamList->typeParam(i);
+            if (tpCtx->COLON()) {
+                auto constraintName = tpCtx->IDENTIFIER(1)->getText();
+                auto* constraint = resolveTypeParamConstraint(constraintName, ctx);
+                if (!satisfiesConstraint(it->second, constraint, typeParams[i], ctx))
+                    return std::nullopt;
+            }
+        }
+
+        typeArgs.push_back(it->second);
+    }
+
+    return typeArgs;
+}
+
+bool Checker::unifyGenericTypeArg(
+    LuxParser::TypeSpecContext* formalType,
+    const TypeInfo* actualType,
+    const std::unordered_set<std::string>& genericParams,
+    std::unordered_map<std::string, const TypeInfo*>& inferred,
+    antlr4::ParserRuleContext* ctx,
+    const std::string& displayName,
+    bool& emittedSpecificError) {
+
+    if (!formalType) return true;
+    if (!typeSpecMentionsGenericParam(formalType, genericParams)) return true;
+    if (!actualType) return false;
+
+    if (!formalType->LBRACKET() && !formalType->STAR() && !formalType->LT() &&
+        !formalType->VEC() && !formalType->MAP() && !formalType->SET() &&
+        !formalType->TUPLE() && !formalType->AUTO() && !formalType->fnTypeSpec()) {
+        auto name = formalType->getText();
+        if (genericParams.count(name)) {
+            auto it = inferred.find(name);
+            if (it == inferred.end()) {
+                inferred[name] = actualType;
+                return true;
+            }
+            if (it->second != actualType && it->second->name != actualType->name) {
+                emittedSpecificError = true;
+                error(ctx, "ambiguous generic inference for '" + displayName +
+                             "': '" + name + "' was inferred as both '" +
+                             it->second->name + "' and '" + actualType->name + "'");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (formalType->STAR() && formalType->typeSpec().size() == 1) {
+        if (actualType->kind != TypeKind::Pointer || !actualType->pointeeType)
+            return false;
+        return unifyGenericTypeArg(formalType->typeSpec(0), actualType->pointeeType,
+                                   genericParams, inferred, ctx, displayName,
+                                   emittedSpecificError);
+    }
+
+    if (formalType->VEC()) {
+        if (actualType->kind != TypeKind::Extended || actualType->extendedKind != "Vec" ||
+            !actualType->elementType || formalType->typeSpec().size() != 1)
+            return false;
+        return unifyGenericTypeArg(formalType->typeSpec(0), actualType->elementType,
+                                   genericParams, inferred, ctx, displayName,
+                                   emittedSpecificError);
+    }
+
+    if (formalType->SET()) {
+        if (actualType->kind != TypeKind::Extended || actualType->extendedKind != "Set" ||
+            !actualType->elementType || formalType->typeSpec().size() != 1)
+            return false;
+        return unifyGenericTypeArg(formalType->typeSpec(0), actualType->elementType,
+                                   genericParams, inferred, ctx, displayName,
+                                   emittedSpecificError);
+    }
+
+    if (formalType->MAP()) {
+        if (actualType->kind != TypeKind::Extended || actualType->extendedKind != "Map" ||
+            !actualType->keyType || !actualType->valueType || formalType->typeSpec().size() != 2)
+            return false;
+        return unifyGenericTypeArg(formalType->typeSpec(0), actualType->keyType,
+                                   genericParams, inferred, ctx, displayName,
+                                   emittedSpecificError)
+            && unifyGenericTypeArg(formalType->typeSpec(1), actualType->valueType,
+                                   genericParams, inferred, ctx, displayName,
+                                   emittedSpecificError);
+    }
+
+    if (formalType->TUPLE()) {
+        if (actualType->kind != TypeKind::Tuple ||
+            actualType->tupleElements.size() != formalType->typeSpec().size())
+            return false;
+        for (size_t i = 0; i < formalType->typeSpec().size(); i++) {
+            if (!unifyGenericTypeArg(formalType->typeSpec(i), actualType->tupleElements[i],
+                                     genericParams, inferred, ctx, displayName,
+                                     emittedSpecificError))
+                return false;
+        }
+        return true;
+    }
+
+    if (formalType->LT()) {
+        auto baseName = formalType->IDENTIFIER()->getText();
+        std::vector<const TypeInfo*> actualArgs;
+
+        if (actualType->isGenericInstance && actualType->genericBaseName == baseName) {
+            actualArgs = actualType->typeArgs;
+        } else if (actualType->kind == TypeKind::Extended && actualType->extendedKind == baseName) {
+            if (formalType->typeSpec().size() == 1 && actualType->elementType) {
+                actualArgs.push_back(actualType->elementType);
+            } else if (formalType->typeSpec().size() == 2 && actualType->keyType && actualType->valueType) {
+                actualArgs.push_back(actualType->keyType);
+                actualArgs.push_back(actualType->valueType);
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        if (actualArgs.size() != formalType->typeSpec().size())
+            return false;
+
+        for (size_t i = 0; i < formalType->typeSpec().size(); i++) {
+            if (!unifyGenericTypeArg(formalType->typeSpec(i), actualArgs[i], genericParams,
+                                     inferred, ctx, displayName, emittedSpecificError))
+                return false;
+        }
+        return true;
+    }
+
+    return true;
 }

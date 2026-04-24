@@ -136,7 +136,7 @@ std::unique_ptr<IRModule> IRGen::generate(LuxParser::ProgramContext* tree,
     externCFunctions_.clear();
     globalBuiltins_ = {"exit", "panic", "assert", "assertMsg",
                         "unreachable", "toInt", "toFloat", "toBool", "toString",
-                        "cstr", "fromCStr", "fromCStrLen"};
+                        "cstr", "fromCStr", "fromCStrCopy", "fromCStrLen"};
 
     visitProgram(tree);
 
@@ -5510,6 +5510,20 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 auto* retVal = builder_->CreateCall(callee, {args[0]}, "fromCStr");
                 auto* retPtr = builder_->CreateExtractValue(retVal, 0, "fromCStr_ptr");
                 auto* retLen = builder_->CreateExtractValue(retVal, 1, "fromCStr_len");
+                llvm::Value* strStruct = llvm::UndefValue::get(strTy);
+                strStruct = builder_->CreateInsertValue(strStruct, retPtr, 0, "str_ptr");
+                strStruct = builder_->CreateInsertValue(strStruct, retLen, 1, "str_len");
+                return static_cast<llvm::Value*>(strStruct);
+            }
+
+            // ── fromCStrCopy(*char) -> string ──
+            if (calleeName == "fromCStrCopy") {
+                if (!requireArgs(calleeName, args, 1)) return {};
+                auto* retStructTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+                auto callee = declareBuiltin("lux_fromCStrCopy", retStructTy, {ptrTy});
+                auto* retVal = builder_->CreateCall(callee, {args[0]}, "fromCStrCopy");
+                auto* retPtr = builder_->CreateExtractValue(retVal, 0, "fromCStrCopy_ptr");
+                auto* retLen = builder_->CreateExtractValue(retVal, 1, "fromCStrCopy_len");
                 llvm::Value* strStruct = llvm::UndefValue::get(strTy);
                 strStruct = builder_->CreateInsertValue(strStruct, retPtr, 0, "str_ptr");
                 strStruct = builder_->CreateInsertValue(strStruct, retLen, 1, "str_len");

@@ -588,6 +588,16 @@ lux_str_result lux_fromCStr(const char* cstr) {
     return (lux_str_result){ cstr, len };
 }
 
+lux_str_result lux_fromCStrCopy(const char* cstr) {
+    if (!cstr) return (lux_str_result){ "", 0 };
+    size_t len = strlen(cstr);
+    char* buf = (char*)malloc(len + 1);
+    if (!buf) return (lux_str_result){ "", 0 };
+    memcpy(buf, cstr, len);
+    buf[len] = '\0';
+    return (lux_str_result){ buf, len };
+}
+
 lux_str_result lux_fromCStrLen(const char* cstr, size_t len) {
     if (!cstr) return (lux_str_result){ "", 0 };
     return (lux_str_result){ cstr, len };

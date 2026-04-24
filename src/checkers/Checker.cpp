@@ -4211,6 +4211,10 @@ void Checker::registerGlobalBuiltins() {
     functions_["fromCStr"] = makeFunctionType(strTy, { charPtrTy });
     globalBuiltins_.insert("fromCStr");
 
+    // fromCStrCopy(*char) -> string
+    functions_["fromCStrCopy"] = makeFunctionType(strTy, { charPtrTy });
+    globalBuiltins_.insert("fromCStrCopy");
+
     // fromCStrLen(*char, usize) -> string
     functions_["fromCStrLen"] = makeFunctionType(strTy, { charPtrTy, usizeTy });
     globalBuiltins_.insert("fromCStrLen");

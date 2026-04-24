@@ -2319,6 +2319,8 @@ void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem>& items,
          "Converts a Lux string to a null-terminated C string."},
         {"fromCStr",     "(*char ptr)",                "string",  "fromCStr(${1:ptr})",
          "Converts a null-terminated C string to a Lux string."},
+        {"fromCStrCopy", "(*char ptr)",                "string",  "fromCStrCopy(${1:ptr})",
+         "Copies a null-terminated C string into owned Lux string memory."},
         {"fromCStrLen",  "(*char ptr, usize len)",     "string",  "fromCStrLen(${1:ptr}, ${2:len})",
          "Converts a C string with explicit length to a Lux string."},
     };

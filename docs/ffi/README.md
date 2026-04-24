@@ -177,6 +177,20 @@ string s = fromCStr(raw);
 - **Cost**: One `strlen()` call. O(n).
 - **Ownership**: The TM string wraps the original pointer (zero-copy).
 
+### `fromCStrCopy(p)` — *char → string (owned copy)
+
+Creates a TM string by copying a null-terminated C string into newly
+allocated memory owned by Lux.
+
+```tm
+*char raw = c"Hello from C";
+string s = fromCStrCopy(raw);
+// s remains valid even if raw is later freed
+```
+
+- **Cost**: `strlen()` + `malloc(len + 1)` + `memcpy`. O(n).
+- **Ownership**: The returned TM string owns its copied buffer.
+
 ### `fromCStrLen(p, len)` — *char + length → string
 
 Creates a TM string from a pointer and explicit length. Zero-cost — no

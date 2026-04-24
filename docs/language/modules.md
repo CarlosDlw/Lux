@@ -136,6 +136,7 @@ Some functions are available without any `use` import:
 | `toBool(string)` | Parse string to bool |
 | `cstr(string)` | Convert to C string `*char` |
 | `fromCStr(*char)` | Convert from C string |
+| `fromCStrCopy(*char)` | Convert from C string with owned copy |
 | `fromCStrLen(*char, usize)` | Convert from C string with length |
 
 ---

@@ -1777,9 +1777,21 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                 cbCursorLine = stop->getLine();
 
             for (auto* cb : sb->scopeCallbackList()->scopeCallback()) {
-                if (cb->IDENTIFIER() && cb->IDENTIFIER()->getSymbol() == hoveredToken) {
-                    return hoverIdent(tokenText, hoveredToken, tree,
-                                       bindings, cbCursorLine, project);
+                if (cb->DOT()) {
+                    // dot-access: varName.methodName(args)
+                    // IDENTIFIER(0) = receiver var, IDENTIFIER(1) = method name
+                    for (size_t i = 0; i < 2; ++i) {
+                        if (cb->IDENTIFIER(i) && cb->IDENTIFIER(i)->getSymbol() == hoveredToken) {
+                            return hoverIdent(tokenText, hoveredToken, tree,
+                                               bindings, cbCursorLine, project);
+                        }
+                    }
+                } else {
+                    // plain call: funcName(args)
+                    if (cb->IDENTIFIER(0) && cb->IDENTIFIER(0)->getSymbol() == hoveredToken) {
+                        return hoverIdent(tokenText, hoveredToken, tree,
+                                           bindings, cbCursorLine, project);
+                    }
                 }
                 if (auto* al = cb->argList()) {
                     for (auto* a : al->expression()) {

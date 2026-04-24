@@ -10323,7 +10323,109 @@ std::any IRGen::visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext* ctx) {
 
 // Emit a single #scope callback: IDENTIFIER LPAREN argList? RPAREN
 void IRGen::emitScopeCallback(LuxParser::ScopeCallbackContext* ctx) {
-    auto funcName = ctx->IDENTIFIER()->getText();
+    // ── Dot-access method call: id1.drop() ───────────────────────────────────
+    if (ctx->DOT()) {
+        auto varName    = ctx->IDENTIFIER(0)->getText();
+        auto methodName = ctx->IDENTIFIER(1)->getText();
+
+        auto locIt = locals_.find(varName);
+        if (locIt == locals_.end()) {
+            std::cerr << "lux: #scope callback: unknown variable '" << varName << "'\n";
+            return;
+        }
+
+        auto* recvTI = locIt->second.typeInfo;
+
+        // ── Struct extend method ──────────────────────────────────────────────
+        if (recvTI && recvTI->kind == TypeKind::Struct) {
+            auto smIt = structMethods_.find(recvTI->name);
+            if (smIt == structMethods_.end()) {
+                std::cerr << "lux: #scope callback: type '" << recvTI->name
+                          << "' has no extend methods\n";
+                return;
+            }
+            auto mIt = smIt->second.find(methodName);
+            if (mIt == smIt->second.end()) {
+                std::cerr << "lux: #scope callback: unknown method '" << methodName
+                          << "' on '" << recvTI->name << "'\n";
+                return;
+            }
+
+            auto* fn = mIt->second;
+            std::vector<llvm::Value*> callArgs = { locIt->second.alloca };
+
+            if (auto* argList = ctx->argList()) {
+                auto* fnType = fn->getFunctionType();
+                size_t paramIdx = 1; // skip &self
+                for (auto* argExpr : argList->expression()) {
+                    auto* argVal = castValue(visit(argExpr));
+                    if (paramIdx < fnType->getNumParams()) {
+                        auto* paramTy = fnType->getParamType(paramIdx);
+                        if (argVal->getType() != paramTy) {
+                            if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                                argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                            else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                                argVal = builder_->CreateFPCast(argVal, paramTy);
+                        }
+                    }
+                    callArgs.push_back(argVal);
+                    ++paramIdx;
+                }
+            }
+
+            builder_->CreateCall(fn, callArgs);
+            return;
+        }
+
+        // ── Extended type method (Vec/Map/Set) ────────────────────────────────
+        if (recvTI && recvTI->kind == TypeKind::Extended) {
+            auto* extDesc = extTypeRegistry_.lookup(recvTI->extendedKind);
+            if (!extDesc) {
+                std::cerr << "lux: #scope callback: unknown extended type '"
+                          << recvTI->extendedKind << "'\n";
+                return;
+            }
+            const MethodDescriptor* desc = nullptr;
+            for (auto& md : extDesc->methods) {
+                if (md.name == methodName) { desc = &md; break; }
+            }
+            if (!desc) {
+                std::cerr << "lux: #scope callback: unknown method '" << methodName
+                          << "' on extended type '" << recvTI->name << "'\n";
+                return;
+            }
+
+            auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+            auto* voidTy  = llvm::Type::getVoidTy(*context_);
+
+            std::string suffix;
+            if (!recvTI->builtinSuffix.empty())
+                suffix = recvTI->builtinSuffix;
+            else if (recvTI->elementType)
+                suffix = getVecSuffix(recvTI->elementType);
+            else
+                suffix = "raw";
+
+            auto cFuncName = extDesc->cPrefix + "_" + methodName + "_" + suffix;
+
+            std::vector<llvm::Value*> callArgs = { locIt->second.alloca };
+            if (auto* argList = ctx->argList()) {
+                for (auto* argExpr : argList->expression())
+                    callArgs.push_back(castValue(visit(argExpr)));
+            }
+
+            auto callee = declareBuiltin(cFuncName, voidTy, {ptrTy});
+            builder_->CreateCall(callee, callArgs);
+            return;
+        }
+
+        std::cerr << "lux: #scope callback: '" << varName
+                  << "' has no method '" << methodName << "'\n";
+        return;
+    }
+
+    // ── Plain function call: funcName(args) ───────────────────────────────────
+    auto funcName = ctx->IDENTIFIER(0)->getText();
 
     auto resolvedName = resolveCallTarget(funcName);
     auto* fn = module_->getFunction(resolvedName);

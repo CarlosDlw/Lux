@@ -190,7 +190,7 @@ scopeCallbackList
     ;
 
 scopeCallback
-    : IDENTIFIER LPAREN argList? RPAREN
+    : IDENTIFIER (DOT IDENTIFIER)? LPAREN argList? RPAREN
     ;
 
 // Expression as statement: x++; f(x); etc.

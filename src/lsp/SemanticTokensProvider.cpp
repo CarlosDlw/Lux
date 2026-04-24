@@ -409,6 +409,18 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         }
     }
 
+    // ── #scope callback: funcName(args) or varName.methodName(args) ──
+    else if (auto* ctx = dynamic_cast<LuxParser::ScopeCallbackContext*>(node)) {
+        if (ctx->DOT()) {
+            // dot-access: receiver variable + method name
+            classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Variable);
+            classifyIdent(map, ctx->IDENTIFIER(1), SemanticTokenType::Method);
+        } else {
+            // plain call: function name
+            classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Function);
+        }
+    }
+
     // Recurse into children
     for (size_t i = 0; i < node->children.size(); ++i) {
         walkTree(map, node->children[i]);

@@ -3566,9 +3566,18 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
         // Validate callbacks with body locals in scope
         if (auto* cbs = sb->scopeCallbackList()) {
             for (auto* cb : cbs->scopeCallback()) {
-                auto funcName = cb->IDENTIFIER()->getText();
-                if (!isKnownFunction(funcName) && !(cBindings_ && cBindings_->findFunction(funcName)))
-                    warning(cb, "unknown function '" + funcName + "' in #scope callback");
+                if (cb->DOT()) {
+                    // dot-access: varName.methodName(args)
+                    auto varName    = cb->IDENTIFIER(0)->getText();
+                    auto methodName = cb->IDENTIFIER(1)->getText();
+                    if (locals_.find(varName) == locals_.end())
+                        warning(cb, "unknown variable '" + varName + "' in #scope callback");
+                } else {
+                    // plain call: funcName(args)
+                    auto funcName = cb->IDENTIFIER(0)->getText();
+                    if (!isKnownFunction(funcName) && !(cBindings_ && cBindings_->findFunction(funcName)))
+                        warning(cb, "unknown function '" + funcName + "' in #scope callback");
+                }
                 if (cb->argList())
                     for (auto* arg : cb->argList()->expression())
                         resolveExprType(arg);

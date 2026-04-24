@@ -1779,11 +1779,96 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
             for (auto* cb : sb->scopeCallbackList()->scopeCallback()) {
                 if (cb->DOT()) {
                     // dot-access: varName.methodName(args)
-                    // IDENTIFIER(0) = receiver var, IDENTIFIER(1) = method name
-                    for (size_t i = 0; i < 2; ++i) {
-                        if (cb->IDENTIFIER(i) && cb->IDENTIFIER(i)->getSymbol() == hoveredToken) {
-                            return hoverIdent(tokenText, hoveredToken, tree,
-                                               bindings, cbCursorLine, project);
+                    auto* varTok    = cb->IDENTIFIER(0);
+                    auto* methodTok = cb->IDENTIFIER(1);
+
+                    if (varTok && varTok->getSymbol() == hoveredToken) {
+                        // Hovering on the receiver variable — normal ident hover
+                        return hoverIdent(tokenText, hoveredToken, tree,
+                                           bindings, cbCursorLine, project);
+                    }
+
+                    if (methodTok && methodTok->getSymbol() == hoveredToken) {
+                        // Hovering on the method name — resolve receiver type, search extend blocks
+                        std::string varName    = varTok ? varTok->getText() : "";
+                        std::string methodName = methodTok->getText();
+                        std::string receiverTypeName;
+
+                        if (!varName.empty()) {
+                            auto* encFunc = findEnclosingFunction(tree, cbCursorLine);
+                            if (encFunc) {
+                                auto locals = collectLocals(encFunc, cbCursorLine,
+                                                            tree, &bindings, project);
+                                auto lit = locals.find(varName);
+                                if (lit != locals.end())
+                                    receiverTypeName = lit->second.typeName;
+                            }
+                        }
+
+                        // Search local extend blocks for this method
+                        auto tryExtend = [&](LuxParser::ExtendDeclContext* ext,
+                                              LuxParser::ExtendMethodContext* m,
+                                              const std::vector<DocComment>& docs)
+                                -> std::optional<HoverResult> {
+                            if (m->IDENTIFIER(0)->getText() != methodName) return std::nullopt;
+                            if (!receiverTypeName.empty() &&
+                                ext->IDENTIFIER()->getText() != receiverTypeName)
+                                return std::nullopt;
+
+                            std::ostringstream ss;
+                            ss << "```lux\n(" << ext->IDENTIFIER()->getText()
+                               << " method) " << typeSpecToString(m->typeSpec())
+                               << " " << methodName << "(";
+                            if (m->AMPERSAND()) {
+                                ss << "&self";
+                                for (auto* p : m->param())
+                                    ss << ", " << typeSpecToString(p->typeSpec())
+                                       << " " << p->IDENTIFIER()->getText();
+                            } else if (auto* pl = m->paramList()) {
+                                bool first = true;
+                                for (auto* p : pl->param()) {
+                                    if (!first) ss << ", ";
+                                    first = false;
+                                    ss << typeSpecToString(p->typeSpec())
+                                       << " " << p->IDENTIFIER()->getText();
+                                }
+                            }
+                            ss << ")\n```";
+                            std::string md = ss.str();
+                            md = appendDocToHover(md, docs, m->getStart()->getLine());
+                            return makeResult(methodTok->getSymbol(), md);
+                        };
+
+                        for (auto* tld : tree->topLevelDecl()) {
+                            auto* ext = tld->extendDecl();
+                            if (!ext) continue;
+                            for (auto* m : ext->extendMethod()) {
+                                if (auto r = tryExtend(ext, m, docComments_))
+                                    return r;
+                            }
+                        }
+
+                        if (project && project->isValid()) {
+                            for (auto& ns : project->registry().allNamespaces()) {
+                                for (auto* sym : project->registry().getNamespaceSymbols(ns)) {
+                                    if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+                                    auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                                    if (!ext) continue;
+                                    std::vector<DocComment> crossDocs;
+                                    if (!sym->sourceFile.empty()) {
+                                        std::ifstream ifs(sym->sourceFile);
+                                        if (ifs.is_open()) {
+                                            std::string src((std::istreambuf_iterator<char>(ifs)),
+                                                             std::istreambuf_iterator<char>());
+                                            crossDocs = parseDocComments(src);
+                                        }
+                                    }
+                                    for (auto* m : ext->extendMethod()) {
+                                        if (auto r = tryExtend(ext, m, crossDocs))
+                                            return r;
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {

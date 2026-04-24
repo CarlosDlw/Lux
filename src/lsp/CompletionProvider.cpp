@@ -2661,7 +2661,22 @@ std::string CompletionProvider::inferVarType(const std::string& varName,
     if (method) {
         auto locals = collectLocalsFromMethod(method, cursorLine);
         auto it = locals.find(varName);
-        if (it != locals.end()) return it->second.typeName;
+        if (it != locals.end()) {
+            // In instance methods, self is tracked as "&self" placeholder.
+            // Resolve it to the concrete owner struct name so dot/arrow
+            // completion can list instance fields/methods.
+            if (it->second.typeName == "&self") {
+                for (auto* tld : tree->topLevelDecl()) {
+                    auto* ext = tld->extendDecl();
+                    if (!ext || !ext->IDENTIFIER()) continue;
+                    for (auto* m : ext->extendMethod()) {
+                        if (m == method)
+                            return ext->IDENTIFIER()->getText();
+                    }
+                }
+            }
+            return it->second.typeName;
+        }
     }
 
     return "";

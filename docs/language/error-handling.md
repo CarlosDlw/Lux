@@ -84,7 +84,14 @@ All three blocks can be combined:
 
 ## Enum Unwrap with catch
 
-Lux also supports enum-based unwrap with inline `catch` blocks:
+`expr catch { ... }` is an expression-level unwrap for enum-based error returns.
+
+Use it when a function returns an enum shaped like success-or-error, and you want:
+
+- the success payload as the value of the expression
+- an inline error branch with access to the `Error` payload
+
+### Basic form
 
 ```tm
 auto value = divide(10, 0) catch {
@@ -93,23 +100,112 @@ auto value = divide(10, 0) catch {
 };
 ```
 
-In this form, `it` is an implicit variable available only inside the unwrap-catch block, bound to the captured `Error` payload.
+### What happens
 
-### Rules
+1. `divide(10, 0)` is evaluated.
+2. If it is the success variant, the success payload becomes the value of the full expression.
+3. If it is the error variant, the `catch` block runs.
+4. Inside that block, `it` is the implicit `Error` payload.
 
-`expr catch { ... }` is valid only when the expression type is an enum that matches this shape:
+### Required enum shape
 
-1. The enum has exactly 2 variants.
-2. One variant has a single payload of type `Error`.
-3. The other variant is the success variant and has a single payload of any type.
-4. Variant names are irrelevant; only payload structure and types are checked.
+`expr catch { ... }` is accepted only if the expression type is an enum with this exact structure:
 
-If the expression is successful, the unwrap result type is the success payload type. In `auto value = ... catch { ... }`, `value` is inferred from that success payload.
+1. Exactly 2 variants total.
+2. One variant has exactly one payload and this payload type is `Error`.
+3. The other variant has exactly one payload of any type (the success payload).
+4. Variant names do not matter. Only shape and payload types are checked.
+
+### Type inference
+
+The unwrap expression type is the success payload type.
+
+```tm
+auto value = divide(10, 2) catch {
+    ret 1;
+};
+// value is inferred as int32 if success payload is int32
+```
 
 ### Scope of `it`
 
-- `it` exists only inside `expr catch { ... }`.
+- `it` exists only inside the `catch` block of `expr catch { ... }`.
 - Using `it` outside this block is a checker error.
+
+### Valid and invalid patterns
+
+Valid:
+
+```tm
+enum Response {
+    Ok(int32),
+    Err(Error)
+}
+```
+
+Also valid (different names, same shape):
+
+```tm
+enum OperationResult {
+    Success(string),
+    Failure(Error)
+}
+```
+
+Invalid (more than 2 variants):
+
+```tm
+enum Bad {
+    Ok(int32),
+    Err(Error),
+    Unknown(Error)
+}
+```
+
+Invalid (error payload is not exactly `Error`):
+
+```tm
+enum Bad {
+    Ok(int32),
+    Err(string)
+}
+```
+
+### Complete example (from examples/main.lx)
+
+```tm
+namespace Main;
+
+#include <stdlib.h>
+#include <stdio.h>
+
+enum Response {
+    Ok(int32),
+    Err(Error)
+}
+
+Response divide(int32 a, int32 b) {
+    try {
+        if b == 0 {
+            ret Response::Err(Error { message: "Division by zero!" });
+        }
+
+        ret Response::Ok(a / b);
+    } catch(Error e) {
+        ret Response::Err(e);
+    }
+}
+
+int32 main() {
+    auto value = divide(10, 0) catch {
+        printf(c"Error: %s\\n", it.message);
+        ret 1;
+    };
+
+    printf(c"%d\\n", value);
+    ret 0;
+}
+```
 
 ---
 

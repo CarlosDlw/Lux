@@ -367,14 +367,23 @@ IDENTIFIER '::' IDENTIFIER                                                      
 ? :                          // ternary
 ```
 
-### Try Expression
+### Try / Catch Expressions
 
 ```
-'catch' unwrap expression:
 expression 'catch' block     // enum unwrap with inline catch
-
-'try' expression             // lowest precedence before atoms
+'try' expression             // try expression (low precedence)
 ```
+
+Example:
+
+```tm
+auto value = divide(10, 0) catch {
+    println(it.message);
+    ret 1;
+};
+```
+
+For semantic constraints of `expression catch block` (required enum shape and `it` scope), see [Error Handling](../language/error-handling.md).
 
 ### Atoms
 

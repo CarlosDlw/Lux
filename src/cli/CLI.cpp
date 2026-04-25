@@ -851,6 +851,10 @@ int CLI::jitRun() {
             argv.push_back(irPath.c_str());
             auto builtinsPath = CodeGen::builtinsLibraryPath();
             argv.push_back(builtinsPath.c_str());
+#ifdef LUX_RUNTIME_DIAGNOSTICS
+            argv.push_back("-fsanitize=address,undefined");
+            argv.push_back("-fno-omit-frame-pointer");
+#endif
             for (auto& lp : options_.libPaths)
                 argv.push_back(lp.c_str());
             argv.push_back("-lm");

@@ -2027,6 +2027,61 @@ std::any IRGen::visitFieldAssignStmt(LuxParser::FieldAssignStmtContext* ctx) {
     auto* structTI = it->second.typeInfo;
     auto* structTy = alloca->getAllocatedType();
 
+    if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
+        (structTI->pointeeType->kind == TypeKind::Struct ||
+         structTI->pointeeType->kind == TypeKind::Union)) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_selfptr");
+        alloca = static_cast<llvm::AllocaInst*>(nullptr);
+        structTI = structTI->pointeeType;
+        structTy = structTI->toLLVMType(*context_, module_->getDataLayout());
+
+        // Walk field chain on pointer base.
+        llvm::Value* currentPtr = basePtr;
+        llvm::Type* currentTy = structTy;
+        const TypeInfo* currentTI = structTI;
+        for (size_t i = 1; i < identifiers.size(); i++) {
+            auto fieldName = identifiers[i]->getText();
+            int fieldIdx = -1;
+            for (size_t f = 0; f < currentTI->fields.size(); f++) {
+                if (currentTI->fields[f].name == fieldName) {
+                    fieldIdx = static_cast<int>(f);
+                    break;
+                }
+            }
+            if (fieldIdx < 0) {
+                std::cerr << "lux: '" << currentTI->name
+                          << "' has no field '" << fieldName << "'\n";
+                return {};
+            }
+
+            if (currentTI->kind == TypeKind::Union) {
+                currentTI = currentTI->fields[fieldIdx].typeInfo;
+                currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            } else {
+                currentPtr = builder_->CreateStructGEP(currentTy, currentPtr,
+                                                        fieldIdx, fieldName + "_ptr");
+                currentTI = currentTI->fields[fieldIdx].typeInfo;
+                currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            }
+        }
+
+        auto* val = castValue(visit(ctx->expression()));
+        if (val->getType() != currentTy) {
+            if (val->getType()->isIntegerTy() && currentTy->isIntegerTy())
+                val = builder_->CreateIntCast(val, currentTy, currentTI->isSigned);
+            else if (val->getType()->isFloatingPointTy() && currentTy->isFloatingPointTy()) {
+                if (val->getType()->getPrimitiveSizeInBits() > currentTy->getPrimitiveSizeInBits())
+                    val = builder_->CreateFPTrunc(val, currentTy);
+                else
+                    val = builder_->CreateFPExt(val, currentTy);
+            }
+        }
+
+        builder_->CreateStore(val, currentPtr);
+        return {};
+    }
+
     // Walk field chain: p.x.y → GEP(0, fieldIdx_x), then GEP(0, fieldIdx_y)
     llvm::Value* currentPtr = alloca;
     llvm::Type*  currentTy  = structTy;
@@ -2092,6 +2147,102 @@ std::any IRGen::visitFieldCompoundAssignStmt(
     auto* alloca   = it->second.alloca;
     auto* structTI = it->second.typeInfo;
     auto* structTy = alloca->getAllocatedType();
+
+    if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
+        (structTI->pointeeType->kind == TypeKind::Struct ||
+         structTI->pointeeType->kind == TypeKind::Union)) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_selfptr");
+        structTI = structTI->pointeeType;
+        structTy = structTI->toLLVMType(*context_, module_->getDataLayout());
+
+        llvm::Value* currentPtr = basePtr;
+        llvm::Type* currentTy = structTy;
+        const TypeInfo* currentTI = structTI;
+
+        for (size_t i = 1; i < identifiers.size(); i++) {
+            auto fieldName = identifiers[i]->getText();
+            int fieldIdx = -1;
+            for (size_t f = 0; f < currentTI->fields.size(); f++) {
+                if (currentTI->fields[f].name == fieldName) {
+                    fieldIdx = static_cast<int>(f);
+                    break;
+                }
+            }
+            if (fieldIdx < 0) {
+                std::cerr << "lux: '" << currentTI->name
+                          << "' has no field '" << fieldName << "'\n";
+                return {};
+            }
+
+            if (currentTI->kind == TypeKind::Union) {
+                currentTI = currentTI->fields[fieldIdx].typeInfo;
+                currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            } else {
+                currentPtr = builder_->CreateStructGEP(currentTy, currentPtr,
+                                                       fieldIdx, fieldName + "_ptr");
+                currentTI = currentTI->fields[fieldIdx].typeInfo;
+                currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            }
+        }
+
+        auto* cur = builder_->CreateLoad(currentTy, currentPtr, "field_cur");
+        auto* rhs = castValue(visit(ctx->expression()));
+        if (rhs->getType() != currentTy) {
+            if (rhs->getType()->isIntegerTy() && currentTy->isIntegerTy())
+                rhs = builder_->CreateIntCast(rhs, currentTy, currentTI->isSigned);
+            else if (rhs->getType()->isFloatingPointTy() && currentTy->isFloatingPointTy()) {
+                if (rhs->getType()->getPrimitiveSizeInBits() > currentTy->getPrimitiveSizeInBits())
+                    rhs = builder_->CreateFPTrunc(rhs, currentTy);
+                else
+                    rhs = builder_->CreateFPExt(rhs, currentTy);
+            }
+        }
+
+        bool isFloat = currentTy->isFloatingPointTy();
+        llvm::Value* result = nullptr;
+        if (!isFloat && (ctx->op->getType() == LuxLexer::SLASH_ASSIGN ||
+                         ctx->op->getType() == LuxLexer::PERCENT_ASSIGN)) {
+            emitDivByZeroGuard(rhs, ctx->op);
+        }
+        switch (ctx->op->getType()) {
+        case LuxLexer::PLUS_ASSIGN:
+            result = isFloat ? builder_->CreateFAdd(cur, rhs) : builder_->CreateAdd(cur, rhs);
+            break;
+        case LuxLexer::MINUS_ASSIGN:
+            result = isFloat ? builder_->CreateFSub(cur, rhs) : builder_->CreateSub(cur, rhs);
+            break;
+        case LuxLexer::STAR_ASSIGN:
+            result = isFloat ? builder_->CreateFMul(cur, rhs) : builder_->CreateMul(cur, rhs);
+            break;
+        case LuxLexer::SLASH_ASSIGN:
+            result = isFloat ? builder_->CreateFDiv(cur, rhs) : builder_->CreateSDiv(cur, rhs);
+            break;
+        case LuxLexer::PERCENT_ASSIGN:
+            result = isFloat ? builder_->CreateFRem(cur, rhs) : builder_->CreateSRem(cur, rhs);
+            break;
+        case LuxLexer::AMP_ASSIGN:
+            result = builder_->CreateAnd(cur, rhs);
+            break;
+        case LuxLexer::PIPE_ASSIGN:
+            result = builder_->CreateOr(cur, rhs);
+            break;
+        case LuxLexer::CARET_ASSIGN:
+            result = builder_->CreateXor(cur, rhs);
+            break;
+        case LuxLexer::LSHIFT_ASSIGN:
+            result = builder_->CreateShl(cur, rhs);
+            break;
+        case LuxLexer::RSHIFT_ASSIGN:
+            result = builder_->CreateAShr(cur, rhs);
+            break;
+        default:
+            result = cur;
+            break;
+        }
+        builder_->CreateStore(result, currentPtr);
+        return {};
+    }
 
     // Walk field chain: p.x.y → GEP(0, fieldIdx_x), then GEP(0, fieldIdx_y)
     llvm::Value* currentPtr = alloca;
@@ -4840,6 +4991,45 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
 
     auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(current);
     if (!identBase) {
+        std::reverse(indexExprs.begin(), indexExprs.end());
+
+        // Generic base expression indexing, e.g. self.input[idx].
+        if (!indexExprs.empty()) {
+            auto* idxVal = castValue(visit(indexExprs[0]));
+            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+            if (idxVal->getType() != i64Ty)
+                idxVal = builder_->CreateIntCast(idxVal, i64Ty, true);
+
+            auto* baseTI = resolveExprTypeInfo(current);
+            auto* baseVal = castValue(visit(current));
+
+            // string[index] -> char
+            if (baseTI && baseTI->kind == TypeKind::String && baseVal->getType()->isStructTy()) {
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                auto* i8Ty = llvm::Type::getInt8Ty(*context_);
+                auto* strPtr = builder_->CreateExtractValue(baseVal, 0, "str_ptr");
+                auto* idxU = (idxVal->getType() == usizeTy)
+                                 ? idxVal
+                                 : builder_->CreateIntCast(idxVal, usizeTy, false);
+                auto* elemPtr = builder_->CreateGEP(i8Ty, strPtr, idxU, "str_elem_ptr");
+                return static_cast<llvm::Value*>(builder_->CreateLoad(i8Ty, elemPtr, "str_elem"));
+            }
+
+            // pointer[index] -> *load of pointee
+            if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType) {
+                auto* elemTy = baseTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+                auto* ptrBase = baseVal;
+                if (!ptrBase->getType()->isPointerTy()) {
+                    std::cerr << "lux: invalid pointer index base expression\n";
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+                auto* elemPtr = builder_->CreateGEP(elemTy, ptrBase, idxVal, "idx_elem_ptr");
+                return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, elemPtr, "idx_elem"));
+            }
+        }
+
         // ── Field-access base: e.g. cell.chars[0] ─────────────────────
         auto* fieldBase = dynamic_cast<LuxParser::FieldAccessExprContext*>(current);
         if (fieldBase) {
@@ -10196,9 +10386,11 @@ std::any IRGen::visitRelExpr(LuxParser::RelExprContext* ctx) {
 std::any IRGen::visitEqExpr(LuxParser::EqExprContext* ctx) {
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
+    auto* rhsTI = resolveExprTypeInfo(ctx->expression(1));
 
     // String comparison: delegate to lux_compareTo(ptr,len,ptr,len)
-    if (lhs->getType()->isStructTy() && rhs->getType()->isStructTy()) {
+    if (lhsTI && rhsTI && lhsTI->kind == TypeKind::String && rhsTI->kind == TypeKind::String) {
         auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
@@ -10225,6 +10417,77 @@ std::any IRGen::visitEqExpr(LuxParser::EqExprContext* ctx) {
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt1Ty(*context_)));
         }
+    }
+
+    // Enum comparison: compare discriminants (tag)
+    if (lhsTI && rhsTI && lhsTI->kind == TypeKind::Enum && rhsTI->kind == TypeKind::Enum) {
+        auto* i32Ty = llvm::Type::getInt32Ty(*context_);
+
+        auto extractTag = [&](llvm::Value* v) -> llvm::Value* {
+            llvm::Value* tag = nullptr;
+            if (auto* st = llvm::dyn_cast<llvm::StructType>(v->getType())) {
+                if (st->getNumElements() > 0)
+                    tag = builder_->CreateExtractValue(v, {0}, "enum.tag");
+            } else if (v->getType()->isIntegerTy()) {
+                tag = v;
+            }
+            if (!tag) return nullptr;
+            if (tag->getType() != i32Ty) {
+                if (tag->getType()->isIntegerTy(1))
+                    tag = builder_->CreateZExt(tag, i32Ty, "enum.tag.zext");
+                else if (tag->getType()->isIntegerTy())
+                    tag = builder_->CreateIntCast(tag, i32Ty, false, "enum.tag.cast");
+                else
+                    return nullptr;
+            }
+            return tag;
+        };
+
+        auto* ltag = extractTag(lhs);
+        auto* rtag = extractTag(rhs);
+        if (!ltag || !rtag)
+            return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt1Ty(*context_)));
+
+        if (ctx->op->getType() == LuxLexer::EQ)
+            return static_cast<llvm::Value*>(builder_->CreateICmpEQ(ltag, rtag, "enum_eq"));
+        if (ctx->op->getType() == LuxLexer::NEQ)
+            return static_cast<llvm::Value*>(builder_->CreateICmpNE(ltag, rtag, "enum_neq"));
+    }
+
+    // Generic struct equality fallback: compare first integer field (enum-like discriminant)
+    if (lhs->getType()->isStructTy() && rhs->getType()->isStructTy()) {
+        auto* i32Ty = llvm::Type::getInt32Ty(*context_);
+
+        auto extractFirstInt = [&](llvm::Value* v, const char* tagName) -> llvm::Value* {
+            auto* st = llvm::dyn_cast<llvm::StructType>(v->getType());
+            if (!st || st->getNumElements() == 0)
+                return nullptr;
+            auto* first = builder_->CreateExtractValue(v, {0}, tagName);
+            if (!first->getType()->isIntegerTy())
+                return nullptr;
+            if (first->getType() != i32Ty) {
+                if (first->getType()->isIntegerTy(1))
+                    first = builder_->CreateZExt(first, i32Ty, "agg.tag.zext");
+                else
+                    first = builder_->CreateIntCast(first, i32Ty, false, "agg.tag.cast");
+            }
+            return first;
+        };
+
+        auto* ltag = extractFirstInt(lhs, "lhs_tag");
+        auto* rtag = extractFirstInt(rhs, "rhs_tag");
+        if (ltag && rtag) {
+            if (ctx->op->getType() == LuxLexer::EQ)
+                return static_cast<llvm::Value*>(builder_->CreateICmpEQ(ltag, rtag, "agg_eq"));
+            if (ctx->op->getType() == LuxLexer::NEQ)
+                return static_cast<llvm::Value*>(builder_->CreateICmpNE(ltag, rtag, "agg_neq"));
+        }
+
+        // Unsupported aggregate equality form: deterministic false/true fallback.
+        if (ctx->op->getType() == LuxLexer::EQ)
+            return static_cast<llvm::Value*>(llvm::ConstantInt::getFalse(*context_));
+        if (ctx->op->getType() == LuxLexer::NEQ)
+            return static_cast<llvm::Value*>(llvm::ConstantInt::getTrue(*context_));
     }
 
     auto [l, r] = promoteArithmetic(lhs, rhs);
@@ -10548,6 +10811,11 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
     // ── Dot access: resolve base struct/union, find field type ───────
     if (auto* dot = dynamic_cast<LuxParser::FieldAccessExprContext*>(ctx)) {
         auto* baseTI = resolveExprTypeInfo(dot->expression());
+        if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType &&
+            (baseTI->pointeeType->kind == TypeKind::Struct ||
+             baseTI->pointeeType->kind == TypeKind::Union)) {
+            baseTI = baseTI->pointeeType;
+        }
         if (!baseTI || (baseTI->kind != TypeKind::Struct && baseTI->kind != TypeKind::Union)) return nullptr;
         auto fname = dot->IDENTIFIER()->getText();
         for (auto& f : baseTI->fields) {

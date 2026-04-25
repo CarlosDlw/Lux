@@ -4750,6 +4750,13 @@ void Checker::checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt) {
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
 
+        if (currentType && currentType->kind == TypeKind::Pointer &&
+            currentType->pointeeType &&
+            (currentType->pointeeType->kind == TypeKind::Struct ||
+             currentType->pointeeType->kind == TypeKind::Union)) {
+            currentType = currentType->pointeeType;
+        }
+
         if (!currentType || (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
             error(stmt, "'" +
                              (i == 1 ? varName : identifiers[i-1]->getText()) +
@@ -4793,6 +4800,13 @@ void Checker::checkFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtCon
     auto* currentType = it->second.type;
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
+
+        if (currentType && currentType->kind == TypeKind::Pointer &&
+            currentType->pointeeType &&
+            (currentType->pointeeType->kind == TypeKind::Struct ||
+             currentType->pointeeType->kind == TypeKind::Union)) {
+            currentType = currentType->pointeeType;
+        }
 
         if (!currentType || (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
             error(stmt, "'" +

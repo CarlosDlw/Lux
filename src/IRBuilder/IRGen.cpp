@@ -1852,6 +1852,54 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
         return {};
     }
 
+    // ── Pointer index assignment: ptr[i] = val ─────────────────────
+    if (elemTI && elemTI->kind == TypeKind::Pointer && elemTI->pointeeType) {
+        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+
+        // Load pointer value from variable storage.
+        auto* ptrVal = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
+        auto* val = castValue(visit(exprs.back()));
+
+        llvm::Type* currentTy = elemTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        llvm::Value* currentPtr = ptrVal;
+
+        for (size_t i = 0; i + 1 < exprs.size(); i++) {
+            auto* idx = castValue(visit(exprs[i]));
+            if (idx->getType() != i64Ty)
+                idx = builder_->CreateIntCast(idx, i64Ty, true);
+
+            if (auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(currentTy)) {
+                currentPtr = builder_->CreateInBoundsGEP(
+                    arrTy,
+                    currentPtr,
+                    { llvm::ConstantInt::get(i64Ty, 0), idx },
+                    varName + "_elem");
+                currentTy = arrTy->getElementType();
+            } else {
+                currentPtr = builder_->CreateInBoundsGEP(
+                    currentTy,
+                    currentPtr,
+                    idx,
+                    varName + "_elem");
+            }
+        }
+
+        if (val->getType() != currentTy) {
+            if (val->getType()->isIntegerTy() && currentTy->isIntegerTy())
+                val = builder_->CreateIntCast(val, currentTy, true);
+            else if (val->getType()->isFloatingPointTy() && currentTy->isFloatingPointTy()) {
+                if (val->getType()->getPrimitiveSizeInBits() > currentTy->getPrimitiveSizeInBits())
+                    val = builder_->CreateFPTrunc(val, currentTy);
+                else
+                    val = builder_->CreateFPExt(val, currentTy);
+            }
+        }
+
+        builder_->CreateStore(val, currentPtr);
+        return {};
+    }
+
     // ── Array index assignment (original path) ──────────────────────
     auto* val = castValue(visit(exprs.back()));
 

@@ -2596,6 +2596,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (baseType && baseType->kind == TypeKind::Extended && baseType->elementType)
             return baseType->elementType;
 
+        // *T[i] returns T
+        if (baseType && baseType->kind == TypeKind::Pointer && baseType->pointeeType)
+            return baseType->pointeeType;
+
         return baseType;
     }
 
@@ -4645,11 +4649,28 @@ void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
 
     if (!indexExprs.empty()) {
         auto* rhsType = resolveExprType(indexExprs.back());
-        // For extended types (Vec<T>), validate against element type
+        // Resolve expected assignment type after each index operation.
         auto* expectedType = varType;
-        if (indexExprs.size() > 1 && expectedType &&
-            expectedType->kind == TypeKind::Extended && expectedType->elementType) {
-            expectedType = expectedType->elementType;
+        for (size_t i = 0; i + 1 < indexExprs.size(); i++) {
+            if (!expectedType) break;
+
+            // m[key] = value (non-Map case is handled above)
+            if (expectedType->kind == TypeKind::Extended && expectedType->keyType) {
+                expectedType = expectedType->valueType;
+                continue;
+            }
+
+            // vec[i] = value
+            if (expectedType->kind == TypeKind::Extended && expectedType->elementType) {
+                expectedType = expectedType->elementType;
+                continue;
+            }
+
+            // ptr[i] = value
+            if (expectedType->kind == TypeKind::Pointer && expectedType->pointeeType) {
+                expectedType = expectedType->pointeeType;
+                continue;
+            }
         }
         if (rhsType && expectedType && !isAssignable(expectedType, rhsType)) {
             error(stmt, "type mismatch: cannot assign '" + rhsType->name +

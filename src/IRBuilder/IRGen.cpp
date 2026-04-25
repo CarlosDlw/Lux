@@ -2211,29 +2211,74 @@ std::any IRGen::visitIndexFieldAssignStmt(
     // expressions layout: [index0, index1, ..., indexN-1, rhs_value]
     // The last expression is always the value to assign
 
-    // Build GEP indices for array: [0, idx0, idx1, ...]
-    std::vector<llvm::Value*> gepIndices;
-    gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
-    for (size_t i = 0; i < numIndices; i++) {
-        auto* idx = castValue(visit(expressions[i]));
-        if (idx->getType() != i64Ty)
-            idx = builder_->CreateIntCast(idx, i64Ty, true);
-        gepIndices.push_back(idx);
+    llvm::Value* elemPtr = nullptr;
+    llvm::Type* elemTy = nullptr;
+    const TypeInfo* currentTI = structTI;
+
+    if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
+
+        elemTy = structTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        currentTI = structTI->pointeeType;
+        elemPtr = basePtr;
+
+        for (size_t i = 0; i < numIndices; i++) {
+            auto* idx = castValue(visit(expressions[i]));
+            if (idx->getType() != i64Ty)
+                idx = builder_->CreateIntCast(idx, i64Ty, true);
+
+            if (auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(elemTy)) {
+                elemPtr = builder_->CreateInBoundsGEP(
+                    arrTy,
+                    elemPtr,
+                    { llvm::ConstantInt::get(i64Ty, 0), idx },
+                    varName + "_elem_ptr");
+                elemTy = arrTy->getElementType();
+            } else {
+                if (i > 0) {
+                    std::cerr << "lux: too many indices for pointer variable '"
+                              << varName << "'\n";
+                    return {};
+                }
+                elemPtr = builder_->CreateInBoundsGEP(
+                    elemTy,
+                    elemPtr,
+                    idx,
+                    varName + "_elem_ptr");
+            }
+        }
+    } else {
+        // Build GEP indices for array: [0, idx0, idx1, ...]
+        std::vector<llvm::Value*> gepIndices;
+        gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
+        for (size_t i = 0; i < numIndices; i++) {
+            auto* idx = castValue(visit(expressions[i]));
+            if (idx->getType() != i64Ty)
+                idx = builder_->CreateIntCast(idx, i64Ty, true);
+            gepIndices.push_back(idx);
+        }
+
+        // GEP to the array element (a struct)
+        elemPtr = builder_->CreateGEP(allocType, alloca, gepIndices,
+                                      varName + "_elem_ptr");
+
+        // Determine element type by unwrapping array dimensions
+        elemTy = allocType;
+        for (size_t i = 0; i < numIndices; i++) {
+            auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(elemTy);
+            if (!arrTy) {
+                std::cerr << "lux: too many indices for array variable '"
+                          << varName << "'\n";
+                return {};
+            }
+            elemTy = arrTy->getElementType();
+        }
     }
-
-    // GEP to the array element (a struct)
-    auto* elemPtr = builder_->CreateGEP(allocType, alloca, gepIndices,
-                                        varName + "_elem_ptr");
-
-    // Determine element type by unwrapping array dimensions
-    llvm::Type* elemTy = allocType;
-    for (size_t i = 0; i < numIndices; i++)
-        elemTy = llvm::cast<llvm::ArrayType>(elemTy)->getElementType();
 
     // Walk the field chain: identifiers[1], identifiers[2], ...
     llvm::Value* currentPtr = elemPtr;
     llvm::Type*  currentTy  = elemTy;
-    const TypeInfo* currentTI = structTI;
 
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
@@ -5232,30 +5277,81 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
         auto* structTI = it->second.typeInfo;
         auto* i64Ty    = llvm::Type::getInt64Ty(*context_);
 
-        if (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union) {
+        if (structTI && structTI->kind == TypeKind::Pointer)
+            structTI = structTI->pointeeType;
+
+        if (!structTI || (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union)) {
             std::cerr << "lux: elements of '" << varName << "' are not structs\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
 
-        // Build GEP indices for array indexing: [0, idx0, idx1, ...]
-        std::vector<llvm::Value*> gepIndices;
-        gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
-        for (auto* idxExpr : indexExprs) {
-            auto* idx = castValue(visit(idxExpr));
-            if (idx->getType() != i64Ty)
-                idx = builder_->CreateIntCast(idx, i64Ty, true);
-            gepIndices.push_back(idx);
+        llvm::Value* elemPtr = nullptr;
+        llvm::Type* elemTy = nullptr;
+
+        if (it->second.typeInfo && it->second.typeInfo->kind == TypeKind::Pointer &&
+            it->second.typeInfo->pointeeType) {
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
+
+            elemTy = it->second.typeInfo->pointeeType->toLLVMType(
+                *context_, module_->getDataLayout());
+            elemPtr = basePtr;
+
+            for (size_t i = 0; i < indexExprs.size(); i++) {
+                auto* idx = castValue(visit(indexExprs[i]));
+                if (idx->getType() != i64Ty)
+                    idx = builder_->CreateIntCast(idx, i64Ty, true);
+
+                if (auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(elemTy)) {
+                    elemPtr = builder_->CreateInBoundsGEP(
+                        arrTy,
+                        elemPtr,
+                        { llvm::ConstantInt::get(i64Ty, 0), idx },
+                        varName + "_elem_ptr");
+                    elemTy = arrTy->getElementType();
+                } else {
+                    if (i > 0) {
+                        std::cerr << "lux: too many indices for pointer variable '"
+                                  << varName << "'\n";
+                        return static_cast<llvm::Value*>(
+                            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                    }
+                    elemPtr = builder_->CreateInBoundsGEP(
+                        elemTy,
+                        elemPtr,
+                        idx,
+                        varName + "_elem_ptr");
+                }
+            }
+        } else {
+            // Build GEP indices for array indexing: [0, idx0, idx1, ...]
+            std::vector<llvm::Value*> gepIndices;
+            gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
+            for (auto* idxExpr : indexExprs) {
+                auto* idx = castValue(visit(idxExpr));
+                if (idx->getType() != i64Ty)
+                    idx = builder_->CreateIntCast(idx, i64Ty, true);
+                gepIndices.push_back(idx);
+            }
+
+            // GEP to the array element (a struct)
+            elemPtr = builder_->CreateGEP(allocType, alloca, gepIndices,
+                                          varName + "_elem_ptr");
+
+            // Determine the struct LLVM type (unwrap array types)
+            elemTy = allocType;
+            for (size_t i = 0; i < indexExprs.size(); i++) {
+                auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(elemTy);
+                if (!arrTy) {
+                    std::cerr << "lux: too many indices for array variable '"
+                              << varName << "'\n";
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+                elemTy = arrTy->getElementType();
+            }
         }
-
-        // GEP to the array element (a struct)
-        auto* elemPtr = builder_->CreateGEP(allocType, alloca, gepIndices,
-                                            varName + "_elem_ptr");
-
-        // Determine the struct LLVM type (unwrap array types)
-        llvm::Type* elemTy = allocType;
-        for (size_t i = 0; i < indexExprs.size(); i++)
-            elemTy = llvm::cast<llvm::ArrayType>(elemTy)->getElementType();
 
         // Find the field in the struct
         const TypeInfo* fieldTI = nullptr;

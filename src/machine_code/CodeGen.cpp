@@ -68,7 +68,8 @@ static bool tryLinkMulti(const char*                      linker,
                           const std::string&              builtinsPath,
                           const std::string&              outputPath,
                           const std::vector<std::string>& extraLinkerFlags,
-                          const std::vector<std::string>& extraLibPaths) {
+                          const std::vector<std::string>& extraLibPaths,
+                          bool withSanitizers) {
     pid_t pid = ::fork();
     if (pid < 0) return false;
 
@@ -79,10 +80,12 @@ static bool tryLinkMulti(const char*                      linker,
         for (auto& obj : objectPaths)
             argv.push_back(obj.c_str());
         argv.push_back(builtinsPath.c_str());
+        if (withSanitizers) {
 #ifdef LUX_RUNTIME_DIAGNOSTICS
-        argv.push_back("-fsanitize=address,undefined");
-        argv.push_back("-fno-omit-frame-pointer");
+            argv.push_back("-fsanitize=address,undefined");
+            argv.push_back("-fno-omit-frame-pointer");
 #endif
+        }
         for (auto& lp : extraLibPaths)
             argv.push_back(lp.c_str());
         argv.push_back("-lm");
@@ -154,6 +157,10 @@ bool CodeGen::compileCSource(const std::string& cSourcePath,
     return false;
 }
 
+std::string CodeGen::builtinsLibraryPath() {
+    return findBuiltinsPath();
+}
+
 bool CodeGen::emitBinary(IRModule& irModule, const std::string& outputPath) {
     const std::string objectPath = outputPath + ".o";
 
@@ -177,13 +184,14 @@ bool CodeGen::emitBinary(IRModule& irModule, const std::string& outputPath) {
 bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
                                const std::string& outputPath,
                                const std::vector<std::string>& extraLinkerFlags,
-                               const std::vector<std::string>& extraLibPaths) {
+                               const std::vector<std::string>& extraLibPaths,
+                               bool withSanitizers) {
     auto builtinsPath = findBuiltinsPath();
 
     bool linked = tryLinkMulti("clang", objectPaths, builtinsPath, outputPath,
-                               extraLinkerFlags, extraLibPaths)
+                               extraLinkerFlags, extraLibPaths, withSanitizers)
                || tryLinkMulti("gcc",   objectPaths, builtinsPath, outputPath,
-                               extraLinkerFlags, extraLibPaths);
+                               extraLinkerFlags, extraLibPaths, withSanitizers);
 
     if (!linked) {
         std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
@@ -194,11 +202,9 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
 // ── Private helpers ──────────────────────────────────────────────────────────
 
 bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath) {
-    llvm::InitializeAllTargetInfos();
-    llvm::InitializeAllTargets();
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmParsers();
-    llvm::InitializeAllAsmPrinters();
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmParser();
+    llvm::InitializeNativeTargetAsmPrinter();
 
     llvm::Triple targetTriple(llvm::sys::getDefaultTargetTriple());
     module->setTargetTriple(targetTriple);

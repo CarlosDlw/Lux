@@ -97,6 +97,22 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
     return true;
 }
 
+static bool inferArraySizesFromLLVMType(llvm::Type* ty,
+                                        unsigned expectedDims,
+                                        std::vector<unsigned>& outSizes) {
+    outSizes.clear();
+    auto* cur = ty;
+    for (unsigned d = 0; d < expectedDims; d++) {
+        auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(cur);
+        if (!arrTy) return false;
+        outSizes.push_back(static_cast<unsigned>(arrTy->getNumElements()));
+        cur = arrTy->getElementType();
+    }
+    return true;
+}
+
+static constexpr unsigned kOpaqueUnsizedArrayPayloadBytes = 4096;
+
 llvm::Function* IRGen::declareCFunction(const std::string& name) {
     // Already declared in this module?
     if (auto* fn = module_->getFunction(name))
@@ -207,6 +223,8 @@ std::unique_ptr<IRModule> IRGen::generate(LuxParser::ProgramContext* tree,
     userImports_.clear();
     callTargetMap_.clear();
     externCFunctions_.clear();
+    fnReturnTypes_.clear();
+    fnReturnArrayDims_.clear();
     globalBuiltins_ = {"exit", "panic", "assert", "assertMsg",
                         "unreachable", "toInt", "toFloat", "toBool", "toString",
                         "cstr", "fromCStr", "fromCStrCopy", "fromCStrLen", "freeStr"};
@@ -506,13 +524,29 @@ std::any IRGen::visitEnumDecl(LuxParser::EnumDeclContext* ctx) {
             auto payloadTypes = variantDecl->typeSpec();
             for (size_t i = 0; i < payloadTypes.size(); i++) {
                 auto* fieldTI = resolveTypeInfo(payloadTypes[i]);
-                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI});
+                unsigned fieldDims = countArrayDims(payloadTypes[i]);
+                std::vector<unsigned> fieldSizes;
+                auto* spec = payloadTypes[i];
+                while (spec && spec->LBRACKET()) {
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI, fieldDims, fieldSizes});
             }
         } else if (variantDecl->LBRACE()) {
             info.payloadKind = EnumPayloadKind::Named;
             for (auto* payloadField : variantDecl->enumPayloadField()) {
                 auto* fieldTI = resolveTypeInfo(payloadField->typeSpec());
-                info.payloadFields.push_back({payloadField->IDENTIFIER()->getText(), fieldTI});
+                unsigned fieldDims = countArrayDims(payloadField->typeSpec());
+                std::vector<unsigned> fieldSizes;
+                auto* spec = payloadField->typeSpec();
+                while (spec && spec->LBRACKET()) {
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+                info.payloadFields.push_back({payloadField->IDENTIFIER()->getText(), fieldTI, fieldDims, fieldSizes});
             }
         }
 
@@ -756,6 +790,7 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
     }
 
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
+    auto retArrayDims = countArrayDims(ctx->typeSpec());
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
     auto  funcName   = ctx->IDENTIFIER()->getText();
 
@@ -799,6 +834,7 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
 
     // Cache return TypeInfo for resolveExprTypeInfo
     fnReturnTypes_[emitName] = retInfo;
+    fnReturnArrayDims_[emitName] = retArrayDims;
 
     // Register in callTargetMap_ so calls resolve before body generation
     if (nsRegistry_ && funcName != "main") {
@@ -915,6 +951,7 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
         for (size_t i = 0; i < paramList.size(); i++) {
             auto* param = paramList[i];
             auto* pInfo = resolveTypeInfo(param->typeSpec());
+            auto pDims  = countArrayDims(param->typeSpec());
             auto  pName = param->IDENTIFIER()->getText();
 
             if (param->SPREAD()) {
@@ -933,7 +970,7 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
                 auto* pType = pInfo->toLLVMType(*context_, module_->getDataLayout());
                 auto* alloca = builder_->CreateAlloca(pType, nullptr, pName);
                 builder_->CreateStore(func->getArg(llvmIdx), alloca);
-                locals_[pName] = { alloca, pInfo, 0, /*isParam=*/true };
+                locals_[pName] = { alloca, pInfo, pDims, /*isParam=*/true };
                 llvmIdx++;
             }
         }
@@ -1295,6 +1332,7 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         // auto always has an initializer (Checker enforces this)
         auto  initVal = visit(ctx->expression());
         auto* val     = castValue(initVal);
+        auto exprDims = resolveExprArrayDims(ctx->expression());
 
         // Infer TypeInfo from the expression AST
         auto* ti = resolveExprTypeInfo(ctx->expression());
@@ -1320,11 +1358,21 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
             }
         }
 
+        if (exprDims > 0 && val && val->getType()->isArrayTy()) {
+            auto* elemTI = ti ? ti : typeRegistry_.lookup("int32");
+            auto* elemType = elemTI->toLLVMType(*context_, module_->getDataLayout());
+            auto* targetTy = buildTargetArrayType(val->getType(), elemType);
+            auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
+            storeArrayElements(val, alloca, targetTy, elemTI, exprDims);
+            locals_[name] = { alloca, elemTI, exprDims };
+            return {};
+        }
+
         // Scalar auto variable
         auto* type   = val->getType();
         auto* alloca = builder_->CreateAlloca(type, nullptr, name);
         builder_->CreateStore(val, alloca);
-        locals_[name] = { alloca, ti, 0 };
+        locals_[name] = { alloca, ti, exprDims };
         return {};
     }
 
@@ -4831,6 +4879,12 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
     }
 
     // ── Array index access (original path) ──────────────────────────
+    if (!allocType->isArrayTy()) {
+        std::cerr << "lux: cannot index non-array variable '" << varName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
     auto* i64Ty     = llvm::Type::getInt64Ty(*context_);
 
     std::vector<llvm::Value*> gepIndices;
@@ -4846,8 +4900,15 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
 
     // Determine element type by unwrapping array types
     llvm::Type* elemTy = allocType;
-    for (size_t i = 0; i < indexExprs.size(); i++)
-        elemTy = llvm::cast<llvm::ArrayType>(elemTy)->getElementType();
+    for (size_t i = 0; i < indexExprs.size(); i++) {
+        auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(elemTy);
+        if (!arrTy) {
+            std::cerr << "lux: too many indices for variable '" << varName << "'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+        elemTy = arrTy->getElementType();
+    }
 
     return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, gep));
 }
@@ -5304,14 +5365,28 @@ std::any IRGen::visitArrowAccessExpr(LuxParser::ArrowAccessExprContext* ctx) {
 llvm::Type* IRGen::getEnumVariantPayloadType(const EnumVariantInfo& variantInfo) {
     if (variantInfo.payloadFields.empty()) return nullptr;
 
+    auto buildFieldType = [&](const FieldInfo& field) -> llvm::Type* {
+        auto* llTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+        if (field.arrayDims == 0) return llTy;
+        if (field.arraySizes.empty()) {
+            return llvm::ArrayType::get(llvm::Type::getInt8Ty(*context_),
+                                        kOpaqueUnsizedArrayPayloadBytes);
+        }
+
+        llvm::Type* arrTy = llTy;
+        for (auto it = field.arraySizes.rbegin(); it != field.arraySizes.rend(); ++it)
+            arrTy = llvm::ArrayType::get(arrTy, *it);
+        return arrTy;
+    };
+
     if (variantInfo.payloadKind == EnumPayloadKind::Tuple &&
         variantInfo.payloadFields.size() == 1) {
-        return variantInfo.payloadFields[0].typeInfo->toLLVMType(*context_, module_->getDataLayout());
+        return buildFieldType(variantInfo.payloadFields[0]);
     }
 
     std::vector<llvm::Type*> fieldTypes;
     for (const auto& field : variantInfo.payloadFields) {
-        fieldTypes.push_back(field.typeInfo->toLLVMType(*context_, module_->getDataLayout()));
+        fieldTypes.push_back(buildFieldType(field));
     }
     return llvm::StructType::get(*context_, fieldTypes);
 }
@@ -5321,6 +5396,27 @@ llvm::Value* IRGen::buildEnumVariantValue(const TypeInfo* enumType,
                                           const std::vector<llvm::Value*>& payloadValues) {
     if (!enumType) {
         return llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_));
+    }
+
+    // For []T payload fields without explicit [N] sizes, infer concrete sizes
+    // from the first constructed payload so enum storage matches runtime value.
+    if (variantInfo.payloadFields.size() == 1 && payloadValues.size() == 1) {
+        const auto& pf = variantInfo.payloadFields[0];
+        if (pf.arrayDims > 0 && pf.arraySizes.empty()) {
+            std::vector<unsigned> inferred;
+            if (inferArraySizesFromLLVMType(payloadValues[0]->getType(), pf.arrayDims, inferred)) {
+                auto* mutEnum = const_cast<TypeInfo*>(enumType);
+                if (variantInfo.discriminant < mutEnum->enumVariantInfos.size()) {
+                    auto& mutField = mutEnum->enumVariantInfos[variantInfo.discriminant].payloadFields[0];
+                    if (mutField.arraySizes.empty()) {
+                        mutField.arraySizes = inferred;
+                    } else if (mutField.arraySizes != inferred) {
+                        std::cerr << "lux: inconsistent inferred array shape for enum variant '"
+                                  << variantInfo.name << "'\n";
+                    }
+                }
+            }
+        }
     }
 
     auto* enumLLTy = enumType->toLLVMType(*context_, module_->getDataLayout());
@@ -5339,13 +5435,57 @@ llvm::Value* IRGen::buildEnumVariantValue(const TypeInfo* enumType,
         auto* payloadTy = getEnumVariantPayloadType(variantInfo);
 
         if (payloadTy) {
+            auto fieldLLVMType = [&](const FieldInfo& field) -> llvm::Type* {
+                auto* llTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                if (field.arrayDims == 0) return llTy;
+                if (field.arraySizes.empty()) {
+                    return llvm::ArrayType::get(llvm::Type::getInt8Ty(*context_),
+                                                kOpaqueUnsizedArrayPayloadBytes);
+                }
+                llvm::Type* arrTy = llTy;
+                for (auto it = field.arraySizes.rbegin(); it != field.arraySizes.rend(); ++it)
+                    arrTy = llvm::ArrayType::get(arrTy, *it);
+                return arrTy;
+            };
+
+            auto coerceFieldValue = [&](llvm::Value* in, const FieldInfo& field) -> llvm::Value* {
+                auto* expected = fieldLLVMType(field);
+                if (in->getType() == expected) return in;
+
+                if (in->getType()->isArrayTy() && expected->isArrayTy()) {
+                    auto* tmp = builder_->CreateAlloca(expected, nullptr, "enum_payload_arr_cast");
+                    storeArrayElements(in, tmp, expected, field.typeInfo, field.arrayDims);
+                    return builder_->CreateLoad(expected, tmp, "enum_payload_arr_cast.val");
+                }
+
+                if (in->getType()->isIntegerTy() && expected->isIntegerTy())
+                    return builder_->CreateIntCast(in, expected, field.typeInfo->isSigned);
+
+                if (in->getType()->isFloatingPointTy() && expected->isFloatingPointTy()) {
+                    if (in->getType()->getPrimitiveSizeInBits() > expected->getPrimitiveSizeInBits())
+                        return builder_->CreateFPTrunc(in, expected);
+                    return builder_->CreateFPExt(in, expected);
+                }
+
+                if (in->getType()->isIntegerTy() && expected->isFloatingPointTy())
+                    return builder_->CreateSIToFP(in, expected);
+
+                if (in->getType()->isFloatingPointTy() && expected->isIntegerTy())
+                    return builder_->CreateFPToSI(in, expected);
+
+                return in;
+            };
+
             llvm::Value* payloadValue = nullptr;
             if (variantInfo.payloadKind == EnumPayloadKind::Tuple && payloadValues.size() == 1) {
-                payloadValue = payloadValues[0];
+                payloadValue = coerceFieldValue(payloadValues[0], variantInfo.payloadFields[0]);
             } else {
                 payloadValue = llvm::UndefValue::get(payloadTy);
                 for (size_t i = 0; i < payloadValues.size(); i++) {
-                    payloadValue = builder_->CreateInsertValue(payloadValue, payloadValues[i],
+                    auto* elem = payloadValues[i];
+                    if (i < variantInfo.payloadFields.size())
+                        elem = coerceFieldValue(elem, variantInfo.payloadFields[i]);
+                    payloadValue = builder_->CreateInsertValue(payloadValue, elem,
                                                               {static_cast<unsigned>(i)});
                 }
             }
@@ -10856,6 +10996,52 @@ unsigned IRGen::countArrayDims(LuxParser::TypeSpecContext* ctx) {
     return dims;
 }
 
+unsigned IRGen::resolveExprArrayDims(LuxParser::ExpressionContext* ctx) {
+    if (!ctx) return 0;
+
+    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(ctx)) {
+        auto it = locals_.find(id->IDENTIFIER()->getText());
+        if (it != locals_.end()) return it->second.arrayDims;
+        return 0;
+    }
+
+    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(ctx)) {
+        auto baseDims = resolveExprArrayDims(idx->expression(0));
+        return baseDims > 0 ? baseDims - 1 : 0;
+    }
+
+    if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(ctx)) {
+        auto elems = arr->expression();
+        if (elems.empty()) return 1;
+        return 1 + resolveExprArrayDims(elems[0]);
+    }
+
+    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(ctx))
+        return resolveExprArrayDims(paren->expression());
+
+    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(ctx))
+        return countArrayDims(cast->typeSpec());
+
+    if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(ctx)) {
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+            auto emitName = resolveCallTarget(ident->IDENTIFIER()->getText());
+            auto it = fnReturnArrayDims_.find(emitName);
+            if (it != fnReturnArrayDims_.end()) return it->second;
+        }
+    }
+
+    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(ctx)) {
+        auto* sourceTI = resolveExprTypeInfo(cu->expression());
+        UnwrapCatchPatternInfo pattern;
+        std::string reason;
+        if (!classifyUnwrapCatchEnum(sourceTI, pattern, reason)) return 0;
+        if (!pattern.okVariant || pattern.okVariant->payloadFields.empty()) return 0;
+        return pattern.okVariant->payloadFields[0].arrayDims;
+    }
+
+    return 0;
+}
+
 llvm::ArrayType* IRGen::buildTargetArrayType(llvm::Type* srcTy, llvm::Type* elemTy) {
     auto* srcArr  = llvm::cast<llvm::ArrayType>(srcTy);
     auto  count   = srcArr->getNumElements();
@@ -14225,7 +14411,10 @@ std::any IRGen::visitCatchUnwrapExpr(LuxParser::CatchUnwrapExprContext* ctx) {
 
     auto* itAlloca = builder_->CreateAlloca(errPayloadTy, nullptr, "it");
     builder_->CreateStore(errPayloadVal, itAlloca);
-    locals_["it"] = {itAlloca, singlePayloadType(*pattern.errVariant), 0};
+    unsigned itDims = 0;
+    if (pattern.errVariant && !pattern.errVariant->payloadFields.empty())
+        itDims = pattern.errVariant->payloadFields[0].arrayDims;
+    locals_["it"] = {itAlloca, singlePayloadType(*pattern.errVariant), itDims};
 
     for (auto* stmt : ctx->block()->statement()) {
         visit(stmt);
@@ -14659,14 +14848,30 @@ const TypeInfo* IRGen::instantiateGenericEnum(
             for (size_t i = 0; i < payloadTypes.size(); i++) {
                 auto* fieldTI = resolveTypeInfoWithSubst(payloadTypes[i], subst);
                 if (!fieldTI) fieldTI = typeRegistry_.lookup("int32");
-                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI});
+                unsigned fieldDims = countArrayDims(payloadTypes[i]);
+                std::vector<unsigned> fieldSizes;
+                auto* spec = payloadTypes[i];
+                while (spec && spec->LBRACKET()) {
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI, fieldDims, fieldSizes});
             }
         } else if (variantDecl->LBRACE()) {
             info.payloadKind = EnumPayloadKind::Named;
             for (auto* payloadField : variantDecl->enumPayloadField()) {
                 auto* fieldTI = resolveTypeInfoWithSubst(payloadField->typeSpec(), subst);
                 if (!fieldTI) fieldTI = typeRegistry_.lookup("int32");
-                info.payloadFields.push_back({payloadField->IDENTIFIER()->getText(), fieldTI});
+                unsigned fieldDims = countArrayDims(payloadField->typeSpec());
+                std::vector<unsigned> fieldSizes;
+                auto* spec = payloadField->typeSpec();
+                while (spec && spec->LBRACKET()) {
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+                info.payloadFields.push_back({payloadField->IDENTIFIER()->getText(), fieldTI, fieldDims, fieldSizes});
             }
         }
 
@@ -14707,6 +14912,7 @@ llvm::Function* IRGen::instantiateGenericFunc(
     // Resolve return type
     auto* retTI = resolveTypeInfoWithSubst(tmpl.decl->typeSpec(), subst);
     if (!retTI) retTI = typeRegistry_.lookup("int32");
+    auto retArrayDims = countArrayDims(tmpl.decl->typeSpec());
     auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
 
     // Collect parameter types
@@ -14726,6 +14932,7 @@ llvm::Function* IRGen::instantiateGenericFunc(
         fnType, llvm::Function::ExternalLinkage, mangledName, module_);
 
     fnReturnTypes_[mangledName] = retTI;
+    fnReturnArrayDims_[mangledName] = retArrayDims;
 
     // Emit body
     auto* savedFunc = currentFunction_;
@@ -14748,7 +14955,8 @@ llvm::Function* IRGen::instantiateGenericFunc(
             auto* paramLLTy = paramLLTypes[i];
             auto* alloca = builder_->CreateAlloca(paramLLTy, nullptr, paramName);
             builder_->CreateStore(arg, alloca);
-            locals_[paramName] = { alloca, paramTIs[i], 0, true };
+            auto paramDims = countArrayDims(params[i]->typeSpec());
+            locals_[paramName] = { alloca, paramTIs[i], paramDims, true };
         }
     }
 

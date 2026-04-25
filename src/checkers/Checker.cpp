@@ -3634,7 +3634,14 @@ void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
                                           name + "::" + variant + "'");
                     return;
                 }
-                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI});
+                std::vector<unsigned> fieldSizes;
+                auto* spec = payloadTypes[i];
+                while (spec && spec->LBRACKET()) {
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI, fieldDims, fieldSizes});
             }
         } else if (variantDecl->LBRACE()) {
             info.payloadKind = EnumPayloadKind::Named;
@@ -3654,7 +3661,14 @@ void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
                                         name + "::" + variant + "'");
                     return;
                 }
-                info.payloadFields.push_back({fieldName, fieldTI});
+                std::vector<unsigned> fieldSizes;
+                auto* spec = payloadField->typeSpec();
+                while (spec && spec->LBRACKET()) {
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+                info.payloadFields.push_back({fieldName, fieldTI, fieldDims, fieldSizes});
             }
         }
 
@@ -5552,7 +5566,16 @@ const TypeInfo* Checker::instantiateGenericEnum(
                     instantiatingGenerics_.erase(mangledName);
                     return nullptr;
                 }
-                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI});
+
+                std::vector<unsigned> fieldSizes;
+                auto* spec = payloadTypes[i];
+                while (spec && spec->LBRACKET()) {
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+
+                info.payloadFields.push_back({"_" + std::to_string(i), fieldTI, fieldDims, fieldSizes});
             }
         } else if (variantDecl->LBRACE()) {
             info.payloadKind = EnumPayloadKind::Named;
@@ -5574,7 +5597,16 @@ const TypeInfo* Checker::instantiateGenericEnum(
                     instantiatingGenerics_.erase(mangledName);
                     return nullptr;
                 }
-                info.payloadFields.push_back({fieldName, fieldTI});
+
+                std::vector<unsigned> fieldSizes;
+                auto* spec = payloadField->typeSpec();
+                while (spec && spec->LBRACKET()) {
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+
+                info.payloadFields.push_back({fieldName, fieldTI, fieldDims, fieldSizes});
             }
         }
 

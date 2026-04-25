@@ -34,6 +34,8 @@ struct TypeInfo;
 struct FieldInfo {
     std::string     name;
     const TypeInfo* typeInfo;
+    unsigned        arrayDims = 0;           // [] depth for this field/payload (0 = scalar)
+    std::vector<unsigned> arraySizes;        // fixed sizes for [N]...[M]T (empty for non-fixed dims)
     bool            autoFill = false;  // compiler fills this field automatically
 };
 

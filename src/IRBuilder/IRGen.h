@@ -270,6 +270,7 @@ private:
 
     // Function return TypeInfo cache (for tuple and complex return types)
     std::unordered_map<std::string, const TypeInfo*> fnReturnTypes_;
+    std::unordered_map<std::string, unsigned> fnReturnArrayDims_;
 
     // Pending payload binding from `expr is EnumType::Variant(name)` expressions.
     // Set by visitIsExpr when a binding identifier is present; consumed by
@@ -379,6 +380,7 @@ private:
     // Helpers
     const TypeInfo*    resolveTypeInfo(LuxParser::TypeSpecContext* ctx);
     const TypeInfo*    resolveExprTypeInfo(LuxParser::ExpressionContext* ctx);
+    unsigned           resolveExprArrayDims(LuxParser::ExpressionContext* ctx);
     bool               isPointerType(LuxParser::TypeSpecContext* ctx);
     unsigned           countArrayDims(LuxParser::TypeSpecContext* ctx);
     llvm::ArrayType*   buildTargetArrayType(llvm::Type* srcTy, llvm::Type* elemTy);

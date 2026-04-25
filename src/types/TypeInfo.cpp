@@ -5,17 +5,39 @@
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/LLVMContext.h>
 
+static constexpr unsigned kOpaqueUnsizedArrayPayloadBytes = 4096;
+
+static llvm::Type* fieldToLLVMType(const FieldInfo& field,
+                                   llvm::LLVMContext& ctx,
+                                   const llvm::DataLayout& dl) {
+    auto* baseTy = field.typeInfo->toLLVMType(ctx, dl);
+    if (field.arrayDims == 0) return baseTy;
+
+    // []T in enum payloads has no compile-time extent in the type declaration.
+    // Use an opaque storage block and reinterpret it at construction/extraction sites.
+    if (field.arraySizes.empty()) {
+        return llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx),
+                                    kOpaqueUnsizedArrayPayloadBytes);
+    }
+
+    llvm::Type* arrTy = baseTy;
+    for (auto it = field.arraySizes.rbegin(); it != field.arraySizes.rend(); ++it) {
+        arrTy = llvm::ArrayType::get(arrTy, *it);
+    }
+    return arrTy;
+}
+
 static llvm::Type* buildEnumVariantPayloadType(const EnumVariantInfo& variant,
                                                llvm::LLVMContext& ctx,
                                                const llvm::DataLayout& dl) {
     if (variant.payloadFields.empty()) return nullptr;
 
     if (variant.payloadKind == EnumPayloadKind::Tuple && variant.payloadFields.size() == 1)
-        return variant.payloadFields[0].typeInfo->toLLVMType(ctx, dl);
+        return fieldToLLVMType(variant.payloadFields[0], ctx, dl);
 
     std::vector<llvm::Type*> fieldTypes;
     for (const auto& field : variant.payloadFields)
-        fieldTypes.push_back(field.typeInfo->toLLVMType(ctx, dl));
+        fieldTypes.push_back(fieldToLLVMType(field, ctx, dl));
     return llvm::StructType::get(ctx, fieldTypes);
 }
 

@@ -16,12 +16,16 @@ public:
     static bool linkObjectFiles(const std::vector<std::string>& objectPaths,
                                 const std::string& outputPath,
                                 const std::vector<std::string>& extraLinkerFlags = {},
-                                const std::vector<std::string>& extraLibPaths = {});
+                                const std::vector<std::string>& extraLibPaths = {},
+                                bool withSanitizers = true);
 
     // Compile a C source file into an object file using the system C compiler.
     static bool compileCSource(const std::string& cSourcePath,
                                const std::string& objectPath,
                                const std::vector<std::string>& extraIncludePaths = {});
+
+    // Locate runtime builtins static library next to the lux executable.
+    static std::string builtinsLibraryPath();
 
 private:
     static bool linkToExecutable(const std::string& objectPath,

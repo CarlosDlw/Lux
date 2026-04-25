@@ -21,6 +21,7 @@
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/MD5.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 
@@ -28,6 +29,12 @@
 #include <string>
 #include <algorithm>
 #include <filesystem>
+#include <cerrno>
+#include <cstring>
+#include <fstream>
+#include <iomanip>
+#include <unistd.h>
+#include <sys/wait.h>
 
 #ifdef LUX_RUNTIME_DIAGNOSTICS
 #include <array>
@@ -316,15 +323,24 @@ std::string CLI::makeObjectName(const SourceUnit& unit) {
 // ── Main compilation pipeline ────────────────────────────────────────────────
 
 int CLI::compile() {
+    auto progress = [&](int current, int total, const std::string& msg) {
+        int pct = (total > 0) ? (current * 100 / total) : 100;
+        std::cerr << "lux: [build " << std::setw(3) << pct << "%] " << msg << "\n";
+    };
+    constexpr int totalSteps = 7;
+    int step = 0;
+
     // ═════════════════════════════════════════════════════════════════════
     // STEP 1: DETERMINE PROJECT ROOT & BUILD DIRECTORY
     // ═════════════════════════════════════════════════════════════════════
+    progress(++step, totalSteps, "resolving project root");
     auto projectRoot = getProjectRoot();
     auto buildDir    = ensureBuildDir(projectRoot);
 
     // ═════════════════════════════════════════════════════════════════════
     // STEP 2: SCAN ALL .lx FILES IN THE PROJECT
     // ═════════════════════════════════════════════════════════════════════
+    progress(++step, totalSteps, "scanning .lx files");
     auto allFiles = ProjectScanner::scan(projectRoot);
     if (allFiles.empty()) {
         std::cerr << "lux: no .lx files found in '" << projectRoot << "'\n";
@@ -334,10 +350,16 @@ int CLI::compile() {
     // ═════════════════════════════════════════════════════════════════════
     // STEP 3: PARSE ALL FILES
     // ═════════════════════════════════════════════════════════════════════
+    progress(++step, totalSteps, "parsing source files");
     std::vector<SourceUnit> units;
     bool anyParseError = false;
 
+    const size_t parseTotal = allFiles.size();
+    size_t parseIdx = 0;
     for (auto& filePath : allFiles) {
+        ++parseIdx;
+        std::cerr << "lux: [build parse " << parseIdx << "/" << parseTotal
+                  << "] " << filePath << "\n";
         SourceUnit unit;
         unit.filePath    = filePath;
         unit.parseResult = Parser::parse(filePath);
@@ -364,6 +386,7 @@ int CLI::compile() {
     // ═════════════════════════════════════════════════════════════════════
     // STEP 4: BUILD NAMESPACE REGISTRY
     // ═════════════════════════════════════════════════════════════════════
+    progress(++step, totalSteps, "building namespace registry");
     NamespaceRegistry registry;
     for (auto& unit : units) {
         registry.registerFile(unit.namespaceName, unit.filePath,
@@ -382,6 +405,7 @@ int CLI::compile() {
     // ═════════════════════════════════════════════════════════════════════
     // STEP 4.5: RESOLVE C HEADER INCLUDES
     // ═════════════════════════════════════════════════════════════════════
+    progress(step, totalSteps, "resolving C includes and auto-link");
     CBindings cBindings;
     TypeRegistry cTypeReg;
     std::vector<std::string> cSourceFiles;  // C sources to compile
@@ -480,8 +504,14 @@ int CLI::compile() {
     // ═════════════════════════════════════════════════════════════════════
     // STEP 5: SEMANTIC CHECK ALL FILES
     // ═════════════════════════════════════════════════════════════════════
+    progress(++step, totalSteps, "running semantic checker");
     bool anyCheckError = false;
+    const size_t checkTotal = units.size();
+    size_t checkIdx = 0;
     for (auto& unit : units) {
+        ++checkIdx;
+        std::cerr << "lux: [build check " << checkIdx << "/" << checkTotal
+                  << "] " << unit.filePath << "\n";
         Checker checker;
         checker.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         checker.setCBindings(&cBindings);
@@ -498,10 +528,16 @@ int CLI::compile() {
     // ═════════════════════════════════════════════════════════════════════
     // STEP 6: GENERATE IR, OPTIMIZE, AND EMIT OBJECT FILES
     // ═════════════════════════════════════════════════════════════════════
+    progress(++step, totalSteps, "generating IR and object files");
     std::vector<std::string> objectFiles;
     bool anyIRError = false;
 
+    const size_t irTotal = units.size();
+    size_t irIdx = 0;
     for (auto& unit : units) {
+        ++irIdx;
+        std::cerr << "lux: [build ir " << irIdx << "/" << irTotal
+                  << "] " << unit.filePath << "\n";
         IRGen irGen;
         irGen.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         irGen.setCBindings(&cBindings);
@@ -550,6 +586,7 @@ int CLI::compile() {
     // ═════════════════════════════════════════════════════════════════════
     // STEP 7: LINK ALL OBJECT FILES
     // ═════════════════════════════════════════════════════════════════════
+    progress(++step, totalSteps, "linking final binary");
     if (!CodeGen::linkObjectFiles(objectFiles, options_.outputFile,
                                     options_.linkerFlags, options_.libPaths)) {
         std::cerr << "lux: failed to link binary '"
@@ -558,6 +595,7 @@ int CLI::compile() {
     }
 
     std::cout << "lux: binary written to '" << options_.outputFile << "'\n";
+    progress(totalSteps, totalSteps, "build completed");
     return 0;
 }
 
@@ -575,18 +613,33 @@ int CLI::jitRun() {
     RuntimeSignalGuard signalGuard;
 #endif
 
+    auto progress = [&](int current, int total, const std::string& msg) {
+        int pct = (total > 0) ? (current * 100 / total) : 100;
+        std::cerr << "lux: [run   " << std::setw(3) << pct << "%] " << msg << "\n";
+    };
+    constexpr int totalSteps = 8;
+    int step = 0;
+
     // ─── Steps 1-5: same as compile() ────────────────────────────────────
+    progress(++step, totalSteps, "resolving project root");
     auto projectRoot = getProjectRoot();
 
+    progress(++step, totalSteps, "scanning .lx files");
     auto allFiles = ProjectScanner::scan(projectRoot);
     if (allFiles.empty()) {
         std::cerr << "lux: no .lx files found in '" << projectRoot << "'\n";
         return 1;
     }
 
+    progress(++step, totalSteps, "parsing source files");
     std::vector<SourceUnit> units;
     bool anyParseError = false;
+    const size_t parseTotal = allFiles.size();
+    size_t parseIdx = 0;
     for (auto& filePath : allFiles) {
+        ++parseIdx;
+        std::cerr << "lux: [run parse " << parseIdx << "/" << parseTotal
+                  << "] " << filePath << "\n";
         SourceUnit unit;
         unit.filePath    = filePath;
         unit.parseResult = Parser::parse(filePath);
@@ -606,6 +659,7 @@ int CLI::jitRun() {
     }
     if (anyParseError) return 1;
 
+    progress(++step, totalSteps, "building namespace registry");
     NamespaceRegistry registry;
     for (auto& unit : units)
         registry.registerFile(unit.namespaceName, unit.filePath,
@@ -617,6 +671,7 @@ int CLI::jitRun() {
         return 1;
     }
 
+    progress(step, totalSteps, "resolving C includes and auto-link");
     CBindings cBindings;
     TypeRegistry cTypeReg;
     {
@@ -652,8 +707,14 @@ int CLI::jitRun() {
         }
     }
 
+    progress(++step, totalSteps, "running semantic checker");
     bool anyCheckError = false;
+    const size_t checkTotal = units.size();
+    size_t checkIdx = 0;
     for (auto& unit : units) {
+        ++checkIdx;
+        std::cerr << "lux: [run check " << checkIdx << "/" << checkTotal
+                  << "] " << unit.filePath << "\n";
         Checker checker;
         checker.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         checker.setCBindings(&cBindings);
@@ -664,6 +725,7 @@ int CLI::jitRun() {
     }
     if (anyCheckError) return 1;
 
+    progress(++step, totalSteps, "generating and linking project IR");
     // ─── Step 6: Generate IR for each unit, link into one module ─────────
 
     // We use the first unit's context as the master context.
@@ -673,7 +735,12 @@ int CLI::jitRun() {
     std::unique_ptr<llvm::LLVMContext> masterCtx;
     std::unique_ptr<llvm::Module>      masterMod;
 
+    const size_t irTotal = units.size();
+    size_t irIdx = 0;
     for (auto& unit : units) {
+        ++irIdx;
+        std::cerr << "lux: [run ir " << irIdx << "/" << irTotal
+                  << "] " << unit.filePath << "\n";
         IRGen irGen;
         irGen.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         irGen.setCBindings(&cBindings);
@@ -734,77 +801,151 @@ int CLI::jitRun() {
         std::cerr << "lux: no IR generated\n";
         return 1;
     }
-
-    // ─── Step 7: JIT execution ────────────────────────────────────────────
-
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-    llvm::InitializeNativeTargetAsmParser();
-
-    // Expose the host process symbols (libc, libm, etc.)
-    llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
-
-    // Load shared libraries from -l flags
-    for (auto& flag : options_.linkerFlags) {
-        if (flag.rfind("-l", 0) != 0 || flag.size() <= 2) continue;
-        auto libname = flag.substr(2);
-
-        // Try common shared lib naming conventions
-        std::vector<std::string> candidates = {
-            "lib" + libname + ".so",
-            "lib" + libname + ".so.0",
-            "lib" + libname + ".dylib",
-        };
-        // Prepend -L paths
-        std::vector<std::string> searchPaths = {""};
-        for (auto& lp : options_.libPaths) {
-            auto path = (lp.rfind("-L", 0) == 0) ? lp.substr(2) : lp;
-            if (!path.empty()) searchPaths.push_back(path + "/");
-        }
-
-        bool loaded = false;
-        for (auto& prefix : searchPaths) {
-            for (auto& cand : candidates) {
-                std::string fullPath = prefix + cand;
-                if (!llvm::sys::DynamicLibrary::LoadLibraryPermanently(
-                        fullPath.c_str())) {
-                    loaded = true;
-                    break;
-                }
-            }
-            if (loaded) break;
-        }
-        if (!loaded) {
-            std::cerr << "lux: warning: could not load shared library for '"
-                      << flag << "' (JIT may fail on unresolved symbols)\n";
-        }
-    }
-
     masterMod->setTargetTriple(llvm::Triple(llvm::sys::getDefaultTargetTriple()));
+    progress(++step, totalSteps, "preparing cache and compilation");
 
-    std::string errStr;
-    llvm::EngineBuilder builder(std::move(masterMod));
-    builder.setEngineKind(llvm::EngineKind::JIT);
-    builder.setErrorStr(&errStr);
+    // ─── Step 7: Native-run path (emit object, link temp binary, execute) ─
+    // MCJIT can become very slow on larger aggregate payload layouts.
+    // Running a temporary native binary keeps `lux run` responsive and stable.
+    const std::string tempDir = fs::temp_directory_path().string();
+    const std::string cacheDir = tempDir + "/lux-run-cache";
+    std::error_code cacheEc;
+    fs::create_directories(cacheDir, cacheEc);
 
-    std::unique_ptr<llvm::ExecutionEngine> ee(builder.create());
-    if (!ee) {
-        std::cerr << "lux: failed to create JIT engine: " << errStr << "\n";
+    std::string irText;
+    {
+        llvm::raw_string_ostream os(irText);
+        masterMod->print(os, nullptr);
+    }
+
+    std::string cacheKeyData = irText;
+    cacheKeyData += "\n#builtins=" + CodeGen::builtinsLibraryPath();
+    for (auto& lp : options_.libPaths) cacheKeyData += "\n#L=" + lp;
+    for (auto& lf : options_.linkerFlags) cacheKeyData += "\n#l=" + lf;
+
+    llvm::MD5 md5;
+    md5.update(cacheKeyData);
+    llvm::MD5::MD5Result md5Result;
+    md5.final(md5Result);
+    llvm::SmallString<32> digest;
+    llvm::MD5::stringifyResult(md5Result, digest);
+    const std::string runBinPath = cacheDir + "/run-" + std::string(digest.str()) + ".bin";
+
+    bool needBuild = true;
+    if (fs::exists(runBinPath)) {
+        std::error_code permsEc;
+        auto perms = fs::status(runBinPath, permsEc).permissions();
+        if (!permsEc && (perms & fs::perms::owner_exec) != fs::perms::none) {
+            needBuild = false;
+        }
+    }
+
+    auto linkWithCompiler = [&](const char* cc,
+                                const std::string& irPath,
+                                const std::string& outBinPath) {
+        pid_t lpid = ::fork();
+        if (lpid < 0) return false;
+        if (lpid == 0) {
+            std::vector<const char*> argv;
+            argv.push_back(cc);
+            argv.push_back(irPath.c_str());
+            auto builtinsPath = CodeGen::builtinsLibraryPath();
+            argv.push_back(builtinsPath.c_str());
+            for (auto& lp : options_.libPaths)
+                argv.push_back(lp.c_str());
+            argv.push_back("-lm");
+            argv.push_back("-lz");
+            argv.push_back("-lpthread");
+            for (auto& lf : options_.linkerFlags)
+                argv.push_back(lf.c_str());
+            argv.push_back("-o");
+            argv.push_back(outBinPath.c_str());
+            argv.push_back(nullptr);
+            ::execvp(cc, const_cast<char**>(argv.data()));
+            ::_exit(127);
+        }
+        int lstatus = 0;
+        while (::waitpid(lpid, &lstatus, 0) < 0) {
+            if (errno != EINTR) return false;
+        }
+        return WIFEXITED(lstatus) && WEXITSTATUS(lstatus) == 0;
+    };
+
+    if (needBuild) {
+        progress(step, totalSteps, "cache miss: building run artifact");
+        std::string runLLTemplate = tempDir + "/lux-run-ir-XXXXXX.ll";
+        std::vector<char> llTmpl(runLLTemplate.begin(), runLLTemplate.end());
+        llTmpl.push_back('\0');
+        int llfd = ::mkstemps(llTmpl.data(), 3);
+        if (llfd < 0) {
+            std::cerr << "lux: could not create temporary IR path: "
+                      << std::strerror(errno) << "\n";
+            return 1;
+        }
+        ::close(llfd);
+        const std::string runLLPath(llTmpl.data());
+        {
+            std::ofstream out(runLLPath, std::ios::binary | std::ios::trunc);
+            out << irText;
+        }
+
+        const std::string runBinTempPath = runBinPath + ".tmp-" + std::to_string(::getpid());
+        fs::remove(runBinTempPath);
+        if (!linkWithCompiler("clang", runLLPath, runBinTempPath)
+            && !linkWithCompiler("gcc", runLLPath, runBinTempPath)) {
+            std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
+            fs::remove(runLLPath);
+            fs::remove(runBinTempPath);
+            return 1;
+        }
+        fs::remove(runLLPath);
+
+        std::error_code renameEc;
+        fs::rename(runBinTempPath, runBinPath, renameEc);
+        if (renameEc) {
+            // Another process may have produced the same cache artifact first.
+            fs::remove(runBinTempPath);
+            if (!fs::exists(runBinPath)) {
+                std::cerr << "lux: failed to finalize cached run binary: "
+                          << renameEc.message() << "\n";
+                return 1;
+            }
+        }
+    } else {
+        progress(step, totalSteps, "cache hit: reusing run binary");
+    }
+
+    progress(++step, totalSteps, "executing program");
+    pid_t pid = ::fork();
+    if (pid < 0) {
+        std::cerr << "lux: failed to execute run binary: "
+                  << std::strerror(errno) << "\n";
+        fs::remove(runBinPath);
         return 1;
     }
 
-    ee->finalizeObject();
-
-    auto* mainFn = ee->FindFunctionNamed("main");
-    if (!mainFn) {
-        std::cerr << "lux: no 'main' function found in '"
-                  << options_.inputFile << "'\n";
-        return 1;
+    if (pid == 0) {
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>(runBinPath.c_str()));
+        for (auto& arg : options_.runArgs)
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        argv.push_back(nullptr);
+        ::execv(runBinPath.c_str(), argv.data());
+        ::_exit(127);
     }
 
-    // Build argv for the JIT-executed program
-    std::vector<std::string> progArgv = { options_.inputFile };
-    for (auto& a : options_.runArgs) progArgv.push_back(a);
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            std::cerr << "lux: waitpid failed while running program: "
+                      << std::strerror(errno) << "\n";
+            fs::remove(runBinPath);
+            return 1;
+        }
+    }
+    progress(totalSteps, totalSteps, "run completed");
 
-    return ee->runFunctionAsMain(mainFn, progArgv, {});
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return 1;
 }

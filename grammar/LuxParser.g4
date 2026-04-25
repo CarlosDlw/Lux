@@ -439,6 +439,8 @@ expression
     | expression RANGE_INCL expression                         # rangeInclExpr
     // Ternary (right-associative for chaining: a ? b : c ? d : e)
     | <assoc=right> expression QUESTION expression COLON expression  # ternaryExpr
+    // Unwrap-catch expression: expr catch { ... }
+    | expression CATCH block                                    # catchUnwrapExpr
     // Try expression (lowest precedence – wraps entire sub-expression)
     | TRY expression                                           # tryExpr
     // Atoms

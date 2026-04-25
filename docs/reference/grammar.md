@@ -370,6 +370,9 @@ IDENTIFIER '::' IDENTIFIER                                                      
 ### Try Expression
 
 ```
+'catch' unwrap expression:
+expression 'catch' block     // enum unwrap with inline catch
+
 'try' expression             // lowest precedence before atoms
 ```
 

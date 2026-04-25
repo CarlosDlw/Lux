@@ -48,6 +48,13 @@ static void collectLocalsFromStmts(
                 std::string varName = id->getText();
                 out[varName] = {typeName, 0, id->getSymbol()};
             }
+
+            if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(vd->expression())) {
+                if (cursorInsideNode(cu->block(), beforeLine)) {
+                    out["it"] = {"Error", 0, cu->CATCH()->getSymbol()};
+                    collectLocalsFromBlock(cu->block(), beforeLine, out);
+                }
+            }
         }
 
         // Recurse into nested blocks

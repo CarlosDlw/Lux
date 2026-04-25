@@ -3751,6 +3751,43 @@ static std::string inferExprTypeName(
     if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr))
         return inferExprTypeName(tern->expression(1), locals, flc);
 
+    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+        auto sourceType = inferExprTypeName(cu->expression(), locals, flc);
+        if (sourceType.empty() || !flc || !flc->tree) return "";
+
+        auto baseName = sourceType;
+        auto lt = baseName.find('<');
+        if (lt != std::string::npos)
+            baseName = baseName.substr(0, lt);
+
+        LuxParser::EnumDeclContext* enumDecl = nullptr;
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            if (auto* ed = tld->enumDecl(); ed && ed->IDENTIFIER() &&
+                ed->IDENTIFIER()->getText() == baseName) {
+                enumDecl = ed;
+                break;
+            }
+        }
+        if (!enumDecl) return "";
+
+        std::string successType;
+        bool seenError = false;
+        for (auto* variant : enumDecl->enumVariant()) {
+            if (!variant || variant->typeSpec().size() != 1) return "";
+            auto payloadType = variant->typeSpec(0)->getText();
+            if (payloadType == "Error") {
+                if (seenError) return "";
+                seenError = true;
+            } else {
+                if (!successType.empty()) return "";
+                successType = payloadType;
+            }
+        }
+
+        if (!seenError || successType.empty()) return "";
+        return successType;
+    }
+
     // Array literal: [expr, ...] → infer element type, prepend []
     if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
         auto elems = arr->expression();
@@ -3967,6 +4004,13 @@ static void collectLocalsFromStmts(
                 std::string varName = !vd->IDENTIFIER().empty() ? vd->IDENTIFIER(0)->getText() : "";
                 if (!varName.empty())
                     out[varName] = {typeName, 0};
+            }
+
+            if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(vd->expression())) {
+                if (cursorInsideNode(cu->block(), beforeLine)) {
+                    out["it"] = {"Error", 0};
+                    collectLocalsFromBlock(cu->block(), beforeLine, out, flc);
+                }
             }
         }
 

@@ -66,6 +66,8 @@ private:
     };
     std::unordered_map<std::string, VarInfo> locals_;
     unsigned scopeDepth_ = 0;     // current block nesting depth
+    const TypeInfo* currentReturnType_ = nullptr;
+    unsigned unwrapCatchItDepth_ = 0;
 
     // Phase 3 (Guard Analysis): Track conditional guards to suppress false positives
     // When code has `if (n <= cap)`, we suppress buffer overflow warnings for calls

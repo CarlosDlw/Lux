@@ -82,6 +82,37 @@ All three blocks can be combined:
 
 ---
 
+## Enum Unwrap with catch
+
+Lux also supports enum-based unwrap with inline `catch` blocks:
+
+```tm
+auto value = divide(10, 0) catch {
+    println(it.message);
+    ret 1;
+};
+```
+
+In this form, `it` is an implicit variable available only inside the unwrap-catch block, bound to the captured `Error` payload.
+
+### Rules
+
+`expr catch { ... }` is valid only when the expression type is an enum that matches this shape:
+
+1. The enum has exactly 2 variants.
+2. One variant has a single payload of type `Error`.
+3. The other variant is the success variant and has a single payload of any type.
+4. Variant names are irrelevant; only payload structure and types are checked.
+
+If the expression is successful, the unwrap result type is the success payload type. In `auto value = ... catch { ... }`, `value` is inferred from that success payload.
+
+### Scope of `it`
+
+- `it` exists only inside `expr catch { ... }`.
+- Using `it` outside this block is a checker error.
+
+---
+
 ## Global Error Builtins
 
 These functions are available without any `use` import and immediately terminate the program:

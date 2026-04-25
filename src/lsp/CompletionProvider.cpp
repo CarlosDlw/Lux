@@ -34,6 +34,12 @@ static std::string substituteTypeParams(
     const std::string& type,
     const std::unordered_map<std::string, std::string>& subst);
 
+struct FuncLookupCtx;
+static std::string inferExprTypeName(
+    LuxParser::ExpressionContext* expr,
+    const std::unordered_map<std::string, CompletionProvider::LocalVar>& locals,
+    const FuncLookupCtx* flc);
+
 static std::string inferIsBindingPayloadType(
     LuxParser::ExpressionContext* cond,
     LuxParser::ProgramContext* tree) {
@@ -79,6 +85,49 @@ static std::string inferIsBindingPayloadType(
     }
 
     return "";
+}
+
+static std::string inferCatchUnwrapSuccessType(
+    LuxParser::ExpressionContext* sourceExpr,
+    LuxParser::ProgramContext* tree,
+    const std::unordered_map<std::string, CompletionProvider::LocalVar>& locals,
+    const FuncLookupCtx* flc) {
+    if (!sourceExpr || !tree) return "";
+
+    auto enumTypeName = inferExprTypeName(sourceExpr, locals, flc);
+    if (enumTypeName.empty()) return "";
+
+    auto baseName = enumTypeName;
+    auto lt = baseName.find('<');
+    if (lt != std::string::npos)
+        baseName = baseName.substr(0, lt);
+
+    LuxParser::EnumDeclContext* enumDecl = nullptr;
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* ed = tld->enumDecl(); ed && ed->IDENTIFIER() &&
+            ed->IDENTIFIER()->getText() == baseName) {
+            enumDecl = ed;
+            break;
+        }
+    }
+    if (!enumDecl) return "";
+
+    std::string successType;
+    bool seenError = false;
+    for (auto* variant : enumDecl->enumVariant()) {
+        if (!variant || variant->typeSpec().size() != 1) return "";
+        auto payloadType = variant->typeSpec(0)->getText();
+        if (payloadType == "Error") {
+            if (seenError) return "";
+            seenError = true;
+        } else {
+            if (!successType.empty()) return "";
+            successType = payloadType;
+        }
+    }
+
+    if (!seenError || successType.empty()) return "";
+    return successType;
 }
 
 // Context for resolving function/method call return types during auto inference.
@@ -573,6 +622,12 @@ static std::string inferExprTypeName(
         return cast->typeSpec() ? cast->typeSpec()->getText() : "";
     if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr))
         return inferExprTypeName(tern->expression(1), locals, flc);
+    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+        auto* tree = flc ? flc->tree : nullptr;
+        auto inferred = inferCatchUnwrapSuccessType(cu->expression(), tree, locals, flc);
+        if (!inferred.empty()) return inferred;
+        return "";
+    }
     if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
         auto elems = arr->expression();
         if (!elems.empty()) {
@@ -624,6 +679,13 @@ static void collectLocalsFromStmts(
                 if (!inferred.empty()) typeName = inferred;
             }
             out[vd->IDENTIFIER(0)->getText()] = {typeName, 0};
+
+            if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(vd->expression())) {
+                if (cursorInsideNode(cu->block(), beforeLine)) {
+                    out["it"] = {"Error", 0};
+                    collectLocalsFromBlock(cu->block(), beforeLine, out, flc);
+                }
+            }
         }
 
         // Structural blocks
@@ -2656,6 +2718,7 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem>& items,
                                       const std::string& prefix) {
     // Primitive types
     static const char* primitives[] = {
+        "auto",
         "int1", "int8", "int16", "int32", "int64", "int128", "intinf", "isize",
         "uint1", "uint8", "uint16", "uint32", "uint64", "uint128", "usize",
         "float32", "float64", "float80", "float128", "double",

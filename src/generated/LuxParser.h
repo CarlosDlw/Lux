@@ -1776,6 +1776,17 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  CatchUnwrapExprContext : public ExpressionContext {
+  public:
+    CatchUnwrapExprContext(ExpressionContext *ctx);
+
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *CATCH();
+    BlockContext *block();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  StaticMethodCallExprContext : public ExpressionContext {
   public:
     StaticMethodCallExprContext(ExpressionContext *ctx);

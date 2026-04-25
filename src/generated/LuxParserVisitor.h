@@ -217,6 +217,8 @@ public:
 
     virtual std::any visitSpreadExpr(LuxParser::SpreadExprContext *context) = 0;
 
+    virtual std::any visitCatchUnwrapExpr(LuxParser::CatchUnwrapExprContext *context) = 0;
+
     virtual std::any visitStaticMethodCallExpr(LuxParser::StaticMethodCallExprContext *context) = 0;
 
     virtual std::any visitNullCoalExpr(LuxParser::NullCoalExprContext *context) = 0;

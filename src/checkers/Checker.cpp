@@ -16,6 +16,64 @@ static const EnumVariantInfo* findEnumVariantInfo(const TypeInfo* enumType,
     return nullptr;
 }
 
+struct UnwrapCatchPatternInfo {
+    const EnumVariantInfo* okVariant = nullptr;
+    const EnumVariantInfo* errVariant = nullptr;
+};
+
+static const TypeInfo* singlePayloadType(const EnumVariantInfo& variant) {
+    if (variant.payloadFields.size() != 1) return nullptr;
+    return variant.payloadFields[0].typeInfo;
+}
+
+static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
+                                    UnwrapCatchPatternInfo& out,
+                                    std::string& reason) {
+    if (!enumType || enumType->kind != TypeKind::Enum) {
+        reason = "unwrap-catch requires an enum expression";
+        return false;
+    }
+
+    if (enumType->enumVariantInfos.size() != 2) {
+        reason = "unwrap-catch requires enum '" + enumType->name +
+                 "' to have exactly 2 variants (success + error)";
+        return false;
+    }
+
+    for (const auto& variant : enumType->enumVariantInfos) {
+        auto* payloadTI = singlePayloadType(variant);
+        if (!payloadTI) {
+            reason = "unwrap-catch requires each variant in enum '" + enumType->name +
+                     "' to have exactly one payload field";
+            return false;
+        }
+
+        if (payloadTI->name == "Error") {
+            if (out.errVariant) {
+                reason = "unwrap-catch requires exactly one Error variant in enum '" +
+                         enumType->name + "'";
+                return false;
+            }
+            out.errVariant = &variant;
+        } else {
+            if (out.okVariant) {
+                reason = "unwrap-catch requires exactly one non-Error success variant in enum '" +
+                         enumType->name + "'";
+                return false;
+            }
+            out.okVariant = &variant;
+        }
+    }
+
+    if (!out.errVariant || !out.okVariant) {
+        reason = "unwrap-catch requires one Error variant and one success variant in enum '" +
+                 enumType->name + "'";
+        return false;
+    }
+
+    return true;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Error helpers — attach line:col and full range to every diagnostic
 // ═══════════════════════════════════════════════════════════════════════
@@ -1384,6 +1442,11 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 return nullptr;
         }
 
+        if (name == "it" && unwrapCatchItDepth_ == 0) {
+            error(expr, "'it' is only available inside 'expr catch { ... }' unwrap blocks");
+            return nullptr;
+        }
+
         error(expr, "undefined variable '" + name + "'");
         return nullptr;
     }
@@ -1526,6 +1589,38 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     // ── Try expression (unwrap — same type as inner) ─────────────────
     if (auto* te = dynamic_cast<LuxParser::TryExprContext*>(expr))
         return resolveExprType(te->expression());
+
+    // ── Catch unwrap expression: expr catch { ... } ───────────────────
+    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+        auto* sourceType = resolveExprType(cu->expression());
+        if (!sourceType) return nullptr;
+
+        UnwrapCatchPatternInfo pattern;
+        std::string reason;
+        if (!classifyUnwrapCatchEnum(sourceType, pattern, reason)) {
+            error(cu, reason);
+            return nullptr;
+        }
+
+        auto* errorTI = typeRegistry_.lookup("Error");
+        auto saved = locals_.find("it");
+        bool hadSaved = saved != locals_.end();
+        VarInfo savedInfo;
+        if (hadSaved) savedInfo = saved->second;
+
+        if (errorTI)
+            locals_["it"] = {errorTI, 0, true, true, nullptr};
+
+        ++unwrapCatchItDepth_;
+        auto* retCtx = currentReturnType_ ? currentReturnType_ : typeRegistry_.lookup("void");
+        checkBlock(cu->block(), retCtx);
+        --unwrapCatchItDepth_;
+
+        if (hadSaved) locals_["it"] = savedInfo;
+        else locals_.erase("it");
+
+        return singlePayloadType(*pattern.okVariant);
+    }
 
     // ── Spawn expression: spawn f() → Task<T> where f() returns T ───
     if (auto* se = dynamic_cast<LuxParser::SpawnExprContext*>(expr)) {
@@ -3687,7 +3782,10 @@ void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
                 locals_[paramName] = {pType, pDims, true, true, nullptr};
         }
 
+        auto* prevRet = currentReturnType_;
+        currentReturnType_ = retType;
         checkBlock(method->block(), retType);
+        currentReturnType_ = prevRet;
 
         if (retType->kind != TypeKind::Void) {
             if (!blockAlwaysReturns(method->block())) {
@@ -3790,7 +3888,10 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
         }
     }
 
+    auto* prevRet = currentReturnType_;
+    currentReturnType_ = retType;
     checkBlock(func->block(), retType);
+    currentReturnType_ = prevRet;
 
     if (retType->kind != TypeKind::Void) {
         if (!blockAlwaysReturns(func->block())) {

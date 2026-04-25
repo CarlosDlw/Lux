@@ -411,6 +411,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitCatchUnwrapExpr(LuxParser::CatchUnwrapExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitStaticMethodCallExpr(LuxParser::StaticMethodCallExprContext *ctx) override {
     return visitChildren(ctx);
   }

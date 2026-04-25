@@ -44,6 +44,48 @@
 #include <unistd.h>
 #endif
 
+namespace {
+
+bool useAnsiStderr() {
+    static const bool enabled = (::isatty(STDERR_FILENO) == 1);
+    return enabled;
+}
+
+void printProgressLine(const char* stage,
+                       int current,
+                       int total,
+                       const std::string& msg) {
+    int pct = (total > 0) ? (current * 100 / total) : 100;
+    std::cerr << "lux: ";
+    if (useAnsiStderr()) std::cerr << "\033[1;36m";
+    std::cerr << "[" << stage << " " << std::setw(3) << pct << "%]";
+    if (useAnsiStderr()) std::cerr << "\033[0m";
+    std::cerr << " " << msg << "\n";
+}
+
+void printUnitLine(const char* stage,
+                   const char* phase,
+                   size_t idx,
+                   size_t total,
+                   const std::string& path) {
+    std::cerr << "lux: ";
+    if (useAnsiStderr()) std::cerr << "\033[1;33m";
+    std::cerr << "[" << stage << " " << phase << " " << idx << "/" << total << "]";
+    if (useAnsiStderr()) std::cerr << "\033[0m";
+    std::cerr << " " << path << "\n";
+}
+
+void printOutputDivider(const char* stage, const std::string& label) {
+    std::cerr << "\n";
+    std::cerr << "lux: ";
+    if (useAnsiStderr()) std::cerr << "\033[90m";
+    std::cerr << "[" << stage << "] --- " << label << " ---";
+    if (useAnsiStderr()) std::cerr << "\033[0m";
+    std::cerr << "\n\n";
+}
+
+}
+
 namespace fs = std::filesystem;
 
 #ifdef LUX_RUNTIME_DIAGNOSTICS
@@ -324,8 +366,7 @@ std::string CLI::makeObjectName(const SourceUnit& unit) {
 
 int CLI::compile() {
     auto progress = [&](int current, int total, const std::string& msg) {
-        int pct = (total > 0) ? (current * 100 / total) : 100;
-        std::cerr << "lux: [build " << std::setw(3) << pct << "%] " << msg << "\n";
+        printProgressLine("build", current, total, msg);
     };
     constexpr int totalSteps = 7;
     int step = 0;
@@ -358,8 +399,7 @@ int CLI::compile() {
     size_t parseIdx = 0;
     for (auto& filePath : allFiles) {
         ++parseIdx;
-        std::cerr << "lux: [build parse " << parseIdx << "/" << parseTotal
-                  << "] " << filePath << "\n";
+        printUnitLine("build", "parse", parseIdx, parseTotal, filePath);
         SourceUnit unit;
         unit.filePath    = filePath;
         unit.parseResult = Parser::parse(filePath);
@@ -479,6 +519,9 @@ int CLI::compile() {
     // STEP 4.6: COMPILE LOCAL C SOURCES
     // ═════════════════════════════════════════════════════════════════════
     std::vector<std::string> cObjectFiles;
+    if (!cSourceFiles.empty()) {
+        printOutputDivider("build", "compiler output");
+    }
     for (auto& cSrc : cSourceFiles) {
         auto stem = fs::path(cSrc).stem().string();
         auto objPath = buildDir + "/c__" + stem + ".o";
@@ -510,8 +553,7 @@ int CLI::compile() {
     size_t checkIdx = 0;
     for (auto& unit : units) {
         ++checkIdx;
-        std::cerr << "lux: [build check " << checkIdx << "/" << checkTotal
-                  << "] " << unit.filePath << "\n";
+        printUnitLine("build", "check", checkIdx, checkTotal, unit.filePath);
         Checker checker;
         checker.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         checker.setCBindings(&cBindings);
@@ -536,8 +578,7 @@ int CLI::compile() {
     size_t irIdx = 0;
     for (auto& unit : units) {
         ++irIdx;
-        std::cerr << "lux: [build ir " << irIdx << "/" << irTotal
-                  << "] " << unit.filePath << "\n";
+        printUnitLine("build", "ir", irIdx, irTotal, unit.filePath);
         IRGen irGen;
         irGen.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         irGen.setCBindings(&cBindings);
@@ -587,6 +628,7 @@ int CLI::compile() {
     // STEP 7: LINK ALL OBJECT FILES
     // ═════════════════════════════════════════════════════════════════════
     progress(++step, totalSteps, "linking final binary");
+    printOutputDivider("build", "linker output");
     if (!CodeGen::linkObjectFiles(objectFiles, options_.outputFile,
                                     options_.linkerFlags, options_.libPaths)) {
         std::cerr << "lux: failed to link binary '"
@@ -614,8 +656,7 @@ int CLI::jitRun() {
 #endif
 
     auto progress = [&](int current, int total, const std::string& msg) {
-        int pct = (total > 0) ? (current * 100 / total) : 100;
-        std::cerr << "lux: [run   " << std::setw(3) << pct << "%] " << msg << "\n";
+        printProgressLine("run", current, total, msg);
     };
     constexpr int totalSteps = 8;
     int step = 0;
@@ -638,8 +679,7 @@ int CLI::jitRun() {
     size_t parseIdx = 0;
     for (auto& filePath : allFiles) {
         ++parseIdx;
-        std::cerr << "lux: [run parse " << parseIdx << "/" << parseTotal
-                  << "] " << filePath << "\n";
+        printUnitLine("run", "parse", parseIdx, parseTotal, filePath);
         SourceUnit unit;
         unit.filePath    = filePath;
         unit.parseResult = Parser::parse(filePath);
@@ -713,8 +753,7 @@ int CLI::jitRun() {
     size_t checkIdx = 0;
     for (auto& unit : units) {
         ++checkIdx;
-        std::cerr << "lux: [run check " << checkIdx << "/" << checkTotal
-                  << "] " << unit.filePath << "\n";
+        printUnitLine("run", "check", checkIdx, checkTotal, unit.filePath);
         Checker checker;
         checker.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         checker.setCBindings(&cBindings);
@@ -739,8 +778,7 @@ int CLI::jitRun() {
     size_t irIdx = 0;
     for (auto& unit : units) {
         ++irIdx;
-        std::cerr << "lux: [run ir " << irIdx << "/" << irTotal
-                  << "] " << unit.filePath << "\n";
+        printUnitLine("run", "ir", irIdx, irTotal, unit.filePath);
         IRGen irGen;
         irGen.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         irGen.setCBindings(&cBindings);
@@ -877,6 +915,7 @@ int CLI::jitRun() {
 
     if (needBuild) {
         progress(step, totalSteps, "cache miss: building run artifact");
+        printOutputDivider("run", "compiler/linker output");
         std::string runLLTemplate = tempDir + "/lux-run-ir-XXXXXX.ll";
         std::vector<char> llTmpl(runLLTemplate.begin(), runLLTemplate.end());
         llTmpl.push_back('\0');
@@ -920,6 +959,7 @@ int CLI::jitRun() {
     }
 
     progress(++step, totalSteps, "executing program");
+    printOutputDivider("run", "program output");
     pid_t pid = ::fork();
     if (pid < 0) {
         std::cerr << "lux: failed to execute run binary: "
@@ -947,7 +987,6 @@ int CLI::jitRun() {
             return 1;
         }
     }
-    progress(totalSteps, totalSteps, "run completed");
 
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);

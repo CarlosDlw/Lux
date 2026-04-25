@@ -2280,6 +2280,16 @@ std::any IRGen::visitIndexFieldAssignStmt(
     llvm::Value* currentPtr = elemPtr;
     llvm::Type*  currentTy  = elemTy;
 
+    if (currentTI && currentTI->kind == TypeKind::Pointer &&
+        currentTI->pointeeType &&
+        (currentTI->pointeeType->kind == TypeKind::Struct ||
+         currentTI->pointeeType->kind == TypeKind::Union)) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        currentPtr = builder_->CreateLoad(ptrTy, currentPtr, varName + "_elem_load");
+        currentTI = currentTI->pointeeType;
+        currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+    }
+
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
         int fieldIdx = -1;
@@ -5280,7 +5290,13 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
         if (structTI && structTI->kind == TypeKind::Pointer)
             structTI = structTI->pointeeType;
 
-        if (!structTI || (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union)) {
+        bool isPointerToAggregate = structTI && structTI->kind == TypeKind::Pointer &&
+            structTI->pointeeType &&
+            (structTI->pointeeType->kind == TypeKind::Struct ||
+             structTI->pointeeType->kind == TypeKind::Union);
+
+        if (!structTI || ((structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union) &&
+                          !isPointerToAggregate)) {
             std::cerr << "lux: elements of '" << varName << "' are not structs\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -5351,6 +5367,13 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
                 }
                 elemTy = arrTy->getElementType();
             }
+        }
+
+        if (isPointerToAggregate) {
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            elemPtr = builder_->CreateLoad(ptrTy, elemPtr, varName + "_elem_load");
+            structTI = structTI->pointeeType;
+            elemTy = structTI->toLLVMType(*context_, module_->getDataLayout());
         }
 
         // Find the field in the struct
@@ -5977,7 +6000,7 @@ std::any IRGen::visitAddrOfExpr(LuxParser::AddrOfExprContext* ctx) {
         return static_cast<llvm::Value*>(it->second.alloca);
     }
 
-    // Case 2: &arr[i] — address of array element
+    // Case 2: &base[i] — address of indexed element for array or pointer bases
     if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(innerExpr)) {
         std::vector<LuxParser::ExpressionContext*> indexExprs;
         auto* current = static_cast<LuxParser::ExpressionContext*>(idx);
@@ -5992,9 +6015,23 @@ std::any IRGen::visitAddrOfExpr(LuxParser::AddrOfExprContext* ctx) {
             if (it != locals_.end()) {
                 auto* alloca   = it->second.alloca;
                 auto* allocType = alloca->getAllocatedType();
+                auto* ti       = it->second.typeInfo;
                 auto* i64Ty    = llvm::Type::getInt64Ty(*context_);
 
                 std::reverse(indexExprs.begin(), indexExprs.end());
+
+                if (ti && ti->kind == TypeKind::Pointer && ti->pointeeType) {
+                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                    auto* ptrVal = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
+                    auto* elemTy = ti->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+                    auto* idxVal = castValue(visit(indexExprs[0]));
+                    if (idxVal->getType() != i64Ty)
+                        idxVal = builder_->CreateIntCast(idxVal, i64Ty, true);
+
+                    auto* elemPtr = builder_->CreateGEP(elemTy, ptrVal, idxVal,
+                                                         "addr_of_elem");
+                    return static_cast<llvm::Value*>(elemPtr);
+                }
 
                 std::vector<llvm::Value*> gepIndices;
                 gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
@@ -9658,8 +9695,13 @@ std::any IRGen::visitTypeofExpr(LuxParser::TypeofExprContext* ctx) {
 
     // Try to find TypeInfo for the expression
     std::string typeName = "unknown";
+    if (auto* exprTI = resolveExprTypeInfo(ctx->expression())) {
+        if (!exprTI->name.empty())
+            typeName = exprTI->name;
+    }
 
-    if (auto* load = llvm::dyn_cast<llvm::LoadInst>(exprVal)) {
+    if (typeName == "unknown") {
+        if (auto* load = llvm::dyn_cast<llvm::LoadInst>(exprVal)) {
         auto* src = load->getPointerOperand();
         for (auto& [vname, info] : locals_) {
             if (info.alloca == src) {
@@ -9687,23 +9729,33 @@ std::any IRGen::visitTypeofExpr(LuxParser::TypeofExprContext* ctx) {
                 }
             }
         }
-    } else {
-        // Infer from LLVM type for literals/constants
-        auto* ty = exprVal->getType();
-        if (ty->isIntegerTy(1))       typeName = "bool";
-        else if (ty->isIntegerTy(8))  typeName = "int8";
-        else if (ty->isIntegerTy(16)) typeName = "int16";
-        else if (ty->isIntegerTy(32)) typeName = "int32";
-        else if (ty->isIntegerTy(64)) typeName = "int64";
-        else if (ty->isIntegerTy(128)) typeName = "int128";
-        else if (ty->isIntegerTy(256)) typeName = "int32";  // untyped literal
-        else if (ty->isFloatTy())     typeName = "float32";
-        else if (ty->isDoubleTy())    typeName = "float64";
-        else if (ty->isStructTy())    typeName = "string";
-        else if (ty->isPointerTy())   typeName = "pointer";
+        } else {
+            // Infer from LLVM type for literals/constants
+            auto* ty = exprVal->getType();
+            if (ty->isIntegerTy(1))       typeName = "bool";
+            else if (ty->isIntegerTy(8))  typeName = "int8";
+            else if (ty->isIntegerTy(16)) typeName = "int16";
+            else if (ty->isIntegerTy(32)) typeName = "int32";
+            else if (ty->isIntegerTy(64)) typeName = "int64";
+            else if (ty->isIntegerTy(128)) typeName = "int128";
+            else if (ty->isIntegerTy(256)) typeName = "int32";  // untyped literal
+            else if (ty->isFloatTy())     typeName = "float32";
+            else if (ty->isDoubleTy())    typeName = "float64";
+            else if (ty->isStructTy())    typeName = "string";
+            else if (ty->isPointerTy())   typeName = "pointer";
+        }
     }
 
-    // AST-based fallback for method calls and function calls
+    // AST-based fallback for expression kinds not covered by Load/GEP heuristics
+    if (typeName == "unknown") {
+        if (auto* exprTI = resolveExprTypeInfo(ctx->expression())) {
+            if (!exprTI->name.empty())
+                typeName = exprTI->name;
+        }
+    }
+
+    // Additional AST-based fallback for method calls and function calls
+    // that may still need specialized return-type resolution strings.
     if (typeName == "unknown") {
         auto* exprCtx = ctx->expression();
 
@@ -10405,10 +10457,14 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
         return typeRegistry_.lookup("int32");
     }
 
-    // Unwrap array dimensions [][]...T to reach the base primitive type
+    // Unwrap only array dimensions so []T resolves to T, but []*U resolves to *U.
     auto* inner = ctx;
-    while (!inner->typeSpec().empty())
+    while (inner->LBRACKET())
         inner = inner->typeSpec(0);
+
+    if (inner != ctx)
+        return resolveTypeInfo(inner);
+
     auto name = inner->getText();
 
     // cstring is a built-in alias for *char
@@ -11090,18 +11146,40 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         return nullptr;
     }
 
-    // ── Index: array[i] → element type ──────────────────────────────
+    // ── Index: base[i] → indexed element type ───────────────────────
     if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(ctx)) {
+        unsigned depth = 0;
         auto* current = static_cast<LuxParser::ExpressionContext*>(idx);
-        while (auto* idxCtx = dynamic_cast<LuxParser::IndexExprContext*>(current))
+        while (auto* idxCtx = dynamic_cast<LuxParser::IndexExprContext*>(current)) {
+            depth++;
             current = idxCtx->expression(0);
-        auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(current);
-        if (ident) {
-            auto it = locals_.find(ident->IDENTIFIER()->getText());
-            if (it != locals_.end())
-                return it->second.typeInfo;
         }
-        return nullptr;
+
+        const TypeInfo* result = resolveExprTypeInfo(current);
+        if (!result) return nullptr;
+
+        for (unsigned i = 0; i < depth && result; i++) {
+            // Map<K,V>[key] -> V
+            if (result->kind == TypeKind::Extended && result->keyType && result->valueType) {
+                result = result->valueType;
+                continue;
+            }
+            // Vec<T>[i] / Set<T>[i]-like indexed containers -> T
+            if (result->kind == TypeKind::Extended && result->elementType) {
+                result = result->elementType;
+                continue;
+            }
+            // *T[i] -> T
+            if (result->kind == TypeKind::Pointer && result->pointeeType) {
+                result = result->pointeeType;
+                continue;
+            }
+
+            // Non-indexable or already elemental: stop preserving the best known type.
+            break;
+        }
+
+        return result;
     }
 
     // ── Pre/Post increment/decrement: same type ─────────────────────

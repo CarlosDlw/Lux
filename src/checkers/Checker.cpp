@@ -2557,6 +2557,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             }
         }
 
+        if (baseType && baseType->kind == TypeKind::Pointer &&
+            baseType->pointeeType &&
+            (baseType->pointeeType->kind == TypeKind::Struct ||
+             baseType->pointeeType->kind == TypeKind::Union)) {
+            baseType = baseType->pointeeType;
+        }
+
         if (baseType && (baseType->kind == TypeKind::Struct || baseType->kind == TypeKind::Union)) {
             for (auto& field : baseType->fields) {
                 if (field.name == fieldName)

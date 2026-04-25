@@ -34,6 +34,61 @@ static std::string substituteTypeParams(
     const std::string& type,
     const std::unordered_map<std::string, std::string>& subst);
 
+static std::string unwrapIndexedType(std::string typeName, unsigned indexDepth) {
+    auto trim = [](std::string s) {
+        size_t b = s.find_first_not_of(" \t\n\r");
+        if (b == std::string::npos) return std::string{};
+        size_t e = s.find_last_not_of(" \t\n\r");
+        return s.substr(b, e - b + 1);
+    };
+
+    typeName = trim(typeName);
+
+    for (unsigned d = 0; d < indexDepth && !typeName.empty(); d++) {
+        typeName = trim(typeName);
+
+        // Pointer to unsized array sugar: *[]T -> T (for one index)
+        if (typeName.rfind("*[]", 0) == 0) {
+            typeName = typeName.substr(3);
+            continue;
+        }
+
+        // Generic pointer indexing: *T -> T
+        if (!typeName.empty() && typeName[0] == '*') {
+            typeName = typeName.substr(1);
+            typeName = trim(typeName);
+
+            // If pointee is an array type, consume one array dimension too.
+            if (typeName.rfind("[]", 0) == 0) {
+                typeName = typeName.substr(2);
+            } else if (!typeName.empty() && typeName[0] == '[') {
+                auto closeBracket = typeName.find(']');
+                if (closeBracket != std::string::npos)
+                    typeName = typeName.substr(closeBracket + 1);
+            }
+            continue;
+        }
+
+        // Unsized/fixed array indexing: []T or [N]T -> T
+        if (typeName.rfind("[]", 0) == 0) {
+            typeName = typeName.substr(2);
+            continue;
+        }
+        if (!typeName.empty() && typeName[0] == '[') {
+            auto closeBracket = typeName.find(']');
+            if (closeBracket != std::string::npos) {
+                typeName = typeName.substr(closeBracket + 1);
+                continue;
+            }
+        }
+
+        // Unknown shape: cannot unwrap further.
+        break;
+    }
+
+    return trim(typeName);
+}
+
 struct FuncLookupCtx;
 static std::string inferExprTypeName(
     LuxParser::ExpressionContext* expr,
@@ -1029,7 +1084,7 @@ std::vector<CompletionItem> CompletionProvider::complete(
                     varType = varType.substr(1);
             }
 
-            // Unwrap array dimensions when the expression has [..] indexing
+            // Unwrap receiver type when expression has [..] indexing
             if (req.indexDepth > 0 && !varType.empty()) {
                 // First, resolve type alias to its underlying type string
                 // by checking type alias declarations in the tree
@@ -1044,20 +1099,7 @@ std::vector<CompletionItem> CompletionProvider::complete(
                         }
                     }
                 }
-
-                // Strip [N] prefixes for each index access
-                unsigned depth = req.indexDepth;
-                while (depth > 0 && resolved.size() > 2 && resolved[0] == '[') {
-                    auto closeBracket = resolved.find(']');
-                    if (closeBracket != std::string::npos &&
-                        closeBracket + 1 <= resolved.size()) {
-                        resolved = resolved.substr(closeBracket + 1);
-                        --depth;
-                    } else {
-                        break;
-                    }
-                }
-                varType = resolved;
+                varType = unwrapIndexedType(resolved, req.indexDepth);
             }
 
             // Resolve member chain: x.field.method().| → walk each step

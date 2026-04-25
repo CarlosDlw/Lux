@@ -45,6 +45,40 @@ static bool unifyGenericType(
     const std::unordered_set<std::string>& typeParams,
     std::unordered_map<std::string, std::string>& inferred);
 
+static bool isCHoverType(const std::string& rawType, const CBindings& bindings) {
+    std::string t = rawType;
+
+    auto trim = [](std::string s) {
+        auto b = s.find_first_not_of(" \t\n\r");
+        if (b == std::string::npos) return std::string{};
+        auto e = s.find_last_not_of(" \t\n\r");
+        return s.substr(b, e - b + 1);
+    };
+
+    t = trim(t);
+    while (t.rfind("[]", 0) == 0)
+        t = t.substr(2);
+    while (!t.empty() && t.front() == '*')
+        t.erase(t.begin());
+    t = trim(t);
+
+    auto lt = t.find('<');
+    if (lt != std::string::npos)
+        t = trim(t.substr(0, lt));
+
+    if (t.empty()) return false;
+    return bindings.findTypedef(t) || bindings.findStruct(t) || bindings.findEnum(t);
+}
+
+static std::string formatTypedHover(const std::string& kind,
+                                    const std::string& typeName,
+                                    const std::string& symbolName,
+                                    const CBindings& bindings) {
+    const char* lang = isCHoverType(typeName, bindings) ? "c" : "cpp";
+    return std::string("```") + lang + "\n(" + kind + ") " + typeName + " "
+         + symbolName + "\n```";
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Doc-comment helper
 // ═══════════════════════════════════════════════════════════════════════
@@ -209,8 +243,8 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     auto* pName = p->IDENTIFIER()->getSymbol();
                     if (pName == hoveredToken) {
                         std::string typeStr = typeSpecToString(p->typeSpec());
-                        std::string md = "```lux\n(parameter) " + typeStr + " "
-                                       + tokenText + "\n```";
+                        std::string md = formatTypedHover("parameter", typeStr,
+                                                          tokenText, *cBindingsPtr);
                         return makeResult(hoveredToken, md);
                     }
                     // Hover on param type
@@ -377,9 +411,11 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                 for (auto* p : params) {
                     if (!p->IDENTIFIER()) continue;
                     if (p->IDENTIFIER()->getSymbol() == hoveredToken) {
-                        std::string md = "```lux\n(parameter) "
-                            + typeSpecToString(p->typeSpec()) + " "
-                            + p->IDENTIFIER()->getText() + "\n```";
+                        std::string md = formatTypedHover(
+                            "parameter",
+                            typeSpecToString(p->typeSpec()),
+                            p->IDENTIFIER()->getText(),
+                            *cBindingsPtr);
                         return makeResult(hoveredToken, md);
                     }
                     r = hoverTypeSpec(p->typeSpec(), hoveredToken,
@@ -430,8 +466,10 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             std::string dims;
             for (unsigned i = 0; i < it->second.arrayDims; i++)
                 dims += "[]";
-            std::string md = "```lux\n(variable) " + dims + it->second.typeName
-                           + " " + name + "\n```";
+            std::string md = formatTypedHover("variable",
+                                              dims + it->second.typeName,
+                                              name,
+                                              bindings);
             return makeResult(token, md);
         }
     }
@@ -476,8 +514,11 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                 for (auto* p : params) {
                     if (!p->IDENTIFIER()) continue;
                     if (p->IDENTIFIER()->getText() == name) {
-                        std::string md = "```lux\n(parameter) "
-                            + typeSpecToString(p->typeSpec()) + " " + name + "\n```";
+                        std::string md = formatTypedHover(
+                            "parameter",
+                            typeSpecToString(p->typeSpec()),
+                            name,
+                            bindings);
                         return makeResult(token, md);
                     }
                 }
@@ -489,8 +530,10 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     std::string dims;
                     for (unsigned i = 0; i < it->second.arrayDims; i++)
                         dims += "[]";
-                    std::string md = "```lux\n(variable) " + dims + it->second.typeName
-                                   + " " + name + "\n```";
+                    std::string md = formatTypedHover("variable",
+                                                      dims + it->second.typeName,
+                                                      name,
+                                                      bindings);
                     return makeResult(token, md);
                 }
             }

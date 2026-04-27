@@ -1478,6 +1478,13 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
 const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     if (!expr) return nullptr;
 
+    auto resolveTypeSpecInContext = [&](LuxParser::TypeSpecContext* ts,
+                                        unsigned& dims) -> const TypeInfo* {
+        if (!activeTypeSubst_.empty())
+            return resolveTypeSpecWithSubst(ts, activeTypeSubst_, dims);
+        return resolveTypeSpec(ts, dims);
+    };
+
     // ── Literals ──────────────────────────────────────────────────────
     if (dynamic_cast<LuxParser::IntLitExprContext*>(expr) ||
         dynamic_cast<LuxParser::HexLitExprContext*>(expr) ||
@@ -2966,7 +2973,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         std::vector<const TypeInfo*> typeArgs;
         for (auto* ts : typeParamSpecs) {
             unsigned dims = 0;
-            auto* argTI = resolveTypeSpec(ts, dims);
+            auto* argTI = resolveTypeSpecInContext(ts, dims);
             if (!argTI) return nullptr;
             typeArgs.push_back(argTI);
         }
@@ -2995,7 +3002,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         std::vector<const TypeInfo*> typeArgs;
         for (auto* ts : typeParamSpecs) {
             unsigned dims = 0;
-            auto* argTI = resolveTypeSpec(ts, dims);
+            auto* argTI = resolveTypeSpecInContext(ts, dims);
             if (!argTI) return nullptr;
             typeArgs.push_back(argTI);
         }
@@ -3087,7 +3094,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         std::vector<const TypeInfo*> typeArgs;
         for (auto* ts : typeParamSpecs) {
             unsigned dims = 0;
-            auto* argTI = resolveTypeSpec(ts, dims);
+            auto* argTI = resolveTypeSpecInContext(ts, dims);
             if (!argTI) return nullptr;
             typeArgs.push_back(argTI);
         }
@@ -3221,7 +3228,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         std::vector<const TypeInfo*> typeArgs;
         for (auto* ts : genv->typeSpec()) {
             unsigned dims = 0;
-            auto* argTI = resolveTypeSpec(ts, dims);
+            auto* argTI = resolveTypeSpecInContext(ts, dims);
             if (!argTI) return nullptr;
             typeArgs.push_back(argTI);
         }
@@ -3326,7 +3333,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         std::vector<const TypeInfo*> typeArgs;
         for (auto* ts : gea->typeSpec()) {
             unsigned dims = 0;
-            auto* argTI = resolveTypeSpec(ts, dims);
+            auto* argTI = resolveTypeSpecInContext(ts, dims);
             if (!argTI) return nullptr;
             typeArgs.push_back(argTI);
         }
@@ -5417,6 +5424,12 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
             return instantiateGenericUnion(innerBaseName, unionIt->second,
                                            resolvedArgs, typeSpec);
         }
+        auto enumIt = genericEnumTemplates_.find(innerBaseName);
+        if (enumIt != genericEnumTemplates_.end()) {
+            arrayDims = 0;
+            return instantiateGenericEnum(innerBaseName, enumIt->second,
+                                          resolvedArgs, typeSpec);
+        }
         // Otherwise fall back to normal resolution (built-in generics, etc.)
     }
     // Default: normal resolution (no substitution needed for this node)
@@ -5426,9 +5439,35 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
 const TypeInfo* Checker::resolveTypeParamConstraint(const std::string& constraintName,
                                                       antlr4::ParserRuleContext* ctx) {
     // Supported constraints: numeric, integer, float, bool, string, any
-    // For now, constraints are informational — we store them but don't hard-enforce at
-    // the Checker level (IRGen doesn't need them). Return nullptr for "any".
+    // Return nullptr for "any".
     if (constraintName == "any" || constraintName == "Any") return nullptr;
+
+    // Constraint aliases that are not concrete language types in TypeRegistry.
+    static const TypeInfo numericConstraint = [] {
+        TypeInfo ti;
+        ti.name = "numeric";
+        ti.kind = TypeKind::Integer;
+        return ti;
+    }();
+    static const TypeInfo integerConstraint = [] {
+        TypeInfo ti;
+        ti.name = "integer";
+        ti.kind = TypeKind::Integer;
+        return ti;
+    }();
+    static const TypeInfo floatConstraint = [] {
+        TypeInfo ti;
+        ti.name = "float";
+        ti.kind = TypeKind::Float;
+        return ti;
+    }();
+    if (constraintName == "numeric" || constraintName == "Numeric")
+        return &numericConstraint;
+    if (constraintName == "integer" || constraintName == "Integer")
+        return &integerConstraint;
+    if (constraintName == "float" || constraintName == "Float")
+        return &floatConstraint;
+
     auto* ti = typeRegistry_.lookup(constraintName);
     if (!ti) {
         error(ctx, "unknown type constraint '" + constraintName + "'");
@@ -5876,6 +5915,8 @@ const TypeInfo* Checker::instantiateGenericFunc(
     // Check the function body with the substituted locals
     // We save/restore locals_ since this is a nested instantiation
     auto savedLocals = locals_;
+    auto savedTypeSubst = activeTypeSubst_;
+    activeTypeSubst_ = subst;
     locals_.clear();
     if (auto* paramList = tmpl.decl->paramList()) {
         for (auto* param : paramList->param()) {
@@ -5895,6 +5936,7 @@ const TypeInfo* Checker::instantiateGenericFunc(
     checkBlock(tmpl.decl->block(), retType);
 
     locals_ = savedLocals;
+    activeTypeSubst_ = savedTypeSubst;
     instantiatingGenerics_.erase(mangledName);
 
     // Return the function's return type (not the function type itself)

@@ -277,6 +277,8 @@ private:
     std::unordered_map<std::string, GenericExtendTemplate>  genericExtendTemplates_;
     // Tracks instantiations in progress for cycle detection
     std::unordered_set<std::string> instantiatingGenerics_;
+    // Active type-parameter substitution while checking an instantiated generic body.
+    std::unordered_map<std::string, const TypeInfo*> activeTypeSubst_;
 
     // Mangles "Node" + ["int32"] → "Node__int32"
     static std::string mangleGenericName(const std::string& baseName,

@@ -1917,8 +1917,24 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     // ── Equality: ==, != ────────────────────────────────────────────
     if (auto* eq = dynamic_cast<LuxParser::EqExprContext*>(expr)) {
         auto exprs = eq->expression();
-        resolveExprType(exprs[0]);
-        resolveExprType(exprs[1]);
+        auto* lhs = resolveExprType(exprs[0]);
+        auto* rhs = resolveExprType(exprs[1]);
+        auto opText = eq->op->getText();
+
+        // Keep equality strict for numeric operands to prevent IR-time mismatches
+        // such as float-vs-int comparisons reaching LLVM FCmp/ICmp with mixed types.
+        if (lhs && rhs && isNumeric(lhs) && isNumeric(rhs) && lhs->kind != rhs->kind) {
+            error(expr, "operator '" + opText +
+                             "' does not allow mixed numeric kinds ('" +
+                             lhs->name + "' and '" + rhs->name +
+                             "'); cast explicitly");
+        } else if (lhs && rhs &&
+                   !(isAssignable(lhs, rhs) || isAssignable(rhs, lhs))) {
+            error(expr, "operator '" + opText +
+                             "' has incompatible operand types '" +
+                             lhs->name + "' and '" + rhs->name + "'");
+        }
+
         return typeRegistry_.lookup("bool");
     }
 

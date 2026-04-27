@@ -74,7 +74,7 @@ static std::string formatTypedHover(const std::string& kind,
                                     const std::string& typeName,
                                     const std::string& symbolName,
                                     const CBindings& bindings) {
-    const char* lang = isCHoverType(typeName, bindings) ? "c" : "cpp";
+    const char* lang = isCHoverType(typeName, bindings) ? "c" : "lux";
     return std::string("```") + lang + "\n(" + kind + ") " + typeName + " "
          + symbolName + "\n```";
 }
@@ -1604,6 +1604,19 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── Catch unwrap expression: value catch { ... } ─────────────────
+    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+        auto r = walkExprForHover(cu->expression(), hoveredToken, tokenText,
+                                  tree, bindings, cursorLine, project);
+        if (r) return r;
+        if (cu->block() && containsToken(cu->block(), hoveredToken)) {
+            r = walkBlockForHover(cu->block(), hoveredToken, tokenText,
+                                  tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
     // ── Array literal: [expr, expr, ...] ────────────────────────────
     if (auto* al = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
         for (auto* e : al->expression()) {
@@ -2947,6 +2960,18 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                 }
             }
         }
+    } else {
+        // Unknown receiver type fallback: try built-in Error fields.
+        auto* err = typeRegistry_.lookup("Error");
+        if (err && (err->kind == TypeKind::Struct || err->kind == TypeKind::Union)) {
+            for (const auto& f : err->fields) {
+                if (f.name == fieldName && f.typeInfo) {
+                    std::string md = "```lux\n(field) " + f.typeInfo->name
+                                   + " Error." + fieldName + "\n```";
+                    return makeResult(token, md);
+                }
+            }
+        }
     }
 
     // Search C structs for this field
@@ -3798,10 +3823,9 @@ static std::string inferExprTypeName(
         auto sourceType = inferExprTypeName(cu->expression(), locals, flc);
         if (sourceType.empty() || !flc || !flc->tree) return "";
 
-        auto baseName = sourceType;
-        auto lt = baseName.find('<');
-        if (lt != std::string::npos)
-            baseName = baseName.substr(0, lt);
+        std::string baseName = sourceType;
+        std::vector<std::string> sourceArgs;
+        parseGenericInstance(sourceType, baseName, sourceArgs);
 
         LuxParser::EnumDeclContext* enumDecl = nullptr;
         for (auto* tld : flc->tree->topLevelDecl()) {
@@ -3813,11 +3837,21 @@ static std::string inferExprTypeName(
         }
         if (!enumDecl) return "";
 
+        std::unordered_map<std::string, std::string> subst;
+        if (enumDecl->typeParamList() && !sourceArgs.empty()) {
+            auto tps = enumDecl->typeParamList()->typeParam();
+            for (size_t i = 0; i < std::min(tps.size(), sourceArgs.size()); i++) {
+                auto ids = tps[i]->IDENTIFIER();
+                if (!ids.empty()) subst[ids[0]->getText()] = sourceArgs[i];
+            }
+        }
+
         std::string successType;
         bool seenError = false;
         for (auto* variant : enumDecl->enumVariant()) {
             if (!variant || variant->typeSpec().size() != 1) return "";
             auto payloadType = variant->typeSpec(0)->getText();
+            payloadType = substituteTypeParams(payloadType, subst);
             if (payloadType == "Error") {
                 if (seenError) return "";
                 seenError = true;

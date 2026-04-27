@@ -2775,6 +2775,15 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem>& items,
         items.push_back(std::move(ci));
     }
 
+    // Built-in non-primitive language types.
+    if (matchesPrefix("Error", prefix)) {
+        CompletionItem ci;
+        ci.label = "Error";
+        ci.kind = CompletionKind::Struct;
+        ci.detail = "built-in struct Error";
+        items.push_back(std::move(ci));
+    }
+
     // Collection / generic types (vec, map, set)
     {
         struct GenericType { const char* lower; const char* snippet; const char* detail; };

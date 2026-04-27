@@ -403,6 +403,10 @@ private:
     void                emitAutoCleanups(const std::string& skipVar = "");
     void                emitAllCleanups(const std::string& skipVar = "");
     void                emitCleanupForLocal(const std::string& name, const VarInfo& info);
+    llvm::Value*        buildVecValueFromArrayLiteral(
+                            LuxParser::ArrayLitExprContext* arrLit,
+                            const TypeInfo* vecType,
+                            const std::string& tempNameHint = "vec_lit");
     void                emitBlockExitCleanups(const std::unordered_map<std::string, VarInfo>& savedLocals);
     bool                isDropTrackedLocal(const VarInfo& info) const;
     void                consumeLocalByName(const std::string& name);

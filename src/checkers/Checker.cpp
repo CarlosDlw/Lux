@@ -876,12 +876,29 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         }
     }
 
+    auto hasErrors = [&]() -> bool {
+        for (const auto& d : diagnostics_) {
+            if (d.severity == Diagnostic::Error)
+                return true;
+        }
+        return false;
+    };
+
+    // Stop after type registration failures to avoid cascading diagnostics
+    // (unknown types, undefined vars, and return-shape errors that are
+    // direct consequences of earlier declaration errors).
+    if (hasErrors())
+        return false;
+
     // Pass 3.5: register struct methods via `extend` blocks
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* ext = decl->extendDecl()) {
             checkExtendDecl(ext);
         }
     }
+
+    if (hasErrors())
+        return false;
 
     // Pass 4: register function signatures (before checking bodies)
     for (auto* decl : tree->topLevelDecl()) {
@@ -909,11 +926,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
     }
 
     // Only actual errors (not warnings) should cause a check failure
-    for (auto& d : diagnostics_) {
-        if (d.severity == Diagnostic::Error)
-            return false;
-    }
-    return true;
+    return !hasErrors();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2844,9 +2857,31 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                              " argument(s), got " + std::to_string(argTypes.size()));
                 return enumType;
             }
+            auto args = smc->argList() ? smc->argList()->expression()
+                                       : std::vector<LuxParser::ExpressionContext*>{};
             for (size_t i = 0; i < argTypes.size(); i++) {
                 auto* expected = variantInfo->payloadFields[i].typeInfo;
-                if (argTypes[i] && expected && !isAssignable(expected, argTypes[i])) {
+                bool literalToVecOk = false;
+                if (expected && expected->kind == TypeKind::Extended &&
+                    expected->extendedKind == "Vec" &&
+                    i < args.size() &&
+                    dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i])) {
+                    literalToVecOk = true;
+                    auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i]);
+                    for (auto* e : arr->expression()) {
+                        auto* et = resolveExprType(e);
+                        if (et && expected->elementType &&
+                            !isAssignable(expected->elementType, et)) {
+                            error(e, "element type mismatch: expected '" +
+                                         expected->elementType->name + "', got '" +
+                                         et->name + "'");
+                            literalToVecOk = false;
+                        }
+                    }
+                }
+                if (argTypes[i] && expected &&
+                    !literalToVecOk &&
+                    !isAssignable(expected, argTypes[i])) {
                     error(expr, "variant '" + structName + "::" + methodName +
                                  "' argument " + std::to_string(i + 1) +
                                  " type mismatch: expected '" + expected->name +
@@ -2854,6 +2889,76 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 }
             }
             return enumType;
+        }
+
+        // Generic enum constructor inside an instantiated generic function,
+        // e.g. in sum<T>: Result::Ok(value) where activeTypeSubst_ has T.
+        auto genEnumIt = genericEnumTemplates_.find(structName);
+        if (genEnumIt != genericEnumTemplates_.end() && !activeTypeSubst_.empty()) {
+            std::vector<const TypeInfo*> inferredArgs;
+            for (const auto& tp : genEnumIt->second.typeParams) {
+                auto it = activeTypeSubst_.find(tp);
+                if (it == activeTypeSubst_.end() || !it->second) {
+                    error(expr, "cannot infer type arguments for generic enum '" +
+                                    structName + "'; use explicit type arguments");
+                    return nullptr;
+                }
+                inferredArgs.push_back(it->second);
+            }
+
+            auto* inferredEnum = instantiateGenericEnum(structName, genEnumIt->second,
+                                                        inferredArgs, expr);
+            if (!inferredEnum) return nullptr;
+
+            auto* variantInfo = findEnumVariantInfo(inferredEnum, methodName);
+            if (!variantInfo) {
+                error(expr, "enum '" + inferredEnum->name + "' has no variant '" + methodName +
+                             "'; enums do not support static methods via 'extend'");
+                return inferredEnum;
+            }
+            if (variantInfo->payloadKind == EnumPayloadKind::Named) {
+                error(expr, "variant '" + inferredEnum->name + "::" + methodName +
+                             "' uses named payload; use braces instead of parentheses");
+                return inferredEnum;
+            }
+            if (argTypes.size() != variantInfo->payloadFields.size()) {
+                error(expr, "variant '" + inferredEnum->name + "::" + methodName +
+                             "' expects " + std::to_string(variantInfo->payloadFields.size()) +
+                             " argument(s), got " + std::to_string(argTypes.size()));
+                return inferredEnum;
+            }
+            auto args = smc->argList() ? smc->argList()->expression()
+                                       : std::vector<LuxParser::ExpressionContext*>{};
+            for (size_t i = 0; i < argTypes.size(); i++) {
+                auto* expected = variantInfo->payloadFields[i].typeInfo;
+                bool literalToVecOk = false;
+                if (expected && expected->kind == TypeKind::Extended &&
+                    expected->extendedKind == "Vec" &&
+                    i < args.size() &&
+                    dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i])) {
+                    literalToVecOk = true;
+                    auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i]);
+                    for (auto* e : arr->expression()) {
+                        auto* et = resolveExprType(e);
+                        if (et && expected->elementType &&
+                            !isAssignable(expected->elementType, et)) {
+                            error(e, "element type mismatch: expected '" +
+                                         expected->elementType->name + "', got '" +
+                                         et->name + "'");
+                            literalToVecOk = false;
+                        }
+                    }
+                }
+                if (argTypes[i] && expected &&
+                    !literalToVecOk &&
+                    !isAssignable(expected, argTypes[i])) {
+                    error(expr, "variant '" + inferredEnum->name + "::" + methodName +
+                                 "' argument " + std::to_string(i + 1) +
+                                 " type mismatch: expected '" + expected->name +
+                                 "', got '" + argTypes[i]->name + "'");
+                }
+            }
+            return inferredEnum;
         }
 
         // Generic static method inference: Node::create(42)
@@ -3036,9 +3141,31 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                              " argument(s), got " + std::to_string(argTypes.size()));
                 return enumType;
             }
+            auto args = gsmc->argList() ? gsmc->argList()->expression()
+                                        : std::vector<LuxParser::ExpressionContext*>{};
             for (size_t i = 0; i < argTypes.size(); i++) {
                 auto* expected = variantInfo->payloadFields[i].typeInfo;
-                if (argTypes[i] && expected && !isAssignable(expected, argTypes[i])) {
+                bool literalToVecOk = false;
+                if (expected && expected->kind == TypeKind::Extended &&
+                    expected->extendedKind == "Vec" &&
+                    i < args.size() &&
+                    dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i])) {
+                    literalToVecOk = true;
+                    auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i]);
+                    for (auto* e : arr->expression()) {
+                        auto* et = resolveExprType(e);
+                        if (et && expected->elementType &&
+                            !isAssignable(expected->elementType, et)) {
+                            error(e, "element type mismatch: expected '" +
+                                         expected->elementType->name + "', got '" +
+                                         et->name + "'");
+                            literalToVecOk = false;
+                        }
+                    }
+                }
+                if (argTypes[i] && expected &&
+                    !literalToVecOk &&
+                    !isAssignable(expected, argTypes[i])) {
                     error(expr, "variant '" + enumType->name + "::" + methodName +
                                  "' argument " + std::to_string(i + 1) +
                                  " type mismatch: expected '" + expected->name +
@@ -3787,6 +3914,12 @@ void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
                         fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
                     spec = spec->typeSpec(0);
                 }
+                if (fieldDims > 0 && fieldSizes.empty()) {
+                    error(payloadTypes[i],
+                          "enum payload arrays must have fixed size; use '[N]T' in variant '" +
+                          name + "::" + variant + "' or switch to 'vec<T>'");
+                    return;
+                }
                 info.payloadFields.push_back({"_" + std::to_string(i), fieldTI, fieldDims, fieldSizes});
             }
         } else if (variantDecl->LBRACE()) {
@@ -3813,6 +3946,12 @@ void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
                     if (spec->INT_LIT())
                         fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
                     spec = spec->typeSpec(0);
+                }
+                if (fieldDims > 0 && fieldSizes.empty()) {
+                    error(payloadField,
+                          "enum payload arrays must have fixed size; use '[N]T' in variant '" +
+                          name + "::" + variant + "' or switch to 'vec<T>'");
+                    return;
                 }
                 info.payloadFields.push_back({fieldName, fieldTI, fieldDims, fieldSizes});
             }
@@ -4530,7 +4669,11 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
 void Checker::checkForInStmt(LuxParser::ForInStmtContext* stmt,
                               const TypeInfo* retType) {
     unsigned dims = 0;
-    auto* iterType = resolveTypeSpec(stmt->typeSpec(), dims);
+    auto* iterType = [&]() -> const TypeInfo* {
+        if (!activeTypeSubst_.empty())
+            return resolveTypeSpecWithSubst(stmt->typeSpec(), activeTypeSubst_, dims);
+        return resolveTypeSpec(stmt->typeSpec(), dims);
+    }();
     auto iterName = stmt->IDENTIFIER()->getText();
 
     auto* iterableType = resolveExprType(stmt->expression());
@@ -4549,7 +4692,11 @@ void Checker::checkForInStmt(LuxParser::ForInStmtContext* stmt,
 void Checker::checkForClassicStmt(LuxParser::ForClassicStmtContext* stmt,
                                    const TypeInfo* retType) {
     unsigned dims = 0;
-    auto* varType = resolveTypeSpec(stmt->typeSpec(), dims);
+    auto* varType = [&]() -> const TypeInfo* {
+        if (!activeTypeSubst_.empty())
+            return resolveTypeSpecWithSubst(stmt->typeSpec(), activeTypeSubst_, dims);
+        return resolveTypeSpec(stmt->typeSpec(), dims);
+    }();
     auto varName = stmt->IDENTIFIER()->getText();
 
     // Check init expression
@@ -4696,7 +4843,11 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
 
     // ── Explicit type ────────────────────────────────────────────────
     unsigned arrayDims = 0;
-    auto* typeInfo = resolveTypeSpec(stmt->typeSpec(), arrayDims);
+    auto* typeInfo = [&]() -> const TypeInfo* {
+        if (!activeTypeSubst_.empty())
+            return resolveTypeSpecWithSubst(stmt->typeSpec(), activeTypeSubst_, arrayDims);
+        return resolveTypeSpec(stmt->typeSpec(), arrayDims);
+    }();
     if (!typeInfo) return;
 
     // Declaration without initializer: int32 x;
@@ -5160,6 +5311,18 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
         }
     }
 
+    // Guard against invalid ABI lowering for array values in std::log print calls.
+    // Arrays do not map to scalar print builtins; require explicit conversion.
+    if (name == "print" || name == "println" || name == "eprint" || name == "eprintln") {
+        for (size_t i = 0; i < argExprs.size(); i++) {
+            if (resolveExprArrayDims(argExprs[i]) > 0) {
+                error(stmt, "function '" + name + "' does not accept array arguments directly; "
+                            "use '.toString()' (or '.join(...)' for strings) before printing");
+                return;
+            }
+        }
+    }
+
     // Generic function call with inferred type arguments: foo(10);
     auto gfit = genericFuncTemplates_.find(name);
     if (gfit != genericFuncTemplates_.end()) {
@@ -5315,6 +5478,7 @@ void Checker::checkReturnStmt(LuxParser::ReturnStmtContext* stmt,
 }
 
 unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
+    if (!expr) return 0;
     if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
         auto it = locals_.find(id->IDENTIFIER()->getText());
         if (it != locals_.end())
@@ -5323,6 +5487,18 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
     if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
         unsigned baseDims = resolveExprArrayDims(idx->expression(0));
         return baseDims > 0 ? baseDims - 1 : 0;
+    }
+    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+        return resolveExprArrayDims(paren->expression());
+    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+        auto* sourceType = resolveExprType(cu->expression());
+        UnwrapCatchPatternInfo pattern;
+        std::string reason;
+        if (!classifyUnwrapCatchEnum(sourceType, pattern, reason))
+            return 0;
+        if (!pattern.okVariant || pattern.okVariant->payloadFields.empty())
+            return 0;
+        return pattern.okVariant->payloadFields[0].arrayDims;
     }
     return 0;
 }
@@ -5401,6 +5577,14 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
     }
     // For generic instantiations like Node<T> where T is a type param
     if (typeSpec->LT()) {
+        std::string innerBaseName;
+        if (typeSpec->VEC()) innerBaseName = "Vec";
+        else if (typeSpec->MAP()) innerBaseName = "Map";
+        else if (typeSpec->SET()) innerBaseName = "Set";
+        else if (typeSpec->IDENTIFIER()) innerBaseName = typeSpec->IDENTIFIER()->getText();
+        if (innerBaseName.empty())
+            return resolveTypeSpec(typeSpec, arrayDims);
+
         // Resolve all type args with substitution
         auto typeArgSpecs = typeSpec->typeSpec();
         std::vector<const TypeInfo*> resolvedArgs;
@@ -5410,7 +5594,7 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
             if (!argTI) return nullptr;
             resolvedArgs.push_back(argTI);
         }
-        auto innerBaseName = typeSpec->IDENTIFIER()->getText();
+
         // Check if it's a user-defined generic struct
         auto structIt = genericStructTemplates_.find(innerBaseName);
         if (structIt != genericStructTemplates_.end()) {
@@ -5430,6 +5614,83 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
             return instantiateGenericEnum(innerBaseName, enumIt->second,
                                           resolvedArgs, typeSpec);
         }
+
+        // Built-in/generic extended types (Vec/Map/Set/Task/etc.) with substituted args
+        if (auto* extDesc = extTypeRegistry_.lookup(innerBaseName)) {
+            if (extDesc->genericArity == 1) {
+                if (resolvedArgs.size() != 1) {
+                    error(typeSpec, "'" + innerBaseName + "' expects 1 type parameter, got " +
+                                        std::to_string(resolvedArgs.size()));
+                    return nullptr;
+                }
+                auto* elemType = resolvedArgs[0];
+                if (!elemType) return nullptr;
+                if (elemType->kind == TypeKind::Extended &&
+                    (innerBaseName == "Vec" || innerBaseName == "Map" || innerBaseName == "Set")) {
+                    error(typeSpec, "nested collection types are not supported: '" +
+                                        innerBaseName + "<" + elemType->name + ">'");
+                    return nullptr;
+                }
+
+                auto fullName = innerBaseName + "<" + elemType->name + ">";
+                for (auto& dt : dynamicTypes_) {
+                    if (dt->name == fullName) {
+                        arrayDims = 0;
+                        return dt.get();
+                    }
+                }
+                auto ti = std::make_unique<TypeInfo>();
+                ti->name = fullName;
+                ti->kind = TypeKind::Extended;
+                ti->bitWidth = 0;
+                ti->isSigned = false;
+                ti->builtinSuffix = elemType->builtinSuffix;
+                ti->elementType = elemType;
+                ti->extendedKind = innerBaseName;
+                const TypeInfo* raw = ti.get();
+                dynamicTypes_.push_back(std::move(ti));
+                arrayDims = 0;
+                return raw;
+            }
+
+            if (extDesc->genericArity == 2) {
+                if (resolvedArgs.size() != 2) {
+                    error(typeSpec, "'" + innerBaseName + "' expects 2 type parameters, got " +
+                                        std::to_string(resolvedArgs.size()));
+                    return nullptr;
+                }
+                auto* keyType = resolvedArgs[0];
+                auto* valType = resolvedArgs[1];
+                if (!keyType || !valType) return nullptr;
+                if (keyType->kind == TypeKind::Extended || valType->kind == TypeKind::Extended) {
+                    error(typeSpec, "nested collection types are not supported for '" +
+                                        innerBaseName + "'");
+                    return nullptr;
+                }
+
+                auto fullName = innerBaseName + "<" + keyType->name + ", " + valType->name + ">";
+                for (auto& dt : dynamicTypes_) {
+                    if (dt->name == fullName) {
+                        arrayDims = 0;
+                        return dt.get();
+                    }
+                }
+                auto ti = std::make_unique<TypeInfo>();
+                ti->name = fullName;
+                ti->kind = TypeKind::Extended;
+                ti->bitWidth = 0;
+                ti->isSigned = false;
+                ti->builtinSuffix = keyType->builtinSuffix + "_" + valType->builtinSuffix;
+                ti->keyType = keyType;
+                ti->valueType = valType;
+                ti->extendedKind = innerBaseName;
+                const TypeInfo* raw = ti.get();
+                dynamicTypes_.push_back(std::move(ti));
+                arrayDims = 0;
+                return raw;
+            }
+        }
+
         // Otherwise fall back to normal resolution (built-in generics, etc.)
     }
     // Default: normal resolution (no substitution needed for this node)
@@ -5800,6 +6061,13 @@ const TypeInfo* Checker::instantiateGenericEnum(
                         fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
                     spec = spec->typeSpec(0);
                 }
+                if (fieldDims > 0 && fieldSizes.empty()) {
+                    error(payloadTypes[i],
+                          "enum payload arrays must have fixed size; use '[N]T' in variant '" +
+                          baseName + "::" + variantName + "' or switch to 'vec<T>'");
+                    instantiatingGenerics_.erase(mangledName);
+                    return nullptr;
+                }
 
                 info.payloadFields.push_back({"_" + std::to_string(i), fieldTI, fieldDims, fieldSizes});
             }
@@ -5830,6 +6098,13 @@ const TypeInfo* Checker::instantiateGenericEnum(
                     if (spec->INT_LIT())
                         fieldSizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
                     spec = spec->typeSpec(0);
+                }
+                if (fieldDims > 0 && fieldSizes.empty()) {
+                    error(payloadField,
+                          "enum payload arrays must have fixed size; use '[N]T' in variant '" +
+                          baseName + "::" + variantName + "' or switch to 'vec<T>'");
+                    instantiatingGenerics_.erase(mangledName);
+                    return nullptr;
                 }
 
                 info.payloadFields.push_back({fieldName, fieldTI, fieldDims, fieldSizes});

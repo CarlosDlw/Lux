@@ -84,6 +84,14 @@ void printOutputDivider(const char* stage, const std::string& label) {
     std::cerr << "\n\n";
 }
 
+void printErrorLine(const std::string& msg) {
+    std::cerr << "lux: ";
+    if (useAnsiStderr()) std::cerr << "\033[1;31m";
+    std::cerr << msg;
+    if (useAnsiStderr()) std::cerr << "\033[0m";
+    std::cerr << "\n";
+}
+
 }
 
 namespace fs = std::filesystem;
@@ -269,7 +277,7 @@ bool CLI::parse(int argc, char* argv[]) {
         } else if (arg[0] != '-') {
             options_.outputFile = arg;
         } else {
-            std::cerr << "lux: unknown flag '" << arg << "'\n";
+            printErrorLine("unknown flag '" + arg + "'");
             std::cerr << "Run 'lux help' for usage.\n";
             return false;
         }
@@ -384,7 +392,7 @@ int CLI::compile() {
     progress(++step, totalSteps, "scanning .lx files");
     auto allFiles = ProjectScanner::scan(projectRoot);
     if (allFiles.empty()) {
-        std::cerr << "lux: no .lx files found in '" << projectRoot << "'\n";
+        printErrorLine("no .lx files found in '" + projectRoot + "'");
         return 1;
     }
 
@@ -405,15 +413,14 @@ int CLI::compile() {
         unit.parseResult = Parser::parse(filePath);
 
         if (unit.parseResult.hasErrors) {
-            std::cerr << "lux: parse errors in '" << filePath << "'\n";
+            printErrorLine("parse errors in '" + filePath + "'");
             anyParseError = true;
             continue;
         }
 
         unit.namespaceName = extractNamespace(unit.parseResult.tree);
         if (unit.namespaceName.empty()) {
-            std::cerr << "lux: file '" << filePath
-                      << "' is missing a 'namespace' declaration\n";
+            printErrorLine("file '" + filePath + "' is missing a 'namespace' declaration");
             anyParseError = true;
             continue;
         }
@@ -437,7 +444,7 @@ int CLI::compile() {
     auto dupErrors = registry.validate();
     if (!dupErrors.empty()) {
         for (auto& err : dupErrors) {
-            std::cerr << "lux: " << err << "\n";
+            printErrorLine(err);
         }
         return 1;
     }
@@ -560,7 +567,7 @@ int CLI::compile() {
         bool passed = checker.check(unit.parseResult.tree);
         // Always print diagnostics (errors and warnings)
         for (auto& err : checker.errors()) {
-            std::cerr << "lux: " << unit.filePath << ": " << err << "\n";
+            printErrorLine(unit.filePath + ": " + err);
         }
         if (!passed)
             anyCheckError = true;
@@ -584,8 +591,7 @@ int CLI::compile() {
         irGen.setCBindings(&cBindings);
         auto irModule = irGen.generate(unit.parseResult.tree, unit.filePath);
         if (!irModule) {
-            std::cerr << "lux: IR generation failed for '"
-                      << unit.filePath << "'\n";
+            printErrorLine("IR generation failed for '" + unit.filePath + "'");
             anyIRError = true;
             continue;
         }
@@ -609,8 +615,7 @@ int CLI::compile() {
         auto objName = makeObjectName(unit);
         auto objPath = buildDir + "/" + objName + ".o";
         if (!CodeGen::emitObjectFile(irModule->module(), objPath)) {
-            std::cerr << "lux: failed to emit object for '"
-                      << unit.filePath << "'\n";
+            printErrorLine("failed to emit object for '" + unit.filePath + "'");
             anyIRError = true;
             continue;
         }
@@ -631,8 +636,7 @@ int CLI::compile() {
     printOutputDivider("build", "linker output");
     if (!CodeGen::linkObjectFiles(objectFiles, options_.outputFile,
                                     options_.linkerFlags, options_.libPaths)) {
-        std::cerr << "lux: failed to link binary '"
-                  << options_.outputFile << "'\n";
+        printErrorLine("failed to link binary '" + options_.outputFile + "'");
         return 1;
     }
 
@@ -668,7 +672,7 @@ int CLI::jitRun() {
     progress(++step, totalSteps, "scanning .lx files");
     auto allFiles = ProjectScanner::scan(projectRoot);
     if (allFiles.empty()) {
-        std::cerr << "lux: no .lx files found in '" << projectRoot << "'\n";
+        printErrorLine("no .lx files found in '" + projectRoot + "'");
         return 1;
     }
 
@@ -684,14 +688,13 @@ int CLI::jitRun() {
         unit.filePath    = filePath;
         unit.parseResult = Parser::parse(filePath);
         if (unit.parseResult.hasErrors) {
-            std::cerr << "lux: parse errors in '" << filePath << "'\n";
+            printErrorLine("parse errors in '" + filePath + "'");
             anyParseError = true;
             continue;
         }
         unit.namespaceName = extractNamespace(unit.parseResult.tree);
         if (unit.namespaceName.empty()) {
-            std::cerr << "lux: file '" << filePath
-                      << "' is missing a 'namespace' declaration\n";
+            printErrorLine("file '" + filePath + "' is missing a 'namespace' declaration");
             anyParseError = true;
             continue;
         }
@@ -707,7 +710,7 @@ int CLI::jitRun() {
 
     auto dupErrors = registry.validate();
     if (!dupErrors.empty()) {
-        for (auto& err : dupErrors) std::cerr << "lux: " << err << "\n";
+        for (auto& err : dupErrors) printErrorLine(err);
         return 1;
     }
 
@@ -759,7 +762,7 @@ int CLI::jitRun() {
         checker.setCBindings(&cBindings);
         bool passed = checker.check(unit.parseResult.tree);
         for (auto& err : checker.errors())
-            std::cerr << "lux: " << unit.filePath << ": " << err << "\n";
+            printErrorLine(unit.filePath + ": " + err);
         if (!passed) anyCheckError = true;
     }
     if (anyCheckError) return 1;
@@ -784,8 +787,7 @@ int CLI::jitRun() {
         irGen.setCBindings(&cBindings);
         auto irMod = irGen.generate(unit.parseResult.tree, unit.filePath);
         if (!irMod) {
-            std::cerr << "lux: IR generation failed for '"
-                      << unit.filePath << "'\n";
+            printErrorLine("IR generation failed for '" + unit.filePath + "'");
             return 1;
         }
 
@@ -805,8 +807,7 @@ int CLI::jitRun() {
             auto parsed = llvm::parseBitcodeFile(memBuf->getMemBufferRef(),
                                                   *masterCtx);
             if (!parsed) {
-                std::cerr << "lux: bitcode re-parse failed for '"
-                          << unit.filePath << "'\n";
+                printErrorLine("bitcode re-parse failed for '" + unit.filePath + "'");
                 return 1;
             }
             masterMod = std::move(parsed.get());
@@ -822,21 +823,19 @@ int CLI::jitRun() {
             auto parsed = llvm::parseBitcodeFile(memBuf->getMemBufferRef(),
                                                   *masterCtx);
             if (!parsed) {
-                std::cerr << "lux: bitcode re-parse failed for '"
-                          << unit.filePath << "'\n";
+                printErrorLine("bitcode re-parse failed for '" + unit.filePath + "'");
                 return 1;
             }
             if (llvm::Linker::linkModules(*masterMod,
                                            std::move(parsed.get()))) {
-                std::cerr << "lux: failed to link module '"
-                          << unit.filePath << "'\n";
+                printErrorLine("failed to link module '" + unit.filePath + "'");
                 return 1;
             }
         }
     }
 
     if (!masterMod) {
-        std::cerr << "lux: no IR generated\n";
+        printErrorLine("no IR generated");
         return 1;
     }
     masterMod->setTargetTriple(llvm::Triple(llvm::sys::getDefaultTargetTriple()));
@@ -921,8 +920,8 @@ int CLI::jitRun() {
         llTmpl.push_back('\0');
         int llfd = ::mkstemps(llTmpl.data(), 3);
         if (llfd < 0) {
-            std::cerr << "lux: could not create temporary IR path: "
-                      << std::strerror(errno) << "\n";
+            printErrorLine(std::string("could not create temporary IR path: ") +
+                           std::strerror(errno));
             return 1;
         }
         ::close(llfd);
@@ -936,7 +935,7 @@ int CLI::jitRun() {
         fs::remove(runBinTempPath);
         if (!linkWithCompiler("clang", runLLPath, runBinTempPath)
             && !linkWithCompiler("gcc", runLLPath, runBinTempPath)) {
-            std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
+            printErrorLine("linking failed — ensure clang or gcc is installed");
             fs::remove(runLLPath);
             fs::remove(runBinTempPath);
             return 1;
@@ -949,8 +948,7 @@ int CLI::jitRun() {
             // Another process may have produced the same cache artifact first.
             fs::remove(runBinTempPath);
             if (!fs::exists(runBinPath)) {
-                std::cerr << "lux: failed to finalize cached run binary: "
-                          << renameEc.message() << "\n";
+                printErrorLine("failed to finalize cached run binary: " + renameEc.message());
                 return 1;
             }
         }
@@ -962,8 +960,7 @@ int CLI::jitRun() {
     printOutputDivider("run", "program output");
     pid_t pid = ::fork();
     if (pid < 0) {
-        std::cerr << "lux: failed to execute run binary: "
-                  << std::strerror(errno) << "\n";
+        printErrorLine(std::string("failed to execute run binary: ") + std::strerror(errno));
         fs::remove(runBinPath);
         return 1;
     }
@@ -981,8 +978,8 @@ int CLI::jitRun() {
     int status = 0;
     while (::waitpid(pid, &status, 0) < 0) {
         if (errno != EINTR) {
-            std::cerr << "lux: waitpid failed while running program: "
-                      << std::strerror(errno) << "\n";
+            printErrorLine(std::string("waitpid failed while running program: ") +
+                           std::strerror(errno));
             fs::remove(runBinPath);
             return 1;
         }

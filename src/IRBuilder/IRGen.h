@@ -210,6 +210,7 @@ private:
         llvm::BasicBlock* continueTarget;
     };
     std::vector<LoopInfo> loopStack_;
+    std::vector<std::unordered_map<std::string, VarInfo>> loopBodyLocalsStack_;
 
     // Deferred statements (function-scoped, LIFO execution order)
     struct DeferredStmt {
@@ -401,6 +402,11 @@ private:
     void                emitDeferredCleanups();
     void                emitAutoCleanups(const std::string& skipVar = "");
     void                emitAllCleanups(const std::string& skipVar = "");
+    void                emitCleanupForLocal(const std::string& name, const VarInfo& info);
+    void                emitBlockExitCleanups(const std::unordered_map<std::string, VarInfo>& savedLocals);
+    bool                isDropTrackedLocal(const VarInfo& info) const;
+    void                consumeLocalByName(const std::string& name);
+    void                consumeExprIfOwnedLocal(LuxParser::ExpressionContext* expr);
     void                emitScopeCallback(LuxParser::ScopeCallbackContext* ctx);
     void                emitDivByZeroGuard(llvm::Value* divisor,
                                            antlr4::Token* opToken);

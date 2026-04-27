@@ -1,6 +1,6 @@
 # Memory Model
 
-T uses a straightforward memory model: local variables live on the stack, collections allocate on the heap, and cleanup is handled through a combination of explicit `defer` statements and automatic scope-based freeing. There is no garbage collector.
+Lux uses a straightforward memory model: local variables live on the stack, heap-backed values (`string`, `vec`, `map`, `set`) allocate dynamic storage when needed, and cleanup is handled through explicit `defer` plus automatic scope-based cleanup. There is no garbage collector.
 
 This page explains how each part works and what the compiler does behind the scenes.
 
@@ -244,14 +244,15 @@ The compiler duplicates the deferred cleanup at **both** return points, ensuring
 
 ## Automatic Cleanup
 
-In addition to explicit `defer`, the compiler automatically inserts cleanup calls for collection types (`vec`, `map`, `set`) at function exit. This means you don't **have** to call `.free()` manually — the compiler will do it for you if you forget.
+In addition to explicit `defer`, the compiler automatically inserts cleanup calls for heap-backed local values (`string`, `vec`, `map`, `set`). This means you don't need to manually call `.free()` or `freeStr()` for normal local-scope lifetimes.
 
 ### How It Works
 
-Before every return statement, after emitting explicit defer cleanups, the compiler scans the local variable table. For each variable whose type is a collection, it emits a call to the type-specific free function:
+Before return and at block/control-flow scope exits, after deferred cleanups when applicable, the compiler scans locals that are leaving scope and emits the type-specific cleanup calls.
 
-| Type | Free function called |
-|------|---------------------|
+| Type | Cleanup function called |
+|------|-------------------------|
+| `string` | `lux_freeStr()` |
 | `vec<int32>` | `lux_vec_free_i32()` |
 | `vec<string>` | `lux_vec_free_str()` |
 | `map<string, int32>` | `lux_map_free_str_i32()` |
@@ -378,7 +379,7 @@ try {
 | `float64` | Stack | 8 | None |
 | `bool` | Stack | 1 | None |
 | `char` | Stack | 1 | None |
-| `string` | Stack (fat ptr) | 16 | None (literals are static) |
+| `string` | Stack (fat ptr) | 16 | Auto-drop for owned locals; borrowed/literals are not freed |
 | `int32[N]` | Stack | N × 4 | None |
 | `struct` | Stack | Sum of fields + padding | None |
 | `vec<T>` | Stack header + heap data | 24 + (cap × elem_size) | Auto or `defer v.free()` |
@@ -433,3 +434,22 @@ fn good() -> int32 {
     ret x;
 }
 ```
+
+---
+
+## Ownership State Tracking
+
+The checker tracks ownership state for drop-tracked locals:
+
+- `Owned`: value must be dropped or moved.
+- `Borrowed*`: non-owning reference semantics.
+- `Moved`: value has been transferred and cannot be used.
+- `Dropped`: value was explicitly consumed (for example via `freeStr`).
+
+This state is now used to emit compile-time diagnostics:
+
+- use-after-move
+- double-move
+- ownership conflicts in assignment/call/return paths
+
+In LSP, ownership diagnostics are tagged with stable codes (for example `OWN001`, `OWN002`) for easier filtering and tooling integration.

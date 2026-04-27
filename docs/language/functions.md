@@ -64,6 +64,15 @@ void log_if_positive(int32 x) {
 }
 ```
 
+Returning a heap-backed local transfers ownership to the caller:
+
+```t
+string buildMsg() {
+    string msg = fromCStrCopy(c"ok");
+    ret msg; // move to caller
+}
+```
+
 ## Parameters
 
 Parameters use the same type-first syntax as variable declarations:
@@ -79,6 +88,16 @@ int32 clamp_value(int32 value, int32 min_val, int32 max_val) {
     ret value;
 }
 ```
+
+### Ownership in Calls
+
+Some APIs consume ownership (move), while others only borrow.
+
+- Borrow example: read-only string operations.
+- Consume example: `freeStr(x)` consumes `x`.
+
+Signature help shows ownership hints as `[borrow]` and `[consumes]` for builtins where metadata is available.
+Ownership diagnostics exposed through LSP include stable codes (for example `OWN001`, `OWN002`).
 
 ## Variadic Functions
 

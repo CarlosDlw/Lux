@@ -4,6 +4,67 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct lux_owned_node {
+    void* ptr;
+    struct lux_owned_node* next;
+} lux_owned_node;
+
+static void* (*lux_sys_malloc)(size_t) = malloc;
+static void* (*lux_sys_realloc)(void*, size_t) = realloc;
+static void  (*lux_sys_free)(void*) = free;
+static lux_owned_node* lux_owned_head = NULL;
+
+static void lux_owned_track_ptr(void* ptr) {
+    if (!ptr) return;
+    lux_owned_node* node = (lux_owned_node*)lux_sys_malloc(sizeof(lux_owned_node));
+    if (!node) return;
+    node->ptr = ptr;
+    node->next = lux_owned_head;
+    lux_owned_head = node;
+}
+
+static int lux_owned_untrack_ptr(void* ptr) {
+    lux_owned_node** cur = &lux_owned_head;
+    while (*cur) {
+        if ((*cur)->ptr == ptr) {
+            lux_owned_node* dead = *cur;
+            *cur = dead->next;
+            lux_sys_free(dead);
+            return 1;
+        }
+        cur = &((*cur)->next);
+    }
+    return 0;
+}
+
+static void* lux_tracked_malloc(size_t size) {
+    void* ptr = lux_sys_malloc(size);
+    lux_owned_track_ptr(ptr);
+    return ptr;
+}
+
+static void* lux_tracked_realloc(void* old_ptr, size_t size) {
+    if (!old_ptr) return lux_tracked_malloc(size);
+    int was_owned = lux_owned_untrack_ptr(old_ptr);
+    void* new_ptr = lux_sys_realloc(old_ptr, size);
+    if (!new_ptr && was_owned) {
+        lux_owned_track_ptr(old_ptr);
+        return NULL;
+    }
+    if (was_owned) lux_owned_track_ptr(new_ptr);
+    return new_ptr;
+}
+
+static void lux_tracked_free(void* ptr) {
+    if (!ptr) return;
+    if (!lux_owned_untrack_ptr(ptr)) return;
+    lux_sys_free(ptr);
+}
+
+#define malloc(sz) lux_tracked_malloc(sz)
+#define realloc(p, sz) lux_tracked_realloc(p, sz)
+#define free(p) lux_tracked_free(p)
+
 // ── Search & Match ──────────────────────────────────────────────────────────
 
 int lux_contains(const char* s, size_t sLen,
@@ -604,7 +665,8 @@ lux_str_result lux_fromCStrLen(const char* cstr, size_t len) {
 }
 
 void lux_freeStr(const char* ptr, size_t len) {
-    if (ptr && len > 0)
+    (void)len;
+    if (ptr)
         free((void*)ptr);
 }
 

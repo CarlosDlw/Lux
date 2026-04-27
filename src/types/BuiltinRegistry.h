@@ -20,6 +20,9 @@ struct BuiltinSignature {
     std::vector<std::string> paramTypes;  // lux type names (fixed params only)
     bool isPolymorphic = false; // return type depends on argument type
     bool isVariadic    = false; // accepts extra args beyond paramTypes
+    bool returnsOwned  = false; // return transfers ownership to caller
+    std::vector<size_t> consumingArgs; // argument indexes consumed (move)
+    std::vector<size_t> borrowedArgs;  // argument indexes borrowed-only
 };
 
 // Central registry of all stdlib function signatures and constant types.
@@ -36,11 +39,16 @@ public:
     // Look up a constant's type by its name (e.g. "PI" → "float64").
     // Returns empty string if not a known constant.
     const std::string& lookupConstant(const std::string& name) const;
+    bool returnsOwned(const std::string& name) const;
+    bool argConsumes(const std::string& name, size_t argIndex) const;
+    bool argBorrows(const std::string& name, size_t argIndex) const;
 
 private:
     void add(std::string name, std::string returnType,
              std::vector<std::string> params, bool poly = false,
-             bool variadic = false);
+             bool variadic = false, bool returnsOwned = false,
+             std::vector<size_t> consumingArgs = {},
+             std::vector<size_t> borrowedArgs = {});
     void addConstant(std::string name, std::string typeName);
 
     std::unordered_map<std::string, BuiltinSignature> signatures_;

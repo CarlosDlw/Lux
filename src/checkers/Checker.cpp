@@ -74,6 +74,18 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
     return true;
 }
 
+static std::string ownershipDiagnosticCode(const std::string& msg) {
+    if (msg.find("already moved") != std::string::npos)
+        return "OWN001";
+    if (msg.find("consumes ownership") != std::string::npos)
+        return "OWN002";
+    if (msg.find("borrowed") != std::string::npos && msg.find("ownership") != std::string::npos)
+        return "OWN003";
+    if (msg.find("double") != std::string::npos && msg.find("free") != std::string::npos)
+        return "OWN004";
+    return "";
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Error helpers — attach line:col and full range to every diagnostic
 // ═══════════════════════════════════════════════════════════════════════
@@ -85,6 +97,7 @@ void Checker::emitDiag(antlr4::Token* start, antlr4::Token* stop,
         Diagnostic d;
         d.severity = sev;
         d.message  = msg;
+        d.code     = ownershipDiagnosticCode(msg);
         diagnostics_.push_back(std::move(d));
         return;
     }
@@ -100,6 +113,7 @@ void Checker::emitDiag(antlr4::Token* start, antlr4::Token* stop,
     Diagnostic d;
     d.severity = sev;
     d.message  = msg;
+    d.code     = ownershipDiagnosticCode(msg);
     d.line     = (line > 0) ? line - 1 : 0;
     d.col      = start->getCharPositionInLine();
 
@@ -375,6 +389,98 @@ void Checker::trackVarNumericRangeFromExpr(const std::string& varName,
     vi->hasKnownUSizeRange = true;
     vi->minUSize = range->first;
     vi->maxUSize = range->second;
+}
+
+bool Checker::isDropTrackedType(const TypeInfo* type, unsigned arrayDims) const {
+    if (!type || arrayDims > 0) return false;
+    if (type->kind == TypeKind::String) return true;
+    if (type->kind == TypeKind::Extended) return true;
+    return false;
+}
+
+bool Checker::isBorrowedStringExpr(LuxParser::ExpressionContext* expr) const {
+    if (dynamic_cast<LuxParser::StrLitExprContext*>(expr)) return true;
+    if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+            auto name = ident->IDENTIFIER()->getText();
+            return name == "fromCStr" || name == "fromCStrLen";
+        }
+    }
+    return false;
+}
+
+bool Checker::exprConsumesOwnership(LuxParser::ExpressionContext* expr) const {
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto it = locals_.find(ident->IDENTIFIER()->getText());
+        if (it != locals_.end())
+            return isDropTrackedType(it->second.type, it->second.arrayDims);
+    }
+    return false;
+}
+
+void Checker::updateOwnershipOnInitialization(VarInfo& vi, LuxParser::ExpressionContext* expr) {
+    if (!isDropTrackedType(vi.type, vi.arrayDims)) {
+        vi.ownership = VarInfo::OwnershipState::BorrowedImm;
+        return;
+    }
+
+    if (expr && exprConsumesOwnership(expr)) {
+        vi.ownership = VarInfo::OwnershipState::Owned;
+        return;
+    }
+
+    if (vi.type && vi.type->kind == TypeKind::String && isBorrowedStringExpr(expr)) {
+        vi.ownership = VarInfo::OwnershipState::BorrowedImm;
+        return;
+    }
+
+    vi.ownership = VarInfo::OwnershipState::Owned;
+}
+
+void Checker::markExprAsMoved(LuxParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx) {
+    auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr);
+    if (!ident) return;
+    auto name = ident->IDENTIFIER()->getText();
+    auto it = locals_.find(name);
+    if (it == locals_.end()) return;
+    auto& vi = it->second;
+    if (!isDropTrackedType(vi.type, vi.arrayDims)) return;
+
+    if (vi.ownership == VarInfo::OwnershipState::Moved ||
+        vi.ownership == VarInfo::OwnershipState::Dropped) {
+        error(whereCtx, "double-move detected: value '" + name + "' was already moved");
+        return;
+    }
+
+    vi.ownership = VarInfo::OwnershipState::Moved;
+}
+
+void Checker::applyCallOwnershipEffects(
+    const std::string& calleeName,
+    const std::vector<LuxParser::ExpressionContext*>& args,
+    antlr4::ParserRuleContext* whereCtx) {
+    auto* sig = calleeName.empty() ? nullptr : builtinRegistry_.lookup(calleeName);
+    if (!sig) return;
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (builtinRegistry_.argBorrows(calleeName, i)) continue;
+        if (builtinRegistry_.argConsumes(calleeName, i))
+            markExprAsMoved(args[i], whereCtx);
+    }
+}
+
+void Checker::validateExprNotMoved(LuxParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx) {
+    auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr);
+    if (!ident) return;
+    auto name = ident->IDENTIFIER()->getText();
+    auto it = locals_.find(name);
+    if (it == locals_.end()) return;
+    auto& vi = it->second;
+    if (!isDropTrackedType(vi.type, vi.arrayDims)) return;
+
+    if (vi.ownership == VarInfo::OwnershipState::Moved ||
+        vi.ownership == VarInfo::OwnershipState::Dropped) {
+        error(whereCtx, "use-after-move: value '" + name + "' was moved and is no longer valid");
+    }
 }
 
 void Checker::analyzeUnsafeCBufferCall(const std::string& funcName,
@@ -1403,6 +1509,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         auto name = id->IDENTIFIER()->getText();
         auto it = locals_.find(name);
         if (it != locals_.end()) {
+            validateExprNotMoved(expr, id);
             // Warn on use of uninitialized variable
             if (!it->second.initialized) {
                 warning(id, "variable '" + name + "' is used before being initialized");
@@ -2431,6 +2538,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                     expr);
                 if (!inferred) return nullptr;
 
+                applyCallOwnershipEffects(calleeName, argExprs, expr);
                 return instantiateGenericFunc(calleeName, funcIt->second, *inferred, expr);
             }
         }
@@ -2484,6 +2592,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             }
             if (!calleeName.empty())
                 analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
+            applyCallOwnershipEffects(calleeName, argExprs, expr);
             return calleeType->returnType;
         }
 
@@ -2530,12 +2639,15 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                     if (!argTypes.empty() && argTypes[0])
                     {
                         analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
+                        applyCallOwnershipEffects(calleeName, argExprs, expr);
                         return argTypes[0];
                     }
                     analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
+                    applyCallOwnershipEffects(calleeName, argExprs, expr);
                     return typeRegistry_.lookup("int32");
                 }
                 analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
+                applyCallOwnershipEffects(calleeName, argExprs, expr);
                 return resolveBuiltinReturnType(retName);
             }
         }
@@ -4478,8 +4590,10 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
             VarInfo vi{initType->tupleElements[i], 0, true, false, nullptr};
             vi.declToken = ids[i]->getSymbol();
             vi.scopeDepth = scopeDepth_;
+            updateOwnershipOnInitialization(vi, stmt->expression());
             locals_[varName] = vi;
         }
+        markExprAsMoved(stmt->expression(), stmt);
         return;
     }
 
@@ -4549,7 +4663,9 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
             vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
         vi.scopeDepth = scopeDepth_;
+        updateOwnershipOnInitialization(vi, stmt->expression());
         locals_[name] = vi;
+        markExprAsMoved(stmt->expression(), stmt);
         trackVarBufferFromExpr(name, stmt->expression(), initType);
         trackVarNumericRangeFromExpr(name, stmt->expression(), initType);
         return;
@@ -4569,6 +4685,9 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
             vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
         vi.scopeDepth = scopeDepth_;
+        vi.ownership = autoInit && isDropTrackedType(typeInfo, arrayDims)
+            ? VarInfo::OwnershipState::Owned
+            : VarInfo::OwnershipState::BorrowedImm;
         locals_[name] = vi;
         return;
     }
@@ -4610,7 +4729,9 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     if (stmt->IDENTIFIER(0) && stmt->IDENTIFIER(0)->getSymbol())
         vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
     vi.scopeDepth = scopeDepth_;
+    updateOwnershipOnInitialization(vi, stmt->expression());
     locals_[name] = vi;
+    markExprAsMoved(stmt->expression(), stmt);
     trackVarBufferFromExpr(name, stmt->expression(), typeInfo);
     trackVarNumericRangeFromExpr(name, stmt->expression(), typeInfo);
 }
@@ -4689,6 +4810,10 @@ void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
 
         // Whole-variable assignment (x = expr) can change tracked buffer state.
         if (indexExprs.size() == 1) {
+            if (isDropTrackedType(it->second.type, it->second.arrayDims)) {
+                updateOwnershipOnInitialization(it->second, indexExprs.back());
+            }
+            markExprAsMoved(indexExprs.back(), stmt);
             trackVarBufferFromExpr(name, indexExprs.back(), varType);
             trackVarNumericRangeFromExpr(name, indexExprs.back(), varType);
         }
@@ -5036,6 +5161,7 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
         if (!inferred) return;
 
         instantiateGenericFunc(name, gfit->second, *inferred, stmt);
+        applyCallOwnershipEffects(name, argExprs, stmt);
         return;
     }
 
@@ -5085,6 +5211,7 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
             }
         }
         analyzeUnsafeCBufferCall(name, stmt, argExprs);
+        applyCallOwnershipEffects(name, argExprs, stmt);
         return;
     }
 
@@ -5130,6 +5257,7 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
     }
 
     analyzeUnsafeCBufferCall(name, stmt, argExprs);
+    applyCallOwnershipEffects(name, argExprs, stmt);
 }
 
 void Checker::checkExprStmt(LuxParser::ExprStmtContext* stmt) {
@@ -5160,6 +5288,7 @@ void Checker::checkReturnStmt(LuxParser::ReturnStmtContext* stmt,
         error(stmt, "return type mismatch: expected '" +
                          expectedType->name + "', got '" + exprType->name + "'");
     }
+    markExprAsMoved(expr, stmt);
 }
 
 unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {

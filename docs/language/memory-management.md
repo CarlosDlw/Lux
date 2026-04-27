@@ -132,13 +132,13 @@ Multiple callbacks run in reverse order (LIFO):
 
 ---
 
-## Owned Strings and `freeStr`
+## Strings, Ownership, and `freeStr`
 
 Lux `string` values are not all equivalent from a lifetime perspective.
 
 - String literals like `"hello"` do not need `freeStr`.
 - Borrowed strings such as `Error.message` do not need `freeStr` by themselves.
-- Owned strings returned by APIs that allocate a new buffer must be released manually with `freeStr`.
+- Owned strings returned by APIs that allocate a new buffer are automatically dropped when local scope exits.
 
 Common sources of owned strings:
 
@@ -146,7 +146,7 @@ Common sources of owned strings:
 - `sprintf(...)`
 - string transformation methods that return a new `string`, such as `toUpper()`, `toLower()`, `trim()`, `reverse()`, `capitalize()`, `replace()`, `substring()`, `slice()`, `concat()`, and similar APIs that produce a fresh buffer
 
-If you store the result in a variable, free it when you're done:
+In most cases, if you store the result in a local variable, Lux will auto-drop it at scope exit:
 
 ```lux
 use std::log::{ println };
@@ -154,32 +154,32 @@ use std::log::{ println };
 int32 main() {
     string msg = "an error occurred".capitalize();
     println(msg);
-    freeStr(msg);
     ret 0;
 }
 ```
 
-`defer` is the recommended way to make this robust:
+Use `freeStr` only when you need an early/manual release (before scope exit):
 
 ```lux
 use std::log::{ println };
 
 int32 main() {
     string msg = "an error occurred".capitalize();
-    defer freeStr(msg);
-
+    freeStr(msg); // explicit early release
     println(msg);
     ret 0;
 }
 ```
 
+`freeStr` consumes ownership of its argument. After `freeStr(x)`, `x` is moved and cannot be used.
 Do not call `freeStr` on borrowed strings unless you know the API returned owned memory.
 
 ---
 
-## Automatic Cleanup for Collections
+## Automatic Cleanup for Heap-Backed Locals
 
-`vec<T>`, `map<K, V>`, and `set<T>` are automatically freed when the function they're declared in exits. This prevents memory leaks for the common case of local collections.
+`string`, `vec<T>`, `map<K, V>`, and `set<T>` locals are automatically cleaned up.
+Cleanup happens both on function exit and lexical/control-flow exits where scope ends (for example, block exits and loop `break`/`continue` paths).
 
 ### Vec Auto-Cleanup
 
@@ -329,7 +329,7 @@ extern void free(*void ptr);
 
 | Mechanism | Use Case |
 |-----------|----------|
-| Auto-cleanup | Local `Vec`, `Map`, `Set` — no action needed |
+| Auto-cleanup | Local `string`, `Vec`, `Map`, `Set` — no action needed |
 | `defer` | Explicit cleanup of raw pointers, file handles, etc. |
 | `{}` naked block | Isolate variable scope within a function |
 | `#inline {}` | Inject code into parent scope (no scope boundary) |
@@ -345,3 +345,20 @@ extern void free(*void ptr);
 - [Pointers](pointers.md) — Pointer types, address-of, dereference
 - [Generics](generics.md) — `vec<T>`, `map<K,V>`, `set<T>` methods
 - [Modules](modules.md) — Importing `std::mem`
+
+---
+
+## Ownership Model (Current)
+
+Lux now treats heap-backed values (`string`, `vec`, `map`, `set`) as ownership-tracked values.
+
+- Assignments and returns can transfer ownership.
+- Using a value after it is moved triggers diagnostics (`use-after-move` / `double-move`).
+- `freeStr` consumes its argument ownership.
+- Collection cleanup now performs deep cleanup for string elements/keys/values.
+- Ownership diagnostics are emitted with stable codes (for example `OWN001`, `OWN002`) in LSP.
+
+For interop helpers:
+
+- `fromCStr(...)` / `fromCStrLen(...)` are borrowed.
+- `fromCStrCopy(...)`, `sprintf(...)`, and string transform APIs return owned strings.

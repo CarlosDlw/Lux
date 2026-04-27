@@ -1492,6 +1492,7 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
                             auto* tmp = builder_->CreateAlloca(elemLLTy);
                             builder_->CreateStore(val, tmp);
                             builder_->CreateCall(addFn, { alloca, tmp });
+                            consumeExprIfOwnedLocal(e);
                         }
                     } else {
                         auto addFn = declareBuiltin(
@@ -1506,6 +1507,7 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
                                                                   ti->elementType->isSigned);
                             }
                             builder_->CreateCall(addFn, { alloca, val });
+                            consumeExprIfOwnedLocal(e);
                         }
                     }
                 }
@@ -1541,8 +1543,10 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         if (arrLit) {
             // Collect element values
             std::vector<llvm::Value*> vals;
-            for (auto* e : arrLit->expression())
+            for (auto* e : arrLit->expression()) {
                 vals.push_back(castValue(visit(e)));
+                consumeExprIfOwnedLocal(e);
+            }
 
             auto* elemLLTy = ti->elementType->toLLVMType(
                 *context_, module_->getDataLayout());
@@ -2726,6 +2730,8 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             auto* strLen = builder_->CreateExtractValue(args[0], 1, "freeStr_len");
             auto callee = declareBuiltin("lux_freeStr", voidTy, {ptrTy, usizeTy});
             builder_->CreateCall(callee, {strPtr, strLen});
+            if (ctx->argList() && !ctx->argList()->expression().empty())
+                consumeExprIfOwnedLocal(ctx->argList()->expression()[0]);
         }
         return {};
     }
@@ -3751,6 +3757,7 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
         } else if (auto* s = body->statement()) {
             visit(s);
         }
+        emitBlockExitCleanups(savedLocals);
         locals_ = savedLocals;
     };
 
@@ -3891,8 +3898,11 @@ std::any IRGen::visitForClassicStmt(LuxParser::ForClassicStmtContext* ctx) {
     builder_->SetInsertPoint(bodyBB);
     {
         auto savedLocals = locals_;
+        loopBodyLocalsStack_.push_back(savedLocals);
         for (auto* stmt : ctx->block()->statement())
             visit(stmt);
+        emitBlockExitCleanups(savedLocals);
+        loopBodyLocalsStack_.pop_back();
         locals_ = savedLocals;
     }
     if (!builder_->GetInsertBlock()->getTerminator())
@@ -3971,8 +3981,15 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
 
         // Body
         builder_->SetInsertPoint(bodyBB);
-        for (auto* stmt : ctx->block()->statement())
-            visit(stmt);
+        {
+            auto savedLocals = locals_;
+            loopBodyLocalsStack_.push_back(savedLocals);
+            for (auto* stmt : ctx->block()->statement())
+                visit(stmt);
+            emitBlockExitCleanups(savedLocals);
+            loopBodyLocalsStack_.pop_back();
+            locals_ = savedLocals;
+        }
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateBr(updateBB);
 
@@ -4037,8 +4054,15 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
             auto* elem = builder_->CreateLoad(varType, gep, "elem");
             builder_->CreateStore(elem, elemAlloca);
 
-            for (auto* stmt : ctx->block()->statement())
-                visit(stmt);
+            {
+                auto savedLocals = locals_;
+                loopBodyLocalsStack_.push_back(savedLocals);
+                for (auto* stmt : ctx->block()->statement())
+                    visit(stmt);
+                emitBlockExitCleanups(savedLocals);
+                loopBodyLocalsStack_.pop_back();
+                locals_ = savedLocals;
+            }
             if (!builder_->GetInsertBlock()->getTerminator())
                 builder_->CreateBr(updateBB);
 
@@ -4147,8 +4171,15 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
                 builder_->CreateStore(elem, elemAlloca);
             }
 
-            for (auto* stmt : ctx->block()->statement())
-                visit(stmt);
+            {
+                auto savedLocals = locals_;
+                loopBodyLocalsStack_.push_back(savedLocals);
+                for (auto* stmt : ctx->block()->statement())
+                    visit(stmt);
+                emitBlockExitCleanups(savedLocals);
+                loopBodyLocalsStack_.pop_back();
+                locals_ = savedLocals;
+            }
             if (!builder_->GetInsertBlock()->getTerminator())
                 builder_->CreateBr(updateBB);
 
@@ -4219,8 +4250,15 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
         auto* elem = builder_->CreateLoad(varType, elemPtr, "elem");
         builder_->CreateStore(elem, elemAlloca);
 
-        for (auto* stmt : ctx->block()->statement())
-            visit(stmt);
+        {
+            auto savedLocals = locals_;
+            loopBodyLocalsStack_.push_back(savedLocals);
+            for (auto* stmt : ctx->block()->statement())
+                visit(stmt);
+            emitBlockExitCleanups(savedLocals);
+            loopBodyLocalsStack_.pop_back();
+            locals_ = savedLocals;
+        }
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateBr(updateBB);
 
@@ -4244,14 +4282,20 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
 }
 
 std::any IRGen::visitBreakStmt(LuxParser::BreakStmtContext* /*ctx*/) {
-    if (!loopStack_.empty())
+    if (!loopStack_.empty()) {
+        if (!loopBodyLocalsStack_.empty())
+            emitBlockExitCleanups(loopBodyLocalsStack_.back());
         builder_->CreateBr(loopStack_.back().breakTarget);
+    }
     return {};
 }
 
 std::any IRGen::visitContinueStmt(LuxParser::ContinueStmtContext* /*ctx*/) {
-    if (!loopStack_.empty())
+    if (!loopStack_.empty()) {
+        if (!loopBodyLocalsStack_.empty())
+            emitBlockExitCleanups(loopBodyLocalsStack_.back());
         builder_->CreateBr(loopStack_.back().continueTarget);
+    }
     return {};
 }
 
@@ -4266,8 +4310,11 @@ std::any IRGen::visitLoopStmt(LuxParser::LoopStmtContext* ctx) {
     builder_->SetInsertPoint(bodyBB);
     {
         auto savedLocals = locals_;
+        loopBodyLocalsStack_.push_back(savedLocals);
         for (auto* stmt : ctx->block()->statement())
             visit(stmt);
+        emitBlockExitCleanups(savedLocals);
+        loopBodyLocalsStack_.pop_back();
         locals_ = savedLocals;
     }
     if (!builder_->GetInsertBlock()->getTerminator())
@@ -4316,6 +4363,7 @@ std::any IRGen::visitSwitchStmt(LuxParser::SwitchStmtContext* ctx) {
             auto savedLocals = locals_;
             for (auto* stmt : cc->block()->statement())
                 visit(stmt);
+            emitBlockExitCleanups(savedLocals);
             locals_ = savedLocals;
         }
         if (!builder_->GetInsertBlock()->getTerminator())
@@ -4329,6 +4377,7 @@ std::any IRGen::visitSwitchStmt(LuxParser::SwitchStmtContext* ctx) {
             auto savedLocals = locals_;
             for (auto* stmt : ctx->defaultClause()->block()->statement())
                 visit(stmt);
+            emitBlockExitCleanups(savedLocals);
             locals_ = savedLocals;
         }
         if (!builder_->GetInsertBlock()->getTerminator())
@@ -4360,8 +4409,11 @@ std::any IRGen::visitWhileStmt(LuxParser::WhileStmtContext* ctx) {
     builder_->SetInsertPoint(bodyBB);
     {
         auto savedLocals = locals_;
+        loopBodyLocalsStack_.push_back(savedLocals);
         for (auto* stmt : ctx->block()->statement())
             visit(stmt);
+        emitBlockExitCleanups(savedLocals);
+        loopBodyLocalsStack_.pop_back();
         locals_ = savedLocals;
     }
     if (!builder_->GetInsertBlock()->getTerminator())
@@ -4386,8 +4438,11 @@ std::any IRGen::visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx) {
     builder_->SetInsertPoint(bodyBB);
     {
         auto savedLocals = locals_;
+        loopBodyLocalsStack_.push_back(savedLocals);
         for (auto* stmt : ctx->block()->statement())
             visit(stmt);
+        emitBlockExitCleanups(savedLocals);
+        loopBodyLocalsStack_.pop_back();
         locals_ = savedLocals;
     }
     if (!builder_->GetInsertBlock()->getTerminator())
@@ -4731,8 +4786,12 @@ std::any IRGen::visitArrayLitExpr(LuxParser::ArrayLitExprContext* ctx) {
     }
 
     std::vector<llvm::Value*> vals;
-    for (auto* e : elems)
+    for (auto* e : elems) {
         vals.push_back(castValue(visit(e)));
+        // Ownership move into literal aggregate: invalidate moved locals so
+        // autodrop won't free both source local and destination container.
+        consumeExprIfOwnedLocal(e);
+    }
 
     auto* elemTy = vals[0]->getType();
     auto* arrTy  = llvm::ArrayType::get(elemTy, vals.size());
@@ -6509,6 +6568,8 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 auto* strLen = builder_->CreateExtractValue(args[0], 1, "freeStr_len");
                 auto callee = declareBuiltin("lux_freeStr", llvm::Type::getVoidTy(*context_), {ptrTy, usizeTy});
                 builder_->CreateCall(callee, {strPtr, strLen});
+                if (ctx->argList() && !ctx->argList()->expression().empty())
+                    consumeExprIfOwnedLocal(ctx->argList()->expression()[0]);
                 return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
             }
 
@@ -11730,6 +11791,7 @@ std::any IRGen::visitNakedBlockStmt(LuxParser::NakedBlockStmtContext* ctx) {
     auto savedLocals = locals_;
     for (auto* stmt : ctx->statement())
         visit(stmt);
+    emitBlockExitCleanups(savedLocals);
     locals_ = savedLocals;
     return {};
 }
@@ -11769,6 +11831,7 @@ std::any IRGen::visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext* ctx) {
     if (bb && !bb->getTerminator()) {
         for (size_t i = deferStack_.size(); i-- > deferBase;)
             emitScopeCallback(deferStack_[i].scopeCbCtx);
+        emitBlockExitCleanups(savedLocals);
     }
     deferStack_.resize(deferBase);
     locals_ = savedLocals;
@@ -11918,40 +11981,82 @@ void IRGen::emitScopeCallback(LuxParser::ScopeCallbackContext* ctx) {
 }
 
 void IRGen::emitAutoCleanups(const std::string& skipVar) {
-    auto* voidTy = llvm::Type::getVoidTy(*context_);
-    auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
-
     for (auto& [name, info] : locals_) {
         if (name == skipVar) continue;
-        if (info.isParam) continue;  // borrowed from caller, don't free
-        if (!info.typeInfo || info.typeInfo->kind != TypeKind::Extended) continue;
+        emitCleanupForLocal(name, info);
+    }
+}
 
-        std::string freeFuncName;
-        if (info.typeInfo->extendedKind == "Vec") {
-            auto suffix = getVecSuffix(info.typeInfo->elementType
-                              ? info.typeInfo->elementType
-                              : info.typeInfo);
-            freeFuncName = "lux_vec_free_" + suffix;
-        } else if (info.typeInfo->extendedKind == "Map") {
-            freeFuncName = "lux_map_free_" + info.typeInfo->builtinSuffix;
-        } else if (info.typeInfo->extendedKind == "Set") {
-            auto suffix = info.typeInfo->elementType
-                              ? (info.typeInfo->elementType->builtinSuffix.empty()
-                                     ? "raw" : info.typeInfo->elementType->builtinSuffix)
-                              : info.typeInfo->builtinSuffix;
-            freeFuncName = "lux_set_free_" + suffix;
-        } else {
-            continue;
-        }
+void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
+    auto* voidTy = llvm::Type::getVoidTy(*context_);
+    auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
+    auto* usizeTy = typeRegistry_.lookup("usize")->toLLVMType(*context_, module_->getDataLayout());
+    if (info.isParam) return;
+    if (!info.typeInfo) return;
 
-        auto callee = declareBuiltin(freeFuncName, voidTy, {ptrTy});
-        builder_->CreateCall(callee, {info.alloca});
+    if (info.typeInfo->kind == TypeKind::String) {
+        auto* value = builder_->CreateLoad(info.alloca->getAllocatedType(), info.alloca, name + "_str");
+        auto* strPtr = builder_->CreateExtractValue(value, 0, name + "_ptr");
+        auto* strLen = builder_->CreateExtractValue(value, 1, name + "_len");
+        auto callee = declareBuiltin("lux_freeStr", voidTy, {ptrTy, usizeTy});
+        builder_->CreateCall(callee, {strPtr, strLen});
+        return;
+    }
+
+    if (info.typeInfo->kind != TypeKind::Extended) return;
+
+    std::string freeFuncName;
+    if (info.typeInfo->extendedKind == "Vec") {
+        auto suffix = getVecSuffix(info.typeInfo->elementType
+                          ? info.typeInfo->elementType
+                          : info.typeInfo);
+        freeFuncName = "lux_vec_free_" + suffix;
+    } else if (info.typeInfo->extendedKind == "Map") {
+        freeFuncName = "lux_map_free_" + info.typeInfo->builtinSuffix;
+    } else if (info.typeInfo->extendedKind == "Set") {
+        auto suffix = info.typeInfo->elementType
+                          ? (info.typeInfo->elementType->builtinSuffix.empty()
+                                 ? "raw" : info.typeInfo->elementType->builtinSuffix)
+                          : info.typeInfo->builtinSuffix;
+        freeFuncName = "lux_set_free_" + suffix;
+    } else {
+        return;
+    }
+
+    auto callee = declareBuiltin(freeFuncName, voidTy, {ptrTy});
+    builder_->CreateCall(callee, {info.alloca});
+}
+
+void IRGen::emitBlockExitCleanups(const std::unordered_map<std::string, VarInfo>& savedLocals) {
+    for (const auto& [name, info] : locals_) {
+        if (savedLocals.find(name) != savedLocals.end()) continue;
+        emitCleanupForLocal(name, info);
     }
 }
 
 void IRGen::emitAllCleanups(const std::string& skipVar) {
     emitDeferredCleanups();
     emitAutoCleanups(skipVar);
+}
+
+bool IRGen::isDropTrackedLocal(const VarInfo& info) const {
+    if (!info.typeInfo || info.arrayDims > 0) return false;
+    return info.typeInfo->kind == TypeKind::String ||
+           info.typeInfo->kind == TypeKind::Extended;
+}
+
+void IRGen::consumeLocalByName(const std::string& name) {
+    auto it = locals_.find(name);
+    if (it == locals_.end()) return;
+    if (!isDropTrackedLocal(it->second)) return;
+    auto* nullVal = llvm::Constant::getNullValue(it->second.alloca->getAllocatedType());
+    builder_->CreateStore(nullVal, it->second.alloca);
+}
+
+void IRGen::consumeExprIfOwnedLocal(LuxParser::ExpressionContext* expr) {
+    if (!expr) return;
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr))
+        consumeLocalByName(ident->IDENTIFIER()->getText());
 }
 
 std::any

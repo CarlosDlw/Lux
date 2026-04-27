@@ -19,4 +19,5 @@ struct Diagnostic {
     Severity  severity = Error;
     std::string message;
     std::string source = "lux";
+    std::string code;
 };

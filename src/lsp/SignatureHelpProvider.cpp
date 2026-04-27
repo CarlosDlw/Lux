@@ -308,8 +308,14 @@ SignatureInfo SignatureHelpProvider::buildFromBuiltin(const BuiltinSignature& bs
         if (i > 0) label << ", ";
         std::string pType = bs.paramTypes[i];
         std::string pName = paramNameFromType(pType);
+        bool consumes = false;
+        bool borrows = false;
+        for (size_t idx : bs.consumingArgs) if (idx == i) consumes = true;
+        for (size_t idx : bs.borrowedArgs) if (idx == i) borrows = true;
 
         std::string paramLabel = pType + " " + pName;
+        if (consumes) paramLabel += " [consumes]";
+        else if (borrows) paramLabel += " [borrow]";
         label << paramLabel;
         sig.parameters.push_back({paramLabel});
     }
@@ -321,6 +327,9 @@ SignatureInfo SignatureHelpProvider::buildFromBuiltin(const BuiltinSignature& bs
 
     label << ")";
     sig.label = label.str();
+    if (bs.returnsOwned) {
+        sig.documentation = "Returns owned memory (caller/language autodrop owns this value).";
+    }
 
     return sig;
 }

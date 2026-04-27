@@ -120,6 +120,19 @@ int32 main() {
 }
 ```
 
+## Ownership and Moves
+
+For heap-backed values (`string`, `vec`, `map`, `set`), reassignment and initialization may move ownership.
+
+```t
+string a = fromCStrCopy(c"hello");
+string b = a;      // move
+// println(a);     // compile-time error: use-after-move
+println(b);
+```
+
+Use clone/copy-style APIs when you need to keep both values alive.
+
 ## Compound Assignment
 
 T supports compound assignment operators that combine an operation with assignment:

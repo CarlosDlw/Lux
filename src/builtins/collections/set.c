@@ -1,4 +1,5 @@
 #include "collections/set.h"
+#include "../string/string.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -255,6 +256,12 @@ void lux_set_init_str(lux_set_header* s) {
 }
 
 void lux_set_free_str(lux_set_header* s) {
+    for (size_t i = 0; i < s->cap; i++) {
+        if (s->states[i] != SET_STATE_OCCUPIED) continue;
+        lux_set_string* elem =
+            (lux_set_string*)((uint8_t*)s->keys + i * s->key_size);
+        lux_freeStr(elem->ptr, elem->len);
+    }
     set_core_free(s);
 }
 
@@ -275,10 +282,26 @@ int lux_set_has_str(lux_set_header* s, lux_set_string elem) {
 }
 
 int lux_set_remove_str(lux_set_header* s, lux_set_string elem) {
-    return set_core_remove(s, &elem, hash_str, eq_str);
+    if (s->len == 0) return 0;
+    uint64_t h = hash_str(&elem);
+    int found;
+    size_t slot = set_core_find(s, &elem, h, eq_str, &found);
+    if (!found) return 0;
+    lux_set_string* stored =
+        (lux_set_string*)((uint8_t*)s->keys + slot * s->key_size);
+    lux_freeStr(stored->ptr, stored->len);
+    s->states[slot] = SET_STATE_TOMBSTONE;
+    s->len--;
+    return 1;
 }
 
 void lux_set_clear_str(lux_set_header* s) {
+    for (size_t i = 0; i < s->cap; i++) {
+        if (s->states[i] != SET_STATE_OCCUPIED) continue;
+        lux_set_string* elem =
+            (lux_set_string*)((uint8_t*)s->keys + i * s->key_size);
+        lux_freeStr(elem->ptr, elem->len);
+    }
     set_core_clear(s);
 }
 

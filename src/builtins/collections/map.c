@@ -1,4 +1,5 @@
 #include "collections/map.h"
+#include "../string/string.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -309,6 +310,13 @@ void lux_map_init_str_##VS(lux_map_header* m) {                        \
     map_core_init(m, sizeof(lux_map_string), sizeof(VT));                 \
 }                                                                            \
 void lux_map_free_str_##VS(lux_map_header* m) {                        \
+    for (size_t i = 0; i < m->cap; i++) {                              \
+        if (m->states[i] == MAP_STATE_OCCUPIED) {                      \
+            lux_map_string* key =                                       \
+                (lux_map_string*)((uint8_t*)m->keys + i * m->key_size); \
+            lux_freeStr(key->ptr, key->len);                           \
+        }                                                                \
+    }                                                                    \
     map_core_free(m);                                                        \
 }                                                                            \
 size_t lux_map_len_str_##VS(const lux_map_header* m) {                 \
@@ -319,7 +327,15 @@ int lux_map_isEmpty_str_##VS(const lux_map_header* m) {                \
 }                                                                            \
 void lux_map_set_str_##VS(lux_map_header* m,                           \
                              lux_map_string key, VT val) {               \
-    map_core_set(m, &key, &val, hash_key_str, eq_key_str);                   \
+    uint64_t h = hash_key_str(&key);                                          \
+    int found;                                                                 \
+    size_t slot = map_core_find(m, &key, h, eq_key_str, &found);              \
+    if (found) {                                                               \
+        lux_freeStr(key.ptr, key.len);                                         \
+        memcpy(val_at(m, slot), &val, m->val_size);                            \
+        return;                                                                 \
+    }                                                                           \
+    map_core_set(m, &key, &val, hash_key_str, eq_key_str);                     \
 }                                                                            \
 VT lux_map_get_str_##VS(lux_map_header* m,                             \
                            lux_map_string key) {                         \
@@ -343,10 +359,26 @@ int lux_map_has_str_##VS(lux_map_header* m,                            \
 }                                                                            \
 int lux_map_remove_str_##VS(lux_map_header* m,                         \
                                lux_map_string key) {                     \
-    return map_core_remove(m, &key, hash_key_str, eq_key_str);               \
+    if (m->len == 0) return 0;                                                 \
+    uint64_t h = hash_key_str(&key);                                           \
+    int found;                                                                  \
+    size_t slot = map_core_find(m, &key, h, eq_key_str, &found);               \
+    if (!found) return 0;                                                       \
+    lux_map_string* stored_key =                                                \
+        (lux_map_string*)((uint8_t*)m->keys + slot * m->key_size);             \
+    lux_freeStr(stored_key->ptr, stored_key->len);                              \
+    m->states[slot] = MAP_STATE_TOMBSTONE;                                      \
+    m->len--;                                                                    \
+    return 1;                                                                    \
 }                                                                            \
 void lux_map_clear_str_##VS(lux_map_header* m) {                       \
-    map_core_clear(m);                                                       \
+    for (size_t i = 0; i < m->cap; i++) {                                       \
+        if (m->states[i] != MAP_STATE_OCCUPIED) continue;                       \
+        lux_map_string* key_ptr =                                                \
+            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);             \
+        lux_freeStr(key_ptr->ptr, key_ptr->len);                                 \
+    }                                                                            \
+    map_core_clear(m);                                                           \
 }                                                                            \
 void lux_map_keys_str_##VS(lux_map_header* m,                          \
                                lux_map_vec_out* out) {                   \
@@ -378,6 +410,13 @@ void lux_map_init_##KS##_str(lux_map_header* m) {                      \
     map_core_init(m, sizeof(KT), sizeof(lux_map_string));                 \
 }                                                                            \
 void lux_map_free_##KS##_str(lux_map_header* m) {                      \
+    for (size_t i = 0; i < m->cap; i++) {                              \
+        if (m->states[i] == MAP_STATE_OCCUPIED) {                      \
+            lux_map_string* val =                                       \
+                (lux_map_string*)((uint8_t*)m->values + i * m->val_size); \
+            lux_freeStr(val->ptr, val->len);                           \
+        }                                                                \
+    }                                                                    \
     map_core_free(m);                                                        \
 }                                                                            \
 size_t lux_map_len_##KS##_str(const lux_map_header* m) {               \
@@ -388,7 +427,18 @@ int lux_map_isEmpty_##KS##_str(const lux_map_header* m) {              \
 }                                                                            \
 void lux_map_set_##KS##_str(lux_map_header* m, KT key,                \
                                lux_map_string val) {                     \
-    map_core_set(m, &key, &val, HASH_FN, EQ_FN);                            \
+    uint64_t h = HASH_FN(&key);                                                \
+    int found;                                                                  \
+    size_t slot = map_core_find(m, &key, h, EQ_FN, &found);                    \
+    if (found) {                                                                \
+        lux_map_string* old_val =                                               \
+            (lux_map_string*)((uint8_t*)m->values + slot * m->val_size);        \
+        if (old_val->ptr != val.ptr || old_val->len != val.len)                 \
+            lux_freeStr(old_val->ptr, old_val->len);                            \
+        memcpy(val_at(m, slot), &val, m->val_size);                             \
+        return;                                                                  \
+    }                                                                            \
+    map_core_set(m, &key, &val, HASH_FN, EQ_FN);                                \
 }                                                                            \
 lux_map_string lux_map_get_##KS##_str(lux_map_header* m, KT key) {  \
     lux_map_string result;                                                \
@@ -408,10 +458,26 @@ int lux_map_has_##KS##_str(lux_map_header* m, KT key) {               \
     return map_core_has(m, &key, HASH_FN, EQ_FN);                           \
 }                                                                            \
 int lux_map_remove_##KS##_str(lux_map_header* m, KT key) {            \
-    return map_core_remove(m, &key, HASH_FN, EQ_FN);                        \
+    if (m->len == 0) return 0;                                                 \
+    uint64_t h = HASH_FN(&key);                                                \
+    int found;                                                                  \
+    size_t slot = map_core_find(m, &key, h, EQ_FN, &found);                    \
+    if (!found) return 0;                                                       \
+    lux_map_string* stored_val =                                                \
+        (lux_map_string*)((uint8_t*)m->values + slot * m->val_size);           \
+    lux_freeStr(stored_val->ptr, stored_val->len);                              \
+    m->states[slot] = MAP_STATE_TOMBSTONE;                                      \
+    m->len--;                                                                    \
+    return 1;                                                                    \
 }                                                                            \
 void lux_map_clear_##KS##_str(lux_map_header* m) {                    \
-    map_core_clear(m);                                                       \
+    for (size_t i = 0; i < m->cap; i++) {                                       \
+        if (m->states[i] != MAP_STATE_OCCUPIED) continue;                       \
+        lux_map_string* val_ptr =                                                \
+            (lux_map_string*)((uint8_t*)m->values + i * m->val_size);           \
+        lux_freeStr(val_ptr->ptr, val_ptr->len);                                 \
+    }                                                                            \
+    map_core_clear(m);                                                           \
 }                                                                            \
 void lux_map_keys_##KS##_str(lux_map_header* m,                       \
                                  lux_map_vec_out* out) {                 \
@@ -458,6 +524,15 @@ void lux_map_init_str_str(lux_map_header* m) {
     map_core_init(m, sizeof(lux_map_string), sizeof(lux_map_string));
 }
 void lux_map_free_str_str(lux_map_header* m) {
+    for (size_t i = 0; i < m->cap; i++) {
+        if (m->states[i] != MAP_STATE_OCCUPIED) continue;
+        lux_map_string* key =
+            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);
+        lux_map_string* val =
+            (lux_map_string*)((uint8_t*)m->values + i * m->val_size);
+        lux_freeStr(key->ptr, key->len);
+        lux_freeStr(val->ptr, val->len);
+    }
     map_core_free(m);
 }
 size_t lux_map_len_str_str(const lux_map_header* m) {
@@ -468,6 +543,18 @@ int lux_map_isEmpty_str_str(const lux_map_header* m) {
 }
 void lux_map_set_str_str(lux_map_header* m,
                             lux_map_string key, lux_map_string val) {
+    uint64_t h = hash_key_str(&key);
+    int found;
+    size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
+    if (found) {
+        lux_map_string* old_val =
+            (lux_map_string*)((uint8_t*)m->values + slot * m->val_size);
+        lux_freeStr(key.ptr, key.len);
+        if (old_val->ptr != val.ptr || old_val->len != val.len)
+            lux_freeStr(old_val->ptr, old_val->len);
+        memcpy(val_at(m, slot), &val, m->val_size);
+        return;
+    }
     map_core_set(m, &key, &val, hash_key_str, eq_key_str);
 }
 lux_map_string lux_map_get_str_str(lux_map_header* m,
@@ -491,9 +578,31 @@ int lux_map_has_str_str(lux_map_header* m, lux_map_string key) {
     return map_core_has(m, &key, hash_key_str, eq_key_str);
 }
 int lux_map_remove_str_str(lux_map_header* m, lux_map_string key) {
-    return map_core_remove(m, &key, hash_key_str, eq_key_str);
+    if (m->len == 0) return 0;
+    uint64_t h = hash_key_str(&key);
+    int found;
+    size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
+    if (!found) return 0;
+    lux_map_string* stored_key =
+        (lux_map_string*)((uint8_t*)m->keys + slot * m->key_size);
+    lux_map_string* stored_val =
+        (lux_map_string*)((uint8_t*)m->values + slot * m->val_size);
+    lux_freeStr(stored_key->ptr, stored_key->len);
+    lux_freeStr(stored_val->ptr, stored_val->len);
+    m->states[slot] = MAP_STATE_TOMBSTONE;
+    m->len--;
+    return 1;
 }
 void lux_map_clear_str_str(lux_map_header* m) {
+    for (size_t i = 0; i < m->cap; i++) {
+        if (m->states[i] != MAP_STATE_OCCUPIED) continue;
+        lux_map_string* key_ptr =
+            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);
+        lux_map_string* val_ptr =
+            (lux_map_string*)((uint8_t*)m->values + i * m->val_size);
+        lux_freeStr(key_ptr->ptr, key_ptr->len);
+        lux_freeStr(val_ptr->ptr, val_ptr->len);
+    }
     map_core_clear(m);
 }
 void lux_map_keys_str_str(lux_map_header* m, lux_map_vec_out* out) {
@@ -567,6 +676,12 @@ void lux_map_init_str_raw(lux_map_header* m, size_t val_size) {
 }
 
 void lux_map_free_str_raw(lux_map_header* m) {
+    for (size_t i = 0; i < m->cap; i++) {
+        if (m->states[i] != MAP_STATE_OCCUPIED) continue;
+        lux_map_string* key =
+            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);
+        lux_freeStr(key->ptr, key->len);
+    }
     map_core_free(m);
 }
 
@@ -576,6 +691,14 @@ size_t lux_map_len_str_raw(const lux_map_header* m) {
 
 void lux_map_set_str_raw(lux_map_header* m, lux_map_string key,
                           const void* val) {
+    uint64_t h = hash_key_str(&key);
+    int found;
+    size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
+    if (found) {
+        lux_freeStr(key.ptr, key.len);
+        memcpy(val_at(m, slot), val, m->val_size);
+        return;
+    }
     map_core_set(m, &key, val, hash_key_str, eq_key_str);
 }
 
@@ -610,9 +733,25 @@ int lux_map_isEmpty_str_raw(const lux_map_header* m) {
 }
 
 int lux_map_remove_str_raw(lux_map_header* m, lux_map_string key) {
-    return map_core_remove(m, &key, hash_key_str, eq_key_str);
+    if (m->len == 0) return 0;
+    uint64_t h = hash_key_str(&key);
+    int found;
+    size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
+    if (!found) return 0;
+    lux_map_string* stored_key =
+        (lux_map_string*)((uint8_t*)m->keys + slot * m->key_size);
+    lux_freeStr(stored_key->ptr, stored_key->len);
+    m->states[slot] = MAP_STATE_TOMBSTONE;
+    m->len--;
+    return 1;
 }
 
 void lux_map_clear_str_raw(lux_map_header* m) {
+    for (size_t i = 0; i < m->cap; i++) {
+        if (m->states[i] != MAP_STATE_OCCUPIED) continue;
+        lux_map_string* key_ptr =
+            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);
+        lux_freeStr(key_ptr->ptr, key_ptr->len);
+    }
     map_core_clear(m);
 }

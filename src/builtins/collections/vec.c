@@ -1,4 +1,5 @@
 #include "vec.h"
+#include "../string/string.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -431,6 +432,14 @@ static int str_equal(lux_string a, lux_string b) {
     return a.len == b.len && (a.ptr == b.ptr || memcmp(a.ptr, b.ptr, a.len) == 0);
 }
 
+static lux_string clone_string_value(lux_string s) {
+    char* buf = (char*)malloc(s.len + 1);
+    if (!buf) return (lux_string){ "", 0 };
+    if (s.len > 0 && s.ptr) memcpy(buf, s.ptr, s.len);
+    buf[s.len] = '\0';
+    return (lux_string){ buf, s.len };
+}
+
 // ── Creation / destruction ──────────────────────────────────────────────────
 void lux_vec_init_str(lux_vec_header* v) {
     v->ptr = NULL; v->len = 0; v->cap = 0;
@@ -439,6 +448,10 @@ void lux_vec_init_cap_str(lux_vec_header* v, size_t cap) {
     v->ptr = malloc(cap * sizeof(lux_string)); v->len = 0; v->cap = cap;
 }
 void lux_vec_free_str(lux_vec_header* v) {
+    lux_string* d = vec_data_str(v);
+    for (size_t i = 0; i < v->len; i++) {
+        lux_freeStr(d[i].ptr, d[i].len);
+    }
     free(v->ptr); v->ptr = NULL; v->len = 0; v->cap = 0;
 }
 
@@ -468,7 +481,10 @@ void lux_vec_set_str(lux_vec_header* v, size_t idx, lux_string val) {
         fprintf(stderr, "lux: vec index out of bounds: %zu >= %zu\n", idx, v->len);
         exit(1);
     }
-    vec_data_str(v)[idx] = val;
+    lux_string* d = vec_data_str(v);
+    if (d[idx].ptr == val.ptr && d[idx].len == val.len) return;
+    lux_freeStr(d[idx].ptr, d[idx].len);
+    d[idx] = val;
 }
 
 // ── Mutation ────────────────────────────────────────────────────────────────
@@ -510,10 +526,19 @@ lux_string lux_vec_removeSwap_str(lux_vec_header* v, size_t idx) {
     v->len--;
     return val;
 }
-void lux_vec_clear_str(lux_vec_header* v) { v->len = 0; }
+void lux_vec_clear_str(lux_vec_header* v) {
+    lux_string* d = vec_data_str(v);
+    for (size_t i = 0; i < v->len; i++) {
+        lux_freeStr(d[i].ptr, d[i].len);
+    }
+    v->len = 0;
+}
 void lux_vec_fill_str(lux_vec_header* v, lux_string val) {
     lux_string* d = vec_data_str(v);
-    for (size_t i = 0; i < v->len; i++) d[i] = val;
+    for (size_t i = 0; i < v->len; i++) {
+        lux_freeStr(d[i].ptr, d[i].len);
+        d[i] = clone_string_value(val);
+    }
 }
 void lux_vec_swap_str(lux_vec_header* v, size_t i, size_t j) {
     if (i >= v->len || j >= v->len) {
@@ -535,13 +560,26 @@ void lux_vec_shrink_str(lux_vec_header* v) {
     }
 }
 void lux_vec_resize_str(lux_vec_header* v, size_t len, lux_string fill) {
-    vec_grow_str(v, len);
     lux_string* d = vec_data_str(v);
-    for (size_t i = v->len; i < len; i++) d[i] = fill;
+    if (len < v->len) {
+        for (size_t i = len; i < v->len; i++)
+            lux_freeStr(d[i].ptr, d[i].len);
+        v->len = len;
+        return;
+    }
+    vec_grow_str(v, len);
+    d = vec_data_str(v);
+    for (size_t i = v->len; i < len; i++) d[i] = clone_string_value(fill);
     v->len = len;
 }
 void lux_vec_truncate_str(lux_vec_header* v, size_t len) {
-    if (len < v->len) v->len = len;
+    if (len < v->len) {
+        lux_string* d = vec_data_str(v);
+        for (size_t i = len; i < v->len; i++) {
+            lux_freeStr(d[i].ptr, d[i].len);
+        }
+        v->len = len;
+    }
 }
 
 // ── Search (string comparison via memcmp) ───────────────────────────────────
@@ -573,6 +611,7 @@ size_t lux_vec_count_str(const lux_vec_header* v, lux_string val) {
 
 // ── Reorder ─────────────────────────────────────────────────────────────────
 void lux_vec_reverse_str(lux_vec_header* v) {
+    if (v->len <= 1) return;
     lux_string* d = vec_data_str(v);
     for (size_t i = 0, j = v->len - 1; i < j; i++, j--) {
         lux_string tmp = d[i]; d[i] = d[j]; d[j] = tmp;

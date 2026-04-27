@@ -205,15 +205,16 @@ node->value = 10;
 ### Return
 
 ```
-returnStmt → 'ret' expression ';'
+returnStmt → 'ret' expression? ';'
 ```
 
 ### If / Else
 
 ```
-ifStmt → 'if' ('(' expression ')' | expression) block elseIfClause* elseClause?
-elseIfClause → 'else' 'if' ('(' expression ')' | expression) block
-elseClause → 'else' block
+ifStmt → 'if' ('(' expression ')' | expression) ifBody elseIfClause* elseClause?
+elseIfClause → 'else' 'if' ('(' expression ')' | expression) ifBody
+elseClause → 'else' ifBody
+ifBody → block | statement
 ```
 
 Parentheses around the condition are optional.
@@ -337,7 +338,7 @@ IDENTIFIER '::' IDENTIFIER                                                      
 
 ```
 '*' expression              // dereference
-'&' IDENTIFIER              // address-of
+'&' expression              // address-of
 '-' expression              // negation
 'spawn' expression           // spawn task
 'await' expression           // await task
@@ -421,7 +422,7 @@ fnTypeSpec → 'fn' '(' (typeSpec (',' typeSpec)*)? ')' '->' typeSpec
 | Literal | Pattern | Examples |
 |---------|---------|----------|
 | Integer | `[0-9]+` | `42`, `0`, `1000000` |
-| Float | `[0-9]+.[0-9]+` or scientific | `3.14`, `.5`, `1e10`, `2.5e-3` |
+| Float | `[0-9]+.[0-9]+` or scientific | `3.14`, `1e10`, `2.5e-3` |
 | Bool | `true` \| `false` | `true`, `false` |
 | Char | `'c'` with escapes | `'a'`, `'\n'`, `'\x41'` |
 | String | `"..."` with escapes | `"hello"`, `"line\n"` |

@@ -72,6 +72,8 @@ struct TypeInfo {
     unsigned arraySize = 0;                  // >0 for fixed-size arrays: [N]T
     std::vector<unsigned> arraySizes;        // multi-dim array sizes for type aliases: [3][3]T → {3,3}
     std::vector<const TypeInfo*> tupleElements; // non-empty only for Tuple
+    bool dropTracked = false;                   // ownership/autodrop relevant type
+    bool moveOnly = false;                      // value should move instead of implicit copy
 
     // User-defined generic instance metadata (set by Checker during monomorphization)
     bool isGenericInstance = false;                     // true when Foo<int32> was instantiated

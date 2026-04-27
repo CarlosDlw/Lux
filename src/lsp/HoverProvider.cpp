@@ -4499,12 +4499,21 @@ std::string HoverProvider::formatBuiltinSignature(const BuiltinSignature& sig) {
     for (size_t i = 0; i < sig.paramTypes.size(); i++) {
         if (i > 0) ss << ", ";
         ss << sig.paramTypes[i];
+        bool consumes = false;
+        bool borrows = false;
+        for (size_t idx : sig.consumingArgs) if (idx == i) consumes = true;
+        for (size_t idx : sig.borrowedArgs) if (idx == i) borrows = true;
+        if (consumes) ss << " [consumes]";
+        else if (borrows) ss << " [borrow]";
     }
     if (sig.isVariadic) {
         if (!sig.paramTypes.empty()) ss << ", ";
         ss << "...";
     }
     ss << ")\n```";
+    if (sig.returnsOwned) {
+        ss << "\nReturns owned memory.";
+    }
     return ss.str();
 }
 

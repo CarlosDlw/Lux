@@ -45,12 +45,22 @@ private:
 
     // Variable info tracked per-function scope
     struct VarInfo {
+        enum class OwnershipState {
+            Owned,
+            BorrowedImm,
+            BorrowedMut,
+            Moved,
+            Escaped,
+            Dropped,
+        };
+
         const TypeInfo* type;
         unsigned arrayDims = 0;
         bool initialized = true;  // false when declared without initializer
         bool used = false;         // set to true when the variable is read
         antlr4::Token* declToken = nullptr; // for warning location
         unsigned scopeDepth = 0;   // nesting depth at declaration point
+        OwnershipState ownership = OwnershipState::BorrowedImm;
 
         // Phase 1: lightweight buffer tracking for pointer-based C calls
         bool hasBufferCapacity = false;
@@ -198,6 +208,15 @@ private:
     void trackVarNumericRangeFromExpr(const std::string& varName,
                                       LuxParser::ExpressionContext* expr,
                                       const TypeInfo* declaredType);
+    bool isDropTrackedType(const TypeInfo* type, unsigned arrayDims = 0) const;
+    bool exprConsumesOwnership(LuxParser::ExpressionContext* expr) const;
+    bool isBorrowedStringExpr(LuxParser::ExpressionContext* expr) const;
+    void updateOwnershipOnInitialization(VarInfo& vi, LuxParser::ExpressionContext* expr);
+    void markExprAsMoved(LuxParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx);
+    void validateExprNotMoved(LuxParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx);
+    void applyCallOwnershipEffects(const std::string& calleeName,
+                                   const std::vector<LuxParser::ExpressionContext*>& args,
+                                   antlr4::ParserRuleContext* whereCtx);
     void analyzeUnsafeCBufferCall(const std::string& funcName,
                                   antlr4::ParserRuleContext* ctx,
                                   const std::vector<LuxParser::ExpressionContext*>& args);

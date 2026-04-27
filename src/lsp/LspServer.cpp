@@ -301,7 +301,7 @@ void LspServer::publishDiagnostics(const std::string& uri,
 
     json lspDiags = json::array();
     for (auto& d : diags) {
-        lspDiags.push_back({
+        json item = {
             {"range", {
                 {"start", {{"line", d.line}, {"character", d.col}}},
                 {"end",   {{"line", d.endLine}, {"character", d.endCol}}}
@@ -309,7 +309,10 @@ void LspServer::publishDiagnostics(const std::string& uri,
             {"severity", static_cast<int>(d.severity)},
             {"source", d.source},
             {"message", d.message}
-        });
+        };
+        if (!d.code.empty())
+            item["code"] = d.code;
+        lspDiags.push_back(std::move(item));
     }
 
     sendNotification("textDocument/publishDiagnostics", {

@@ -2,13 +2,18 @@
 
 void BuiltinRegistry::add(std::string name, std::string returnType,
                            std::vector<std::string> params, bool poly,
-                           bool variadic) {
+                           bool variadic, bool returnsOwned,
+                           std::vector<size_t> consumingArgs,
+                           std::vector<size_t> borrowedArgs) {
     BuiltinSignature sig;
     sig.name = name;
     sig.returnType = returnType;
     sig.paramTypes = std::move(params);
     sig.isPolymorphic = poly;
     sig.isVariadic = variadic;
+    sig.returnsOwned = returnsOwned;
+    sig.consumingArgs = std::move(consumingArgs);
+    sig.borrowedArgs = std::move(borrowedArgs);
     signatures_[std::move(name)] = std::move(sig);
 }
 
@@ -29,6 +34,29 @@ const std::string& BuiltinRegistry::lookupConstant(const std::string& name) cons
     return empty;
 }
 
+bool BuiltinRegistry::returnsOwned(const std::string& name) const {
+    auto it = signatures_.find(name);
+    return it != signatures_.end() ? it->second.returnsOwned : false;
+}
+
+bool BuiltinRegistry::argConsumes(const std::string& name, size_t argIndex) const {
+    auto it = signatures_.find(name);
+    if (it == signatures_.end()) return false;
+    for (size_t i : it->second.consumingArgs) {
+        if (i == argIndex) return true;
+    }
+    return false;
+}
+
+bool BuiltinRegistry::argBorrows(const std::string& name, size_t argIndex) const {
+    auto it = signatures_.find(name);
+    if (it == signatures_.end()) return false;
+    for (size_t i : it->second.borrowedArgs) {
+        if (i == argIndex) return true;
+    }
+    return false;
+}
+
 BuiltinRegistry::BuiltinRegistry() {
     // ═════════════════════════════════════════════════════════════════════
     // std::log — polymorphic print functions (1 arg, any type)
@@ -38,18 +66,18 @@ BuiltinRegistry::BuiltinRegistry() {
     add("eprintln",  "void", {"_any"}, true);
     add("eprint",    "void", {"_any"}, true);
     add("dbg",       "_any", {"_any"}, true);
-    add("sprintf",   "string", {"string"}, true, true);
+    add("sprintf",   "string", {"string"}, true, true, true);
 
     // ═════════════════════════════════════════════════════════════════════
     // std::io — input/output
     // ═════════════════════════════════════════════════════════════════════
-    add("readLine",       "string", {});
+    add("readLine",       "string", {}, false, false, true);
     add("readChar",       "char",   {});
     add("readInt",        "int64",  {});
     add("readFloat",      "float64", {});
     add("readBool",       "bool",   {});
-    add("readAll",        "string", {});
-    add("prompt",         "string", {"string"});
+    add("readAll",        "string", {}, false, false, true);
+    add("prompt",         "string", {"string"}, false, false, true, {}, {0});
     add("promptInt",      "int64",  {"string"});
     add("promptFloat",    "float64", {"string"});
     add("promptBool",     "bool",   {"string"});
@@ -57,8 +85,8 @@ BuiltinRegistry::BuiltinRegistry() {
     add("readLines",      "Vec<string>", {});
     add("readNBytes",     "Vec<uint8>",  {"usize"});
     add("isEOF",          "bool",   {});
-    add("readPassword",   "string", {});
-    add("promptPassword", "string", {"string"});
+    add("readPassword",   "string", {}, false, false, true);
+    add("promptPassword", "string", {"string"}, false, false, true, {}, {0});
     add("flush",          "void",   {});
     add("flushErr",       "void",   {});
     add("isTTY",          "bool",   {});
@@ -126,24 +154,24 @@ BuiltinRegistry::BuiltinRegistry() {
     // Transform (string) → string
     add("toUpper",    "_any", {"_any"}, true);
     add("toLower",    "_any", {"_any"}, true);
-    add("trim",       "string", {"string"});
-    add("trimLeft",   "string", {"string"});
-    add("trimRight",  "string", {"string"});
-    add("reverse",    "string", {"string"});
+    add("trim",       "string", {"string"}, false, false, true, {}, {0});
+    add("trimLeft",   "string", {"string"}, false, false, true, {}, {0});
+    add("trimRight",  "string", {"string"}, false, false, true, {}, {0});
+    add("reverse",    "string", {"string"}, false, false, true, {}, {0});
 
     // Transform (string, string, string) → string
-    add("replace",      "string", {"string", "string", "string"});
-    add("replaceFirst", "string", {"string", "string", "string"});
+    add("replace",      "string", {"string", "string", "string"}, false, false, true, {}, {0,1,2});
+    add("replaceFirst", "string", {"string", "string", "string"}, false, false, true, {}, {0,1,2});
 
     // Repeat / Pad
-    add("repeat",    "string", {"string", "usize"});
+    add("repeat",    "string", {"string", "usize"}, false, false, true, {}, {0});
     add("padLeft",   "string", {"string", "usize", "char"});
     add("padRight",  "string", {"string", "usize", "char"});
 
     // Extraction
-    add("substring", "string", {"string", "usize", "usize"});
+    add("substring", "string", {"string", "usize", "usize"}, false, false, true, {}, {0});
     add("charAt",    "char",   {"string", "usize"});
-    add("slice",     "string", {"string", "int64", "int64"});
+    add("slice",     "string", {"string", "int64", "int64"}, false, false, true, {}, {0});
 
     // Parsing
     add("parseInt",      "int64",  {"string"});
@@ -153,12 +181,12 @@ BuiltinRegistry::BuiltinRegistry() {
     // Splitting & Joining
     add("split",        "Vec<string>", {"string", "string"});
     add("splitN",       "Vec<string>", {"string", "string", "usize"});
-    add("joinVec",      "string",      {"Vec<string>", "string"});
+    add("joinVec",      "string",      {"Vec<string>", "string"}, false, false, true, {}, {0,1});
     add("lines",        "Vec<string>", {"string"});
     add("chars",        "Vec<char>",   {"string"});
-    add("fromChars",    "string",      {"Vec<char>"});
+    add("fromChars",    "string",      {"Vec<char>"}, false, false, true, {}, {0});
     add("toBytes",      "Vec<uint8>",  {"string"});
-    add("fromBytes",    "string",      {"Vec<uint8>"});
+    add("fromBytes",    "string",      {"Vec<uint8>"}, false, false, true, {}, {0});
 
     // Conversion
     add("fromCharCode",  "char",   {"int32"});
@@ -455,5 +483,5 @@ BuiltinRegistry::BuiltinRegistry() {
     add("fromCStr",      "string",  {"*char"});
     add("fromCStrCopy",  "string",  {"*char"});
     add("fromCStrLen",   "string",  {"*char", "usize"});
-    add("freeStr",       "void",    {"string"});
+    add("freeStr",       "void",    {"string"}, false, false, false, {0});
 }

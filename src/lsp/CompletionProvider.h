@@ -105,6 +105,7 @@ private:
         std::string scopeName;       // for Name::| — the type/enum name
         std::string modulePath;      // for use: accumulated path (e.g. "std::log")
         unsigned    indexDepth = 0;   // for dot: number of [..] index accesses on receiver
+        unsigned    derefDepth = 0;   // for dot: number of explicit unary * before receiver
         std::vector<std::string> methodChain; // for dot: chained members (fields/methods), e.g. {"message", "len"}
         bool closingCharPresent = false; // for IncludeHeader: '>' or '"' already exists after cursor
     };

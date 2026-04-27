@@ -168,6 +168,7 @@ private:
         const TypeInfo*   typeInfo;
         unsigned          arrayDims = 0; // 0 = scalar, 1 = []T, 2 = [][]T, etc.
         bool              isParam   = false; // true = borrowed from caller, skip auto-free
+        std::vector<unsigned> fixedArraySizes; // declared [N] sizes (incl. pointer-to-array)
     };
     std::unordered_map<std::string, VarInfo> locals_;
 

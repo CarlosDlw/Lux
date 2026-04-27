@@ -1699,7 +1699,7 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         return {};
     }
 
-    if (dims > 0) {
+    if (dims > 0 && (!ti || ti->kind != TypeKind::Pointer)) {
         // Array variable initialization
         auto* elemType = ti->toLLVMType(*context_, module_->getDataLayout());
 
@@ -1757,7 +1757,23 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         // Scalar variable (existing flow)
         auto* type   = ti->toLLVMType(*context_, module_->getDataLayout());
         auto* alloca = builder_->CreateAlloca(type, nullptr, name);
-        locals_[name] = { alloca, ti, 0 };
+        // For pointer-to-array declarations (e.g. *[N]T), keep array depth
+        // as metadata for method/index inference, but keep storage scalar.
+        unsigned trackedDims = (ti && ti->kind == TypeKind::Pointer) ? dims : 0;
+        std::vector<unsigned> pointerArraySizes;
+        if (ti && ti->kind == TypeKind::Pointer && ctx->typeSpec() &&
+            ctx->typeSpec()->STAR() && !ctx->typeSpec()->typeSpec().empty()) {
+            auto* inner = ctx->typeSpec()->typeSpec(0);
+            while (inner && inner->LBRACKET()) {
+                if (!inner->INT_LIT()) break;
+                pointerArraySizes.push_back(std::stoul(inner->INT_LIT()->getText()));
+                if (inner->typeSpec().empty()) break;
+                inner = inner->typeSpec(0);
+            }
+        }
+        VarInfo vi{ alloca, ti, trackedDims };
+        vi.fixedArraySizes = std::move(pointerArraySizes);
+        locals_[name] = std::move(vi);
 
         if (!ctx->expression()) {
             // No initializer — zero-initialize
@@ -11795,11 +11811,15 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
 }
 
 unsigned IRGen::countArrayDims(LuxParser::TypeSpecContext* ctx) {
+    if (!ctx) return 0;
+
+    // Preserve array depth under pointer wrappers, e.g. *[5]int32 -> 1.
+    if (ctx->STAR() && !ctx->typeSpec().empty())
+        return countArrayDims(ctx->typeSpec(0));
+
     unsigned dims = 0;
     while (!ctx->typeSpec().empty()) {
         // Only count [] array dimensions, not other compound types
-        if (ctx->STAR())
-            break;
         if (ctx->TUPLE() || ctx->VEC() || ctx->MAP() || ctx->SET() ||
             ctx->LT() || ctx->fnTypeSpec())
             break;
@@ -11831,6 +11851,9 @@ unsigned IRGen::resolveExprArrayDims(LuxParser::ExpressionContext* ctx) {
 
     if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(ctx))
         return resolveExprArrayDims(paren->expression());
+
+    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(ctx))
+        return resolveExprArrayDims(deref->expression());
 
     if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(ctx))
         return countArrayDims(cast->typeSpec());
@@ -12421,10 +12444,30 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
             recvArrayDims = it->second.arrayDims;
         }
     }
+    if (receiverVarName.empty()) {
+        auto* rootExpr = baseExpr;
+        while (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(rootExpr))
+            rootExpr = paren->expression();
+        if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(rootExpr)) {
+            rootExpr = deref->expression();
+            while (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(rootExpr))
+                rootExpr = paren->expression();
+        }
+        if (auto* identBase = dynamic_cast<LuxParser::IdentExprContext*>(rootExpr)) {
+            receiverVarName = identBase->IDENTIFIER()->getText();
+            auto it = locals_.find(receiverVarName);
+            if (it != locals_.end()) {
+                receiverTI = it->second.typeInfo;
+                recvArrayDims = it->second.arrayDims;
+            }
+        }
+    }
 
     // Fallback: resolve type for non-identifier expressions (chained calls, etc.)
     if (!receiverTI)
         receiverTI = resolveExprTypeInfo(baseExpr);
+    if (recvArrayDims == 0)
+        recvArrayDims = resolveExprArrayDims(baseExpr);
 
     // Auto-dereference: ptr.method() → pointee.method()
     if (receiverTI && receiverTI->kind == TypeKind::Pointer && receiverTI->pointeeType)
@@ -13071,8 +13114,11 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         }
     }
 
-    // Evaluate receiver
-    auto* receiverVal = castValue(visit(ctx->expression()));
+    // Evaluate receiver lazily; array-method path does not require it and
+    // may involve deref forms that should be handled through array metadata.
+    llvm::Value* receiverVal = nullptr;
+    if (recvArrayDims == 0)
+        receiverVal = castValue(visit(ctx->expression()));
 
     // Collect arguments
     std::vector<llvm::Value*> args;
@@ -13102,6 +13148,13 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
             auto* arrAlloca = it->second.alloca;
             auto* allocaTy  = arrAlloca->getAllocatedType();
             auto* arrTy     = llvm::dyn_cast<llvm::ArrayType>(allocaTy);
+            if (!arrTy && methodName == "len" &&
+                it->second.typeInfo && it->second.typeInfo->kind == TypeKind::Pointer &&
+                !it->second.fixedArraySizes.empty()) {
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                return static_cast<llvm::Value*>(
+                    llvm::ConstantInt::get(usizeTy, it->second.fixedArraySizes[0]));
+            }
             if (!arrTy) {
                 std::cerr << "lux: expected array type for '" << receiverVarName << "'\n";
                 return static_cast<llvm::Value*>(
@@ -13985,6 +14038,9 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
             }
         }
     }
+
+    if (!receiverVal)
+        receiverVal = castValue(visit(ctx->expression()));
 
     // ── Primitive type method codegen ─────────────────────────────────
     {

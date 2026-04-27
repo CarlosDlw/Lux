@@ -1149,6 +1149,15 @@ std::vector<CompletionItem> CompletionProvider::complete(
                 varType = unwrapIndexedType(resolved, req.indexDepth);
             }
 
+            // Apply explicit dereference depth from parenthesized receivers,
+            // e.g. `(*arr).` should complete methods on the pointee.
+            for (unsigned d = 0; d < req.derefDepth && !varType.empty(); d++) {
+                if (varType[0] == '*')
+                    varType = varType.substr(1);
+                else
+                    break;
+            }
+
             // Resolve member chain: x.field.method().| → walk each step
             if (!req.methodChain.empty() && !varType.empty()) {
                 for (auto& memberName : req.methodChain) {
@@ -1527,6 +1536,48 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
                 req.receiverCall = chain.front();
             }
             req.indexDepth = indexDepth;
+            // Fallback for parenthesized deref receivers like `(*arr).`.
+            if (req.receiverVar.empty() && req.receiverCall.empty()) {
+                auto trim = [](std::string s) {
+                    size_t b = s.find_first_not_of(" \t\n\r");
+                    if (b == std::string::npos) return std::string{};
+                    size_t e = s.find_last_not_of(" \t\n\r");
+                    return s.substr(b, e - b + 1);
+                };
+                std::string recvExpr = trim(before.substr(0, dotPos));
+                if (!recvExpr.empty() && recvExpr.back() == ')') {
+                    int depth = 1;
+                    size_t p = recvExpr.size() - 1;
+                    while (p > 0 && depth > 0) {
+                        --p;
+                        if (recvExpr[p] == ')') ++depth;
+                        else if (recvExpr[p] == '(') --depth;
+                    }
+                    if (depth == 0 && p + 1 < recvExpr.size() - 1) {
+                        std::string inner = trim(
+                            recvExpr.substr(p + 1, recvExpr.size() - p - 2));
+                        bool hadDeref = false;
+                        while (!inner.empty() && inner[0] == '*') {
+                            hadDeref = true;
+                            ++req.derefDepth;
+                            inner = trim(inner.substr(1));
+                        }
+                        if (!inner.empty()) {
+                            bool isIdent = true;
+                            for (char c : inner) {
+                                if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
+                                    isIdent = false;
+                                    break;
+                                }
+                            }
+                            if (isIdent)
+                                req.receiverVar = inner;
+                            else if (hadDeref)
+                                req.derefDepth = 0;
+                        }
+                    }
+                }
+            }
             // Reverse chain since we collected from right to left
             std::reverse(chain.begin(), chain.end());
             req.methodChain = std::move(chain);

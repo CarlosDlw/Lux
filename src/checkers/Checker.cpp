@@ -1023,6 +1023,8 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
         unsigned innerDims = 0;
         auto* inner = resolveTypeSpec(cur->typeSpec(0), innerDims);
         if (!inner) return nullptr;
+        // Keep inner array depth for pointer-to-array types like *[N]T.
+        arrayDims = innerDims;
         return getPointerType(inner);
     }
 
@@ -5575,6 +5577,8 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
     }
     if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
         return resolveExprArrayDims(paren->expression());
+    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr))
+        return resolveExprArrayDims(deref->expression());
     if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
         auto* sourceType = resolveExprType(cu->expression());
         UnwrapCatchPatternInfo pattern;
@@ -5645,7 +5649,8 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
         unsigned innerDims = 0;
         auto* inner = resolveTypeSpecWithSubst(typeSpec->typeSpec(0), subst, innerDims);
         if (!inner) return nullptr;
-        arrayDims = 0;
+        // Preserve pointer-to-array shape under generic substitution as well.
+        arrayDims = innerDims;
         return getPointerType(inner);
     }
     // For array types, substitute into the element type

@@ -1055,19 +1055,18 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         if (auto* calleeIdent = dynamic_cast<LuxParser::IdentExprContext*>(fc->expression())) {
             if (calleeIdent->IDENTIFIER() && calleeIdent->IDENTIFIER()->getSymbol() == hoveredToken) {
                 std::string funcName = calleeIdent->IDENTIFIER()->getText();
-
-                for (auto* tld : tree->topLevelDecl()) {
-                    auto* fd = tld->functionDecl();
-                    if (!fd || !fd->IDENTIFIER() || fd->IDENTIFIER()->getText() != funcName)
-                        continue;
-
+                auto buildCallHover = [&](LuxParser::FunctionDeclContext* fd) -> std::optional<HoverResult> {
+                    if (!fd) return std::nullopt;
                     if (!fd->typeParamList()) {
                         return makeResult(hoveredToken,
                             withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
                     }
 
                     auto* encFunc = findEnclosingFunction(tree, cursorLine);
-                    if (!encFunc) break;
+                    if (!encFunc) {
+                        return makeResult(hoveredToken,
+                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
+                    }
                     auto locals = collectLocals(encFunc, cursorLine, tree, &bindings, project);
 
                     FuncLookupCtx flc;
@@ -1091,9 +1090,10 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
                     std::vector<LuxParser::ParamContext*> formalParams;
                     if (auto* pl = fd->paramList()) formalParams = pl->param();
-                    if (actualArgTypes.size() != formalParams.size())
+                    if (actualArgTypes.size() != formalParams.size()) {
                         return makeResult(hoveredToken,
                             withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
+                    }
 
                     std::unordered_map<std::string, std::string> inferred;
                     bool ok = true;
@@ -1129,6 +1129,21 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     }
                     ss << ")\n```";
                     return makeResult(hoveredToken, withDoc(ss.str(), fd->getStart()->getLine() - 1));
+                };
+
+                for (auto* tld : tree->topLevelDecl()) {
+                    auto* fd = tld->functionDecl();
+                    if (!fd || !fd->IDENTIFIER() || fd->IDENTIFIER()->getText() != funcName)
+                        continue;
+                    if (auto h = buildCallHover(fd)) return h;
+                }
+                if (project && project->isValid()) {
+                    for (auto& ns : project->registry().allNamespaces()) {
+                        auto* sym = project->registry().findSymbol(ns, funcName);
+                        if (!sym || sym->kind != ExportedSymbol::Function) continue;
+                        auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                        if (auto h = buildCallHover(fd)) return h;
+                    }
                 }
             }
         }
@@ -3451,6 +3466,50 @@ static std::string lookupFuncReturnType(
     return "";
 }
 
+static LuxParser::FunctionDeclContext* findFunctionDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc) {
+    if (!flc) return nullptr;
+    if (flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            auto* fd = tld->functionDecl();
+            if (fd && fd->IDENTIFIER() && fd->IDENTIFIER()->getText() == name)
+                return fd;
+        }
+    }
+    if (flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allNamespaces()) {
+            auto* sym = flc->project->registry().findSymbol(ns, name);
+            if (!sym || sym->kind != ExportedSymbol::Function) continue;
+            if (auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl))
+                return fd;
+        }
+    }
+    return nullptr;
+}
+
+static LuxParser::EnumDeclContext* findEnumDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc) {
+    if (!flc) return nullptr;
+    if (flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            auto* ed = tld->enumDecl();
+            if (ed && ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name)
+                return ed;
+        }
+    }
+    if (flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allNamespaces()) {
+            auto* sym = flc->project->registry().findSymbol(ns, name);
+            if (!sym || sym->kind != ExportedSymbol::Enum) continue;
+            if (auto* ed = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl))
+                return ed;
+        }
+    }
+    return nullptr;
+}
+
 // Infer the type name of an expression for auto variable resolution.
 // This is a lightweight heuristic — no full type-checking.
 static std::string inferExprTypeName(
@@ -3491,18 +3550,11 @@ static std::string inferExprTypeName(
         if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(fn->expression())) {
             auto funcName = ident->IDENTIFIER()->getText();
 
-            if (flc && flc->tree) {
-                for (auto* tld : flc->tree->topLevelDecl()) {
-                    auto* fd = tld->functionDecl();
-                    if (!fd || !fd->IDENTIFIER() || fd->IDENTIFIER()->getText() != funcName)
-                        continue;
-
-                    if (!fd->typeParamList()) {
-                        auto ret = fd->typeSpec()->getText();
-                        if (!ret.empty()) return ret;
-                        break;
-                    }
-
+            if (auto* fd = findFunctionDeclForInference(funcName, flc)) {
+                if (!fd->typeParamList()) {
+                    auto ret = fd->typeSpec()->getText();
+                    if (!ret.empty()) return ret;
+                } else {
                     std::unordered_set<std::string> tps;
                     for (auto* tp : fd->typeParamList()->typeParam()) {
                         auto ids = tp->IDENTIFIER();
@@ -3517,28 +3569,26 @@ static std::string inferExprTypeName(
 
                     std::vector<LuxParser::ParamContext*> formalParams;
                     if (auto* pl = fd->paramList()) formalParams = pl->param();
-                    if (actualArgTypes.size() != formalParams.size()) break;
-
-                    std::unordered_map<std::string, std::string> inferred;
-                    bool ok = true;
-                    for (size_t i = 0; i < formalParams.size(); i++) {
-                        auto formal = formalParams[i]->typeSpec()->getText();
-                        auto actual = actualArgTypes[i];
-                        if (actual.empty()) { ok = false; break; }
-                        if (!unifyGenericType(formal, actual, tps, inferred)) {
-                            ok = false;
-                            break;
+                    if (actualArgTypes.size() == formalParams.size()) {
+                        std::unordered_map<std::string, std::string> inferred;
+                        bool ok = true;
+                        for (size_t i = 0; i < formalParams.size(); i++) {
+                            auto formal = formalParams[i]->typeSpec()->getText();
+                            auto actual = actualArgTypes[i];
+                            if (actual.empty()) { ok = false; break; }
+                            if (!unifyGenericType(formal, actual, tps, inferred)) {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        for (auto& tp : tps) {
+                            if (!inferred.count(tp)) { ok = false; break; }
+                        }
+                        if (ok) {
+                            auto ret = substituteTypeParams(fd->typeSpec()->getText(), inferred);
+                            if (!ret.empty()) return ret;
                         }
                     }
-                    for (auto& tp : tps) {
-                        if (!inferred.count(tp)) { ok = false; break; }
-                    }
-
-                    if (ok) {
-                        auto ret = substituteTypeParams(fd->typeSpec()->getText(), inferred);
-                        if (!ret.empty()) return ret;
-                    }
-                    break;
                 }
             }
 
@@ -3554,18 +3604,11 @@ static std::string inferExprTypeName(
         if (!fnId) return "";
         std::string funcName = fnId->getText();
 
-        if (flc && flc->tree) {
-            for (auto* tld : flc->tree->topLevelDecl()) {
-                auto* fd = tld->functionDecl();
-                if (!fd || !fd->IDENTIFIER() || fd->IDENTIFIER()->getText() != funcName)
-                    continue;
-
-                if (!fd->typeParamList()) {
-                    auto ret = fd->typeSpec()->getText();
-                    if (!ret.empty()) return ret;
-                    break;
-                }
-
+        if (auto* fd = findFunctionDeclForInference(funcName, flc)) {
+            if (!fd->typeParamList()) {
+                auto ret = fd->typeSpec()->getText();
+                if (!ret.empty()) return ret;
+            } else {
                 std::unordered_map<std::string, std::string> subst;
                 auto tps = fd->typeParamList()->typeParam();
                 auto args = gfc->typeSpec();
@@ -3576,7 +3619,6 @@ static std::string inferExprTypeName(
 
                 auto ret = substituteTypeParams(fd->typeSpec()->getText(), subst);
                 if (!ret.empty()) return ret;
-                break;
             }
         }
 
@@ -3821,20 +3863,13 @@ static std::string inferExprTypeName(
 
     if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
         auto sourceType = inferExprTypeName(cu->expression(), locals, flc);
-        if (sourceType.empty() || !flc || !flc->tree) return "";
+        if (sourceType.empty() || !flc) return "";
 
         std::string baseName = sourceType;
         std::vector<std::string> sourceArgs;
         parseGenericInstance(sourceType, baseName, sourceArgs);
 
-        LuxParser::EnumDeclContext* enumDecl = nullptr;
-        for (auto* tld : flc->tree->topLevelDecl()) {
-            if (auto* ed = tld->enumDecl(); ed && ed->IDENTIFIER() &&
-                ed->IDENTIFIER()->getText() == baseName) {
-                enumDecl = ed;
-                break;
-            }
-        }
+        auto* enumDecl = findEnumDeclForInference(baseName, flc);
         if (!enumDecl) return "";
 
         std::unordered_map<std::string, std::string> subst;

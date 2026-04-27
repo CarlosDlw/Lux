@@ -1107,6 +1107,48 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
     auto sameNsSymbols = nsRegistry_->getExternalSymbols(
         currentNamespace_, currentFile_);
 
+    auto ensureTypeDependencyFromSpec =
+        [&](auto&& self, LuxParser::TypeSpecContext* ts, const std::string& ns) -> void {
+            if (!ts) return;
+            if (ts->fnTypeSpec()) {
+                for (auto* inner : ts->fnTypeSpec()->typeSpec())
+                    self(self, inner, ns);
+                return;
+            }
+            for (auto* inner : ts->typeSpec())
+                self(self, inner, ns);
+
+            if (!ts->IDENTIFIER()) return;
+            auto baseName = ts->IDENTIFIER()->getText();
+            auto* depSym = nsRegistry_->findSymbol(ns, baseName);
+            if (!depSym) return;
+
+            if (depSym->kind == ExportedSymbol::Enum && !typeRegistry_.lookup(baseName)) {
+                auto* ed = static_cast<LuxParser::EnumDeclContext*>(depSym->decl);
+                visitEnumDecl(ed);
+                return;
+            }
+            if (depSym->kind == ExportedSymbol::Struct && !typeRegistry_.lookup(baseName)) {
+                auto* sd = static_cast<LuxParser::StructDeclContext*>(depSym->decl);
+                visitStructDecl(sd);
+                return;
+            }
+            if (depSym->kind == ExportedSymbol::Union && !typeRegistry_.lookup(baseName)) {
+                auto* ud = static_cast<LuxParser::UnionDeclContext*>(depSym->decl);
+                visitUnionDecl(ud);
+            }
+        };
+
+    auto ensureFunctionTypeDependencies =
+        [&](LuxParser::FunctionDeclContext* decl, const std::string& ns) {
+            if (!decl) return;
+            ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec, decl->typeSpec(), ns);
+            if (auto* params = decl->paramList()) {
+                for (auto* p : params->param())
+                    ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec, p->typeSpec(), ns);
+            }
+        };
+
     // ── Phase 1a: Register enums / type aliases from same namespace ─────
     //    (must come before structs so struct fields can reference them)
     for (auto* sym : sameNsSymbols) {
@@ -1243,6 +1285,7 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
         if (sym->kind == ExportedSymbol::Function) {
             auto* funcCtx = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
             if (!funcCtx) continue;
+            ensureFunctionTypeDependencies(funcCtx, currentNamespace_);
 
             if (funcCtx->typeParamList()) {
                 GenericFuncTemplate tmpl;
@@ -1269,6 +1312,7 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
 
         auto* funcCtx = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
         if (!funcCtx) continue;
+        ensureFunctionTypeDependencies(funcCtx, sourceNs);
 
         if (funcCtx->typeParamList()) {
             GenericFuncTemplate tmpl;

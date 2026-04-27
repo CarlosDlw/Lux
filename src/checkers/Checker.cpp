@@ -771,6 +771,57 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         auto extSyms = nsRegistry_->getExternalSymbols(
             currentNamespace_, currentFile_);
 
+        // Imported function signatures may reference generic types (e.g. Result<T>)
+        // that were not explicitly imported via `use`. Ensure those type templates
+        // are registered before function signature/type resolution.
+        auto ensureTypeDependencyFromSpec =
+            [&](auto&& self, LuxParser::TypeSpecContext* ts, const std::string& ns) -> void {
+                if (!ts) return;
+                if (ts->fnTypeSpec()) {
+                    for (auto* inner : ts->fnTypeSpec()->typeSpec())
+                        self(self, inner, ns);
+                    return;
+                }
+                for (auto* inner : ts->typeSpec())
+                    self(self, inner, ns);
+
+                if (!ts->IDENTIFIER()) return;
+                auto baseName = ts->IDENTIFIER()->getText();
+                auto* depSym = nsRegistry_->findSymbol(ns, baseName);
+                if (!depSym) return;
+
+                if (depSym->kind == ExportedSymbol::Enum &&
+                    !typeRegistry_.lookup(baseName) &&
+                    !genericEnumTemplates_.count(baseName)) {
+                    auto* ed = static_cast<LuxParser::EnumDeclContext*>(depSym->decl);
+                    checkEnumDecl(ed);
+                    return;
+                }
+                if (depSym->kind == ExportedSymbol::Struct &&
+                    !typeRegistry_.lookup(baseName) &&
+                    !genericStructTemplates_.count(baseName)) {
+                    auto* sd = static_cast<LuxParser::StructDeclContext*>(depSym->decl);
+                    checkStructDecl(sd);
+                    return;
+                }
+                if (depSym->kind == ExportedSymbol::Union &&
+                    !typeRegistry_.lookup(baseName) &&
+                    !genericUnionTemplates_.count(baseName)) {
+                    auto* ud = static_cast<LuxParser::UnionDeclContext*>(depSym->decl);
+                    checkUnionDecl(ud);
+                }
+            };
+
+        auto ensureFunctionTypeDependencies =
+            [&](LuxParser::FunctionDeclContext* decl, const std::string& ns) {
+                if (!decl) return;
+                ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec, decl->typeSpec(), ns);
+                if (auto* params = decl->paramList()) {
+                    for (auto* p : params->param())
+                        ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec, p->typeSpec(), ns);
+                }
+            };
+
         // Phase A: enums and type aliases (these have no dependencies)
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Enum) {
@@ -845,6 +896,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Function) {
                 auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                ensureFunctionTypeDependencies(decl, currentNamespace_);
                 registerFunctionSignature(decl);
             }
         }
@@ -853,6 +905,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {
                 auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                ensureFunctionTypeDependencies(decl, ns);
                 registerFunctionSignature(decl);
             }
         }

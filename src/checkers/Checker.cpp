@@ -2603,6 +2603,23 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             }
         }
 
+        // Lux std::log::sprintf expects Lux `string` values, not `*char`.
+        // Guard expression calls during semantic checking.
+        if (calleeName == "sprintf" && imports_.isImported("sprintf")) {
+            for (size_t i = 0; i < argTypes.size(); i++) {
+                auto* ti = argTypes[i];
+                if (!ti) continue;
+                if (ti->kind == TypeKind::Pointer &&
+                    ti->pointeeType &&
+                    ti->pointeeType->kind == TypeKind::Char) {
+                    error(argExprs[i],
+                          "'sprintf' from Lux does not accept '*char'; "
+                          "pass 'string' values (use 'fromCStr(...)' if needed)");
+                    return nullptr;
+                }
+            }
+        }
+
         // Generic function call with inferred type arguments: foo(10)
         if (!calleeName.empty()) {
             auto funcIt = genericFuncTemplates_.find(calleeName);
@@ -5372,6 +5389,21 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
                 error(stmt, "function '" + name + "' does not accept array arguments directly; "
                             "use '.toString()' (or '.join(...)' for strings) before printing");
                 return;
+            }
+        }
+    }
+    // Lux std::log::sprintf expects Lux `string` values, not `*char`.
+    // Passing `*char` reaches invalid IR lowering; fail early in checker.
+    if (name == "sprintf" && imports_.isImported("sprintf")) {
+        for (size_t i = 0; i < argTypes.size(); i++) {
+            auto* ti = argTypes[i];
+            if (!ti) continue;
+            if (ti->kind == TypeKind::Pointer &&
+                ti->pointeeType &&
+                ti->pointeeType->kind == TypeKind::Char) {
+                error(argExprs[i],
+                      "'sprintf' from Lux does not accept '*char'; "
+                      "pass 'string' values (use 'fromCStr(...)' if needed)");
             }
         }
     }

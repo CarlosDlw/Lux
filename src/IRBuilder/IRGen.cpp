@@ -1732,7 +1732,20 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
             for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
                 arrTy = llvm::ArrayType::get(arrTy, *it);
             auto* alloca = builder_->CreateAlloca(arrTy, nullptr, name);
-            builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
+            {
+                uint64_t totalBytes = module_->getDataLayout().getTypeAllocSize(arrTy);
+                if (totalBytes > 64) {
+                    // Use memset for large arrays — storing a large zeroinitializer
+                    // constant causes LLVM SelectionDAG to expand it into thousands
+                    // of individual stores, hanging the backend codegen.
+                    auto* sizeVal = llvm::ConstantInt::get(
+                        llvm::Type::getInt64Ty(*context_), totalBytes);
+                    builder_->CreateMemSet(alloca, builder_->getInt8(0),
+                                          sizeVal, llvm::MaybeAlign(1));
+                } else {
+                    builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
+                }
+            }
             locals_[name] = { alloca, ti, dims };
             return {};
         }
@@ -2933,6 +2946,17 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
                         }
                         else if (bw > 64)
                             a = builder_->CreateTrunc(a, llvm::Type::getInt32Ty(*context_), "c_trunc_i32");
+                    } else if (a->getType()->isArrayTy()) {
+                        // Array decay: pass pointer to first element for C variadics
+                        llvm::Value* srcAlloca = nullptr;
+                        if (auto* li = llvm::dyn_cast<llvm::LoadInst>(a))
+                            srcAlloca = li->getPointerOperand();
+                        if (!srcAlloca) {
+                            srcAlloca = builder_->CreateAlloca(a->getType(), nullptr, "arr.decay");
+                            builder_->CreateStore(a, srcAlloca);
+                        }
+                        auto* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
+                        a = builder_->CreateGEP(a->getType(), srcAlloca, {zero, zero}, "arr.ptr");
                     } else if (a->getType()->isStructTy()) {
                         // Lux string { ptr, i64 } → extract ptr for C variadics
                         auto* st = llvm::cast<llvm::StructType>(a->getType());
@@ -3070,10 +3094,22 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
                 if (llvmIdx < fnType->getNumParams() && argVal->getType() != fnType->getParamType(llvmIdx)) {
                     auto* expectedTy = fnType->getParamType(llvmIdx);
                     if (argVal->getType()->isArrayTy() && expectedTy->isPointerTy()) {
-                        auto* tmpAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.decay");
-                        builder_->CreateStore(argVal, tmpAlloca);
+                        // Reuse the source alloca if the value came from a load —
+                        // avoids a full array copy that would hang the LLVM backend.
+                        llvm::Value* srcAlloca = nullptr;
+                        llvm::LoadInst* deadLoad = nullptr;
+                        if (auto* li = llvm::dyn_cast<llvm::LoadInst>(argVal)) {
+                            srcAlloca = li->getPointerOperand();
+                            deadLoad = li;
+                        }
+                        if (!srcAlloca) {
+                            srcAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.decay");
+                            builder_->CreateStore(argVal, srcAlloca);
+                        }
                         auto* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
-                        argVal = builder_->CreateGEP(argVal->getType(), tmpAlloca, {zero, zero}, "arr.ptr");
+                        argVal = builder_->CreateGEP(argVal->getType(), srcAlloca, {zero, zero}, "arr.ptr");
+                        if (deadLoad && deadLoad->use_empty())
+                            deadLoad->eraseFromParent();
                     } else if (argVal->getType()->isIntegerTy() && expectedTy->isIntegerTy())
                         argVal = builder_->CreateIntCast(argVal, expectedTy, true);
                     else if (argVal->getType()->isFloatingPointTy() && expectedTy->isFloatingPointTy()) {
@@ -9670,10 +9706,22 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     if (llvmIdx < fnType->getNumParams()) {
                         auto* expectedTy = fnType->getParamType(llvmIdx);
                         if (argVal->getType()->isArrayTy() && expectedTy->isPointerTy()) {
-                            auto* tmpAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.decay");
-                            builder_->CreateStore(argVal, tmpAlloca);
+                            // Reuse the source alloca if the value came from a load —
+                            // avoids a full array copy that would hang the LLVM backend.
+                            llvm::Value* srcAlloca = nullptr;
+                            llvm::LoadInst* deadLoad = nullptr;
+                            if (auto* li = llvm::dyn_cast<llvm::LoadInst>(argVal)) {
+                                srcAlloca = li->getPointerOperand();
+                                deadLoad = li;
+                            }
+                            if (!srcAlloca) {
+                                srcAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.decay");
+                                builder_->CreateStore(argVal, srcAlloca);
+                            }
                             auto* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
-                            argVal = builder_->CreateGEP(argVal->getType(), tmpAlloca, {zero, zero}, "arr.ptr");
+                            argVal = builder_->CreateGEP(argVal->getType(), srcAlloca, {zero, zero}, "arr.ptr");
+                            if (deadLoad && deadLoad->use_empty())
+                                deadLoad->eraseFromParent();
                         } else if (argVal->getType()->isIntegerTy() && expectedTy->isIntegerTy())
                             argVal = builder_->CreateIntCast(argVal, expectedTy, true);
                         else if (argVal->getType()->isFloatingPointTy() && expectedTy->isFloatingPointTy()) {
@@ -10176,6 +10224,26 @@ std::any IRGen::visitCastExpr(LuxParser::CastExprContext* ctx) {
     if (srcTy->isPointerTy() && targetTy->isIntegerTy())
         return static_cast<llvm::Value*>(
             builder_->CreatePtrToInt(val, targetTy, "cast"));
+    // array -> pointer (explicit cast, e.g. `arr as *T`)
+    // Reuse the source alloca from the load to avoid copying the whole array.
+    if (srcTy->isArrayTy() && targetTy->isPointerTy()) {
+        llvm::Value* srcAlloca = nullptr;
+        llvm::LoadInst* deadLoad = nullptr;
+        if (auto* li = llvm::dyn_cast<llvm::LoadInst>(val)) {
+            srcAlloca = li->getPointerOperand();
+            deadLoad = li;
+        }
+        if (!srcAlloca) {
+            srcAlloca = builder_->CreateAlloca(srcTy, nullptr, "arr.cast");
+            builder_->CreateStore(val, srcAlloca);
+        }
+        auto* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
+        auto* gep = builder_->CreateGEP(srcTy, srcAlloca, {zero, zero}, "arr.ptr");
+        // Remove the now-dead load — large aggregate loads stall SelectionDAG.
+        if (deadLoad && deadLoad->use_empty())
+            deadLoad->eraseFromParent();
+        return static_cast<llvm::Value*>(gep);
+    }
 
     std::cerr << "lux: unsupported cast\n";
     return static_cast<llvm::Value*>(val);
@@ -15450,12 +15518,23 @@ IRGen::promoteArithmetic(llvm::Value* lhs, llvm::Value* rhs) {
     auto* rhsTy = rhs->getType();
     if (lhsTy == rhsTy) return {lhs, rhs};
 
-    // Both integer: extend narrower to wider
+    // Both integer: if the wider operand is an untyped literal (i256),
+    // truncate it down to the narrower concrete type instead of promoting
+    // the concrete type up to i256 (which breaks x86 codegen).
     if (lhsTy->isIntegerTy() && rhsTy->isIntegerTy()) {
-        if (lhsTy->getIntegerBitWidth() < rhsTy->getIntegerBitWidth())
-            lhs = builder_->CreateSExt(lhs, rhsTy, "prom");
-        else
-            rhs = builder_->CreateSExt(rhs, lhsTy, "prom");
+        unsigned lhsBits = lhsTy->getIntegerBitWidth();
+        unsigned rhsBits = rhsTy->getIntegerBitWidth();
+        if (lhsBits > rhsBits) {
+            if (llvm::isa<llvm::ConstantInt>(lhs))
+                lhs = builder_->CreateIntCast(lhs, rhsTy, true, "trunc_lit");
+            else
+                rhs = builder_->CreateSExt(rhs, lhsTy, "prom");
+        } else {
+            if (llvm::isa<llvm::ConstantInt>(rhs))
+                rhs = builder_->CreateIntCast(rhs, lhsTy, true, "trunc_lit");
+            else
+                lhs = builder_->CreateSExt(lhs, rhsTy, "prom");
+        }
         return {lhs, rhs};
     }
 

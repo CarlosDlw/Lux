@@ -4939,9 +4939,11 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
 
     // Declaration without initializer: int32 x;
     if (!stmt->expression()) {
-        // Extended types (Vec, Map, Set) and Structs are implicitly initialized
+        // Extended types (Vec, Map, Set), Structs, and Arrays are implicitly
+        // zero-initialized by the compiler — suppress "used before initialized".
         bool autoInit = (typeInfo->kind == TypeKind::Extended ||
-                         typeInfo->kind == TypeKind::Struct);
+                         typeInfo->kind == TypeKind::Struct ||
+                         arrayDims > 0);
         VarInfo vi{typeInfo, arrayDims, autoInit, false, nullptr};
         if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
             vi.declToken = stmt->IDENTIFIER(0)->getSymbol();

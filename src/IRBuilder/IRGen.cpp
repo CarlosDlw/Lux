@@ -12095,6 +12095,11 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
                 result = result->pointeeType;
                 continue;
             }
+            // string[i] -> char
+            if (result->kind == TypeKind::String) {
+                result = typeRegistry_.lookup("char");
+                continue;
+            }
 
             // Non-indexable or already elemental: stop preserving the best known type.
             break;

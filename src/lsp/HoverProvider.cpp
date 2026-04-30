@@ -3952,6 +3952,22 @@ static std::string inferExprTypeName(
         return result;
     }
 
+    // Index: expr[i] → element type
+    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
+        auto exprs = idx->expression();
+        if (!exprs.empty()) {
+            auto baseType = inferExprTypeName(exprs[0], locals, flc);
+            if (baseType == "string") return "char";
+            // Array type [N]T or []T: strip leading [...]
+            if (!baseType.empty() && baseType[0] == '[') {
+                auto close = baseType.find(']');
+                if (close != std::string::npos && close + 1 < baseType.size())
+                    return baseType.substr(close + 1);
+            }
+        }
+        return "";
+    }
+
     // Tuple index: expr.N → element type
     if (auto* ti = dynamic_cast<LuxParser::TupleIndexExprContext*>(expr)) {
         auto baseType = inferExprTypeName(ti->expression(), locals, flc);

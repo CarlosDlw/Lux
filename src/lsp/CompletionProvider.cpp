@@ -740,6 +740,23 @@ static std::string inferExprTypeName(
     }
     if (dynamic_cast<LuxParser::SizeofExprContext*>(expr)) return "int64";
     if (dynamic_cast<LuxParser::TypeofExprContext*>(expr)) return "string";
+
+    // Index: expr[i] → element type
+    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
+        auto exprs = idx->expression();
+        if (!exprs.empty()) {
+            auto baseType = inferExprTypeName(exprs[0], locals, flc);
+            if (baseType == "string") return "char";
+            // Array type [N]T or []T: strip leading [...]
+            if (!baseType.empty() && baseType[0] == '[') {
+                auto close = baseType.find(']');
+                if (close != std::string::npos && close + 1 < baseType.size())
+                    return baseType.substr(close + 1);
+            }
+        }
+        return "";
+    }
+
     // Struct literal: Point { x: 10, y: 20 } → "Point"
     if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(expr)) {
         auto ids = sl->IDENTIFIER();

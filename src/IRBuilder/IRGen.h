@@ -57,6 +57,7 @@ public:
     std::any visitFieldAssignStmt(LuxParser::FieldAssignStmtContext* ctx) override;
     std::any visitFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtContext* ctx) override;
     std::any visitIndexFieldAssignStmt(LuxParser::IndexFieldAssignStmtContext* ctx) override;
+    std::any visitFieldIndexAssignStmt(LuxParser::FieldIndexAssignStmtContext* ctx) override;
     std::any visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext* ctx) override;
     std::any visitArrowCompoundAssignStmt(LuxParser::ArrowCompoundAssignStmtContext* ctx) override;
     std::any visitCallStmt(LuxParser::CallStmtContext* ctx)           override;

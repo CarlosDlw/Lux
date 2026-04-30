@@ -2842,6 +2842,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (baseType && baseType->kind == TypeKind::Pointer && baseType->pointeeType)
             return baseType->pointeeType;
 
+        // string[i] returns char (uint8)
+        if (baseType && baseType->kind == TypeKind::String)
+            return typeRegistry_.lookup("char");
+
         return baseType;
     }
 
@@ -3891,7 +3895,17 @@ void Checker::checkStructDecl(LuxParser::StructDeclContext* decl) {
                              "' in struct '" + name + "'");
             return;
         }
-        ti.fields.push_back({ fieldName, fieldTI });
+        std::vector<unsigned> fieldSizes;
+        {
+            auto* spec = field->typeSpec();
+            while (spec && spec->LBRACKET()) {
+                if (spec->INT_LIT())
+                    fieldSizes.push_back(static_cast<unsigned>(
+                        std::stoul(spec->INT_LIT()->getText())));
+                spec = spec->typeSpec(0);
+            }
+        }
+        ti.fields.push_back({ fieldName, fieldTI, fieldDims, fieldSizes });
     }
 
     typeRegistry_.registerType(std::move(ti));
@@ -4544,6 +4558,10 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
         resolveExprType(stmt->throwStmt()->expression());
     } else if (auto* ifa = stmt->indexFieldAssignStmt()) {
         for (auto* e : ifa->expression()) {
+            resolveExprType(e);
+        }
+    } else if (auto* fia = stmt->fieldIndexAssignStmt()) {
+        for (auto* e : fia->expression()) {
             resolveExprType(e);
         }
     } else if (auto* def = stmt->deferStmt()) {

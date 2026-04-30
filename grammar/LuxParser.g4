@@ -150,6 +150,7 @@ statement
     | assignStmt
     | compoundAssignStmt
     | derefAssignStmt
+    | fieldIndexAssignStmt
     | indexFieldAssignStmt
     | fieldAssignStmt
     | fieldCompoundAssignStmt
@@ -244,6 +245,11 @@ fieldCompoundAssignStmt
 // arr[i].field = 42;
 indexFieldAssignStmt
     : IDENTIFIER (LBRACKET expression RBRACKET)+ (DOT IDENTIFIER)+ ASSIGN expression SEMI
+    ;
+
+// p.field[i] = 42;   ts.buf[i] = val;
+fieldIndexAssignStmt
+    : IDENTIFIER (DOT IDENTIFIER)+ (LBRACKET expression RBRACKET)+ ASSIGN expression SEMI
     ;
 
 // *p = 42;   or   *(p + 1) = 42;

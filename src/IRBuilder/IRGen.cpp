@@ -448,8 +448,26 @@ std::any IRGen::visitStructDecl(LuxParser::StructDeclContext* ctx) {
     std::vector<llvm::Type*> fieldTypes;
     for (auto* field : ctx->structField()) {
         auto* fieldTI = resolveTypeInfo(field->typeSpec());
-        fieldTypes.push_back(fieldTI->toLLVMType(*context_, module_->getDataLayout()));
-        ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI });
+        // Extract array dims/sizes from the typeSpec (e.g. [256]Token → dims=1, sizes={256})
+        unsigned fieldDims = 0;
+        std::vector<unsigned> fieldSizes;
+        {
+            auto* spec = field->typeSpec();
+            while (spec && spec->LBRACKET()) {
+                fieldDims++;
+                if (spec->INT_LIT())
+                    fieldSizes.push_back(static_cast<unsigned>(
+                        std::stoul(spec->INT_LIT()->getText())));
+                spec = spec->typeSpec(0);
+            }
+        }
+        llvm::Type* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        if (fieldDims > 0 && !fieldSizes.empty()) {
+            for (auto it = fieldSizes.rbegin(); it != fieldSizes.rend(); ++it)
+                fieldLLTy = llvm::ArrayType::get(fieldLLTy, *it);
+        }
+        fieldTypes.push_back(fieldLLTy);
+        ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI, fieldDims, fieldSizes });
     }
 
     // Set the struct body now that all fields are resolved
@@ -2588,6 +2606,153 @@ std::any IRGen::visitIndexFieldAssignStmt(
     if (val->getType() != currentTy) {
         if (val->getType()->isIntegerTy() && currentTy->isIntegerTy())
             val = builder_->CreateIntCast(val, currentTy, currentTI->isSigned);
+        else if (val->getType()->isFloatingPointTy() && currentTy->isFloatingPointTy()) {
+            if (val->getType()->getPrimitiveSizeInBits() > currentTy->getPrimitiveSizeInBits())
+                val = builder_->CreateFPTrunc(val, currentTy);
+            else
+                val = builder_->CreateFPExt(val, currentTy);
+        }
+    }
+
+    builder_->CreateStore(val, currentPtr);
+    return {};
+}
+
+// obj.field[i] = value;   ts.buf[3] = t;
+std::any IRGen::visitFieldIndexAssignStmt(LuxParser::FieldIndexAssignStmtContext* ctx) {
+    auto identifiers = ctx->IDENTIFIER();
+    auto varName = identifiers[0]->getText();
+
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) {
+        std::cerr << "lux: undefined variable '" << varName << "'\n";
+        return {};
+    }
+
+    auto* alloca    = it->second.alloca;
+    auto* allocType = alloca->getAllocatedType();
+    auto* i64Ty     = llvm::Type::getInt64Ty(*context_);
+
+    // Walk field chain: identifiers[1], identifiers[2], ...
+    llvm::Value*    currentPtr = alloca;
+    llvm::Type*     currentTy  = allocType;
+    const TypeInfo* currentTI  = it->second.typeInfo;
+
+    // If the base is a pointer, load it first
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        currentPtr = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
+        currentTI  = currentTI->pointeeType;
+        currentTy  = currentTI->toLLVMType(*context_, module_->getDataLayout());
+    }
+
+    for (size_t i = 1; i < identifiers.size(); i++) {
+        auto fieldName = identifiers[i]->getText();
+
+        if (!currentTI || (currentTI->kind != TypeKind::Struct &&
+                           currentTI->kind != TypeKind::Union)) {
+            std::cerr << "lux: cannot access field '" << fieldName
+                      << "' on non-struct type\n";
+            return {};
+        }
+
+        int fieldIdx = -1;
+        for (size_t f = 0; f < currentTI->fields.size(); f++) {
+            if (currentTI->fields[f].name == fieldName) {
+                fieldIdx = static_cast<int>(f);
+                break;
+            }
+        }
+        if (fieldIdx < 0) {
+            std::cerr << "lux: '" << currentTI->name
+                      << "' has no field '" << fieldName << "'\n";
+            return {};
+        }
+
+        if (currentTI->kind == TypeKind::Union) {
+            // Union: reinterpret pointer, type changes but address stays
+            currentTI = currentTI->fields[fieldIdx].typeInfo;
+            currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            // currentPtr stays the same (union shares memory)
+        } else {
+            const auto& fi = currentTI->fields[fieldIdx];
+            currentPtr = builder_->CreateStructGEP(currentTy, currentPtr,
+                                                    fieldIdx, fieldName + "_ptr");
+            currentTI  = fi.typeInfo;
+            // Build the correct LLVM type for the field (may be an array)
+            if (fi.arrayDims > 0 && !fi.arraySizes.empty()) {
+                llvm::Type* arrTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+                for (auto it2 = fi.arraySizes.rbegin(); it2 != fi.arraySizes.rend(); ++it2)
+                    arrTy = llvm::ArrayType::get(arrTy, *it2);
+                currentTy = arrTy;
+            } else {
+                currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            }
+        }
+    }
+
+    // Now currentPtr points to the array field; index into it
+    auto expressions  = ctx->expression();
+    size_t numIndices = ctx->LBRACKET().size();
+    // expressions layout: [idx0, idx1, ..., idxN-1, rhs]
+
+    // The field must be an array type (possibly behind a pointer)
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+        // Pointer-to-array or pointer: load the pointer then GEP by index
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        currentPtr  = builder_->CreateLoad(ptrTy, currentPtr, "field_ptr");
+        currentTI   = currentTI->pointeeType;
+        currentTy   = currentTI->toLLVMType(*context_, module_->getDataLayout());
+
+        for (size_t i = 0; i < numIndices; i++) {
+            auto* idx = castValue(visit(expressions[i]));
+            if (idx->getType() != i64Ty)
+                idx = builder_->CreateIntCast(idx, i64Ty, true);
+
+            if (auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(currentTy)) {
+                currentPtr = builder_->CreateInBoundsGEP(
+                    arrTy, currentPtr,
+                    { llvm::ConstantInt::get(i64Ty, 0), idx }, "elem_ptr");
+                currentTI = nullptr; // no TypeInfo for primitive elem
+                currentTy = arrTy->getElementType();
+            } else {
+                currentPtr = builder_->CreateInBoundsGEP(
+                    currentTy, currentPtr, idx, "elem_ptr");
+                // currentTy stays as the pointee type
+            }
+        }
+    } else {
+        // Direct array field
+        std::vector<llvm::Value*> gepIndices;
+        gepIndices.push_back(llvm::ConstantInt::get(i64Ty, 0));
+        for (size_t i = 0; i < numIndices; i++) {
+            auto* idx = castValue(visit(expressions[i]));
+            if (idx->getType() != i64Ty)
+                idx = builder_->CreateIntCast(idx, i64Ty, true);
+            gepIndices.push_back(idx);
+        }
+
+        llvm::Type* elemTy = currentTy;
+        for (size_t i = 0; i < numIndices; i++) {
+            auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(elemTy);
+            if (!arrTy) {
+                std::cerr << "lux: too many indices for field array\n";
+                return {};
+            }
+            elemTy = arrTy->getElementType();
+        }
+
+        currentPtr = builder_->CreateGEP(currentTy, currentPtr, gepIndices, "elem_ptr");
+        currentTy  = elemTy;
+        currentTI  = nullptr;
+    }
+
+    // RHS is the last expression
+    auto* val = castValue(visit(expressions[expressions.size() - 1]));
+
+    if (val->getType() != currentTy) {
+        if (val->getType()->isIntegerTy() && currentTy->isIntegerTy())
+            val = builder_->CreateIntCast(val, currentTy, true);
         else if (val->getType()->isFloatingPointTy() && currentTy->isFloatingPointTy()) {
             if (val->getType()->getPrimitiveSizeInBits() > currentTy->getPrimitiveSizeInBits())
                 val = builder_->CreateFPTrunc(val, currentTy);
@@ -5269,7 +5434,7 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
             }
         }
 
-        // ── Field-access base: e.g. cell.chars[0] ─────────────────────
+        // ── Field-access base: e.g. cell.chars[0]  or  ts.buf[i] ─────
         auto* fieldBase = dynamic_cast<LuxParser::FieldAccessExprContext*>(current);
         if (fieldBase) {
             auto fieldName = fieldBase->IDENTIFIER()->getText();
@@ -5289,31 +5454,96 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
                             break;
                         }
                     }
-                    if (fieldIdx >= 0 && fieldTI && fieldTI->arraySize > 0) {
-                        auto* structTy = lit->second.alloca->getAllocatedType();
-                        auto* fieldGep = builder_->CreateStructGEP(
-                            structTy, lit->second.alloca, fieldIdx,
-                            structVar + "_" + fieldName + "_ptr");
-                        auto* arrTy = fieldTI->toLLVMType(
-                            *context_, module_->getDataLayout());
-                        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
-                        auto* idx = castValue(
-                            visit(indexExprs[0]));
-                        if (idx->getType() != i64Ty)
-                            idx = builder_->CreateIntCast(idx, i64Ty, true);
-                        auto* elemGep = builder_->CreateInBoundsGEP(
-                            arrTy, fieldGep,
-                            { llvm::ConstantInt::get(i64Ty, 0), idx },
-                            fieldName + "_elem");
-                        auto* elemTy = llvm::cast<llvm::ArrayType>(arrTy)
-                            ->getElementType();
-                        return static_cast<llvm::Value*>(
-                            builder_->CreateLoad(elemTy, elemGep,
-                                fieldName + "_val"));
+                    if (fieldIdx >= 0 && fieldTI) {
+                        const auto& fi = structTI->fields[fieldIdx];
+                        // Build the LLVM array type from FieldInfo (handles [N]T fields)
+                        llvm::Type* arrTy = nullptr;
+                        if (fi.arrayDims > 0 && !fi.arraySizes.empty()) {
+                            arrTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                            for (auto it = fi.arraySizes.rbegin(); it != fi.arraySizes.rend(); ++it)
+                                arrTy = llvm::ArrayType::get(arrTy, *it);
+                        } else if (fieldTI->arraySize > 0 && fieldTI->elementType) {
+                            // TypeInfo itself represents a [N]T alias
+                            arrTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                        }
+                        if (arrTy && llvm::isa<llvm::ArrayType>(arrTy)) {
+                            auto* structTy = lit->second.alloca->getAllocatedType();
+                            auto* fieldGep = builder_->CreateStructGEP(
+                                structTy, lit->second.alloca, fieldIdx,
+                                structVar + "_" + fieldName + "_ptr");
+                            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                            auto* idx = castValue(visit(indexExprs[0]));
+                            if (idx->getType() != i64Ty)
+                                idx = builder_->CreateIntCast(idx, i64Ty, true);
+                            auto* elemGep = builder_->CreateInBoundsGEP(
+                                arrTy, fieldGep,
+                                { llvm::ConstantInt::get(i64Ty, 0), idx },
+                                fieldName + "_elem");
+                            auto* elemTy = llvm::cast<llvm::ArrayType>(arrTy)->getElementType();
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(elemTy, elemGep, fieldName + "_val"));
+                        }
                     }
                 }
             }
         }
+
+        // ── Arrow-access base: e.g. ts->buf[i] ──────────────────────
+        auto* arrowBase = dynamic_cast<LuxParser::ArrowAccessExprContext*>(current);
+        if (arrowBase) {
+            auto fieldName = arrowBase->IDENTIFIER()->getText();
+            auto* innerIdent = dynamic_cast<LuxParser::IdentExprContext*>(
+                arrowBase->expression());
+            if (innerIdent) {
+                auto ptrVar = innerIdent->IDENTIFIER()->getText();
+                auto pit = locals_.find(ptrVar);
+                if (pit != locals_.end() && pit->second.typeInfo &&
+                    pit->second.typeInfo->kind == TypeKind::Pointer &&
+                    pit->second.typeInfo->pointeeType) {
+                    auto* structTI = pit->second.typeInfo->pointeeType;
+                    int fieldIdx = -1;
+                    const TypeInfo* fieldTI = nullptr;
+                    for (size_t f = 0; f < structTI->fields.size(); f++) {
+                        if (structTI->fields[f].name == fieldName) {
+                            fieldIdx = static_cast<int>(f);
+                            fieldTI = structTI->fields[f].typeInfo;
+                            break;
+                        }
+                    }
+                    if (fieldIdx >= 0 && fieldTI) {
+                        const auto& fi = structTI->fields[fieldIdx];
+                        llvm::Type* arrTy = nullptr;
+                        if (fi.arrayDims > 0 && !fi.arraySizes.empty()) {
+                            arrTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                            for (auto it = fi.arraySizes.rbegin(); it != fi.arraySizes.rend(); ++it)
+                                arrTy = llvm::ArrayType::get(arrTy, *it);
+                        } else if (fieldTI->arraySize > 0 && fieldTI->elementType) {
+                            arrTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                        }
+                        if (arrTy && llvm::isa<llvm::ArrayType>(arrTy)) {
+                            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                            auto* structTy = structTI->toLLVMType(*context_, module_->getDataLayout());
+                            auto* ptrVal = builder_->CreateLoad(ptrTy, pit->second.alloca, ptrVar + "_ptr");
+                            auto* fieldGep = builder_->CreateStructGEP(
+                                structTy, ptrVal, fieldIdx,
+                                ptrVar + "_" + fieldName + "_ptr");
+                            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                            auto* idx = castValue(visit(indexExprs[0]));
+                            if (idx->getType() != i64Ty)
+                                idx = builder_->CreateIntCast(idx, i64Ty, true);
+                            auto* elemGep = builder_->CreateInBoundsGEP(
+                                arrTy, fieldGep,
+                                { llvm::ConstantInt::get(i64Ty, 0), idx },
+                                fieldName + "_elem");
+                            auto* elemTy = llvm::cast<llvm::ArrayType>(arrTy)->getElementType();
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(elemTy, elemGep, fieldName + "_val"));
+                        }
+                    }
+                }
+            }
+        }
+
         std::cerr << "lux: invalid index base expression\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -5408,6 +5638,22 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
 
         auto* gep = builder_->CreateGEP(elemTy, ptrVal, idx, varName + "_elem");
         return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, gep));
+    }
+
+    // ── String index access (str[i] → char) ─────────────────────────
+    if (ti && ti->kind == TypeKind::String) {
+        auto* i8Ty    = llvm::Type::getInt8Ty(*context_);
+        auto* i64Ty   = llvm::Type::getInt64Ty(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        // Load the string struct { ptr, len }
+        auto* strVal = builder_->CreateLoad(allocType, alloca, varName + "_str");
+        // Extract the data pointer (field 0)
+        auto* strPtr  = builder_->CreateExtractValue(strVal, 0, varName + "_ptr");
+        auto* idx = castValue(visit(indexExprs[0]));
+        if (idx->getType() != usizeTy)
+            idx = builder_->CreateIntCast(idx, usizeTy, false);
+        auto* elemPtr = builder_->CreateGEP(i8Ty, strPtr, idx, varName + "_char_ptr");
+        return static_cast<llvm::Value*>(builder_->CreateLoad(i8Ty, elemPtr, varName + "_char"));
     }
 
     // ── Array index access (original path) ──────────────────────────

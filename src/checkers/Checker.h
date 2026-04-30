@@ -158,7 +158,8 @@ private:
     void registerGlobalBuiltins();
 
     // ── Statement checks ────────────────────────────────────────────
-    void checkBlock(LuxParser::BlockContext* block, const TypeInfo* retType);
+    void checkBlock(LuxParser::BlockContext* block, const TypeInfo* retType,
+                    std::unordered_set<std::string>* initCapture = nullptr);
     void checkStmt(LuxParser::StatementContext* stmt, const TypeInfo* retType, bool& terminated);
     void checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt);
     void checkAssignStmt(LuxParser::AssignStmtContext* stmt);

@@ -4429,7 +4429,8 @@ bool Checker::isTerminatorStmt(LuxParser::StatementContext* stmt) {
 }
 
 void Checker::checkBlock(LuxParser::BlockContext* block,
-                         const TypeInfo* retType) {
+                         const TypeInfo* retType,
+                         std::unordered_set<std::string>* initCapture) {
     auto savedLocals = locals_;
     ++scopeDepth_;
     bool terminated = false;
@@ -4442,10 +4443,14 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
     }
     --scopeDepth_;
     // Propagate 'used' flags to outer-scope variables before restoring.
+    // Also capture newly-initialized outer-scope variables if requested.
     for (auto& [name, info] : savedLocals) {
         auto it = locals_.find(name);
-        if (it != locals_.end())
+        if (it != locals_.end()) {
             info.used = info.used || it->second.used;
+            if (initCapture && !info.initialized && it->second.initialized)
+                initCapture->insert(name);
+        }
     }
     // Full restore: removes inner-scope variables and restores outer values.
     locals_ = savedLocals;
@@ -4678,10 +4683,12 @@ void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
 
 void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
                            const TypeInfo* retType) {
-    auto checkIfBody = [&](LuxParser::IfBodyContext* body) {
+    // Run a branch body and capture which outer-scope variables become initialized.
+    auto checkIfBodyTracked = [&](LuxParser::IfBodyContext* body,
+                                   std::unordered_set<std::string>& inited) {
         if (!body) return;
         if (auto* b = body->block()) {
-            checkBlock(b, retType);
+            checkBlock(b, retType, &inited);
             return;
         }
         if (auto* s = body->statement()) {
@@ -4692,8 +4699,11 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
             --scopeDepth_;
             for (auto& [name, info] : savedLocals) {
                 auto it = locals_.find(name);
-                if (it != locals_.end())
+                if (it != locals_.end()) {
                     info.used = info.used || it->second.used;
+                    if (!info.initialized && it->second.initialized)
+                        inited.insert(name);
+                }
             }
             locals_ = savedLocals;
         }
@@ -4727,11 +4737,16 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
         error(stmt, "condition has type '" + condType->name +
                     "', expected 'bool' or numeric type");
 
-    // Inject is-binding into scope for the true branch body
+    // Collect init sets from each branch for flow-sensitive init analysis.
+    // Only propagate if ALL branches (including else) initialize a variable.
+    std::vector<std::unordered_set<std::string>> branchInits;
+
+    // Check if-body
     auto [ifBindName, ifBindTI] = extractIsBinding(stmt->expression());
     if (!ifBindName.empty() && ifBindTI)
         locals_[ifBindName] = {ifBindTI, 0, true, true, nullptr};
-    checkIfBody(stmt->ifBody());
+    branchInits.emplace_back();
+    checkIfBodyTracked(stmt->ifBody(), branchInits.back());
     if (!ifBindName.empty()) locals_.erase(ifBindName);
 
     // Check else-if clauses
@@ -4743,13 +4758,36 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
         auto [eifBindName, eifBindTI] = extractIsBinding(elseIf->expression());
         if (!eifBindName.empty() && eifBindTI)
             locals_[eifBindName] = {eifBindTI, 0, true, true, nullptr};
-        checkIfBody(elseIf->ifBody());
+        branchInits.emplace_back();
+        checkIfBodyTracked(elseIf->ifBody(), branchInits.back());
         if (!eifBindName.empty()) locals_.erase(eifBindName);
     }
 
     // Check else clause
-    if (auto* elseC = stmt->elseClause()) {
-        checkIfBody(elseC->ifBody());
+    bool hasElse = (stmt->elseClause() != nullptr);
+    if (hasElse) {
+        branchInits.emplace_back();
+        checkIfBodyTracked(stmt->elseClause()->ifBody(), branchInits.back());
+    }
+
+    // Flow-sensitive init propagation: if all branches (with else = full coverage)
+    // initialize a variable, mark it initialized in the outer scope.
+    if (hasElse && !branchInits.empty()) {
+        // Start with the first branch's init set, intersect with all others.
+        std::unordered_set<std::string> intersection = branchInits[0];
+        for (size_t bi = 1; bi < branchInits.size(); ++bi) {
+            for (auto it = intersection.begin(); it != intersection.end(); ) {
+                if (!branchInits[bi].count(*it))
+                    it = intersection.erase(it);
+                else
+                    ++it;
+            }
+        }
+        for (const auto& name : intersection) {
+            auto lit = locals_.find(name);
+            if (lit != locals_.end())
+                lit->second.initialized = true;
+        }
     }
 }
 

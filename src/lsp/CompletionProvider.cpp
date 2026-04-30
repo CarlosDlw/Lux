@@ -1516,6 +1516,11 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
                     if (nameStart > 0 && before[nameStart - 1] == '.') {
                         chain.push_back(before.substr(nameStart, nameEnd - nameStart));
                         recEnd = nameStart - 1; // continue before the dot
+                    } else if (nameStart >= 2 && before[nameStart - 1] == '>' &&
+                               before[nameStart - 2] == '-') {
+                        // `ptr->field` — same as `.field` for member completion
+                        chain.push_back(before.substr(nameStart, nameEnd - nameStart));
+                        recEnd = nameStart - 2; // continue to the left of `->`
                     } else {
                         break;
                     }

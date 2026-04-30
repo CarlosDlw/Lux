@@ -2814,6 +2814,21 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             return baseType->valueType;
         }
 
+        // Ranges in [] are for loops/comprehensions, not for string (see docs/language/ranges.md, docs/stdlib/string.md)
+        {
+            auto* indexExpr = exprs[1];
+            while (auto* p = dynamic_cast<LuxParser::ParenExprContext*>(indexExpr))
+                indexExpr = p->expression();
+            if (baseType && baseType->kind == TypeKind::String &&
+                (dynamic_cast<LuxParser::RangeExprContext*>(indexExpr) ||
+                 dynamic_cast<LuxParser::RangeInclExprContext*>(indexExpr))) {
+                error(expr,
+                    "cannot subscript 'string' with a range: use .slice(start, end) on the "
+                    "string or std::str::slice (see docs/stdlib/string.md)");
+                return nullptr;
+            }
+        }
+
         // Vec<T>[i] and array[i] — index must be integer
         if (indexType && !isInteger(indexType))
             error(expr, "index must be integer, got '" +

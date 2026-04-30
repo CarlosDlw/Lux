@@ -12396,6 +12396,10 @@ llvm::Value* IRGen::buildVecValueFromArrayLiteral(
 }
 
 void IRGen::emitBlockExitCleanups(const std::unordered_map<std::string, VarInfo>& savedLocals) {
+    // If the current block already ends with a terminator (e.g. `ret` from a nested
+    // if/else), do not append cleanup calls after it — that breaks LLVM IR and can
+    // surface as invalid blocks (e.g. "Terminator found in the middle of a basic block").
+    if (auto* bb = builder_->GetInsertBlock(); bb && bb->getTerminator()) return;
     for (const auto& [name, info] : locals_) {
         if (savedLocals.find(name) != savedLocals.end()) continue;
         emitCleanupForLocal(name, info);

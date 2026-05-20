@@ -103,6 +103,7 @@ public:
     std::any visitAddrOfExpr(LuxParser::AddrOfExprContext* ctx)       override;
     std::any visitDerefExpr(LuxParser::DerefExprContext* ctx)         override;
     std::any visitDerefAssignStmt(LuxParser::DerefAssignStmtContext* ctx) override;
+    std::any visitDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext* ctx) override;
     std::any visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) override;
     std::any visitFnCallExpr(LuxParser::FnCallExprContext* ctx)       override;
     std::any visitNegExpr(LuxParser::NegExprContext* ctx)             override;

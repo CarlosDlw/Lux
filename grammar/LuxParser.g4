@@ -150,6 +150,7 @@ statement
     | assignStmt
     | compoundAssignStmt
     | derefAssignStmt
+    | derefCompoundAssignStmt
     | fieldIndexAssignStmt
     | indexFieldAssignStmt
     | fieldAssignStmt
@@ -256,6 +257,16 @@ fieldIndexAssignStmt
 derefAssignStmt
     : STAR IDENTIFIER ASSIGN expression SEMI
     | STAR LPAREN expression RPAREN ASSIGN expression SEMI
+    ;
+
+// *p += 1;   or   *(p + 1) -= 2;
+derefCompoundAssignStmt
+    : STAR IDENTIFIER op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
+        | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
+    | STAR LPAREN expression RPAREN op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
+        | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
     ;
 
 // ptr->field = 42;

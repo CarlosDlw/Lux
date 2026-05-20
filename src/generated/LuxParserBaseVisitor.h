@@ -187,6 +187,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext *ctx) override {
     return visitChildren(ctx);
   }

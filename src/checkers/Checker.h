@@ -167,6 +167,7 @@ private:
     void checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt);
     void checkFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtContext* stmt);
     void checkDerefAssignStmt(LuxParser::DerefAssignStmtContext* stmt);
+    void checkDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext* stmt);
     void checkCallStmt(LuxParser::CallStmtContext* stmt);
     void checkExprStmt(LuxParser::ExprStmtContext* stmt);
     void checkReturnStmt(LuxParser::ReturnStmtContext* stmt,

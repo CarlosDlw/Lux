@@ -105,6 +105,8 @@ public:
 
     virtual std::any visitDerefAssignStmt(LuxParser::DerefAssignStmtContext *context) = 0;
 
+    virtual std::any visitDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext *context) = 0;
+
     virtual std::any visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext *context) = 0;
 
     virtual std::any visitArrowCompoundAssignStmt(LuxParser::ArrowCompoundAssignStmtContext *context) = 0;

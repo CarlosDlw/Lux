@@ -4501,6 +4501,8 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
         resolveExprType(stmt->arrowCompoundAssignStmt()->expression());
     } else if (auto* derefAssign = stmt->derefAssignStmt()) {
         checkDerefAssignStmt(derefAssign);
+    } else if (auto* derefCompound = stmt->derefCompoundAssignStmt()) {
+        checkDerefCompoundAssignStmt(derefCompound);
     } else if (auto* call = stmt->callStmt()) {
         checkCallStmt(call);
     } else if (auto* exprS = stmt->exprStmt()) {
@@ -5341,6 +5343,67 @@ void Checker::checkDerefAssignStmt(LuxParser::DerefAssignStmtContext* stmt) {
                              ptrType->name + "'");
         }
         resolveExprType(stmt->expression(1));
+    }
+}
+
+void Checker::checkDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext* stmt) {
+    const TypeInfo* targetType = nullptr;
+
+    if (stmt->IDENTIFIER()) {
+        // *ptr op= value;
+        auto varName = stmt->IDENTIFIER()->getText();
+        auto it = locals_.find(varName);
+
+        if (it == locals_.end()) {
+            error(stmt, "undefined variable '" + varName + "'");
+            return;
+        }
+
+        if (!it->second.type || it->second.type->kind != TypeKind::Pointer ||
+            !it->second.type->pointeeType) {
+            error(stmt, "cannot dereference non-pointer variable '" +
+                             varName + "' of type '" + it->second.type->name + "'");
+            return;
+        }
+
+        targetType = it->second.type->pointeeType;
+    } else {
+        // *(expr) op= value;
+        auto* ptrType = resolveExprType(stmt->expression(0));
+        if (!ptrType || ptrType->kind != TypeKind::Pointer || !ptrType->pointeeType) {
+            error(stmt, "cannot dereference non-pointer expression");
+            return;
+        }
+        targetType = ptrType->pointeeType;
+    }
+
+    auto* rhsType = resolveExprType(stmt->expression(stmt->IDENTIFIER() ? 0 : 1));
+    auto opText = stmt->op->getText();
+
+    bool needsNumeric = (opText == "+=" || opText == "-=" ||
+                         opText == "*=" || opText == "/=");
+    bool needsInteger = (opText == "%=" || opText == "&=" || opText == "|=" ||
+                         opText == "^=" || opText == "<<=" || opText == ">>=");
+
+    if (needsNumeric && targetType && !isNumeric(targetType))
+        error(stmt, "operator '" + opText +
+                         "' requires numeric pointer target, got '" + targetType->name + "'");
+    if (needsInteger && targetType && !isInteger(targetType))
+        error(stmt, "operator '" + opText +
+                         "' requires integer pointer target, got '" + targetType->name + "'");
+    if (needsNumeric && rhsType && !isNumeric(rhsType))
+        error(stmt, "operator '" + opText +
+                         "' requires numeric operand, got '" + rhsType->name + "'");
+    if (needsInteger && rhsType && !isInteger(rhsType))
+        error(stmt, "operator '" + opText +
+                         "' requires integer operand, got '" + rhsType->name + "'");
+
+    if (opText == "/=" || opText == "%=") {
+        auto* rhsExpr = stmt->expression(stmt->IDENTIFIER() ? 0 : 1);
+        if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(rhsExpr)) {
+            if (intLit->INT_LIT()->getText() == "0")
+                error(stmt, "division by zero");
+        }
     }
 }
 

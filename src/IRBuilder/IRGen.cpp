@@ -7100,6 +7100,108 @@ std::any IRGen::visitDerefAssignStmt(LuxParser::DerefAssignStmtContext* ctx) {
     return {};
 }
 
+std::any IRGen::visitDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext* ctx) {
+    llvm::Value* ptrVal = nullptr;
+    const TypeInfo* ptrTI = nullptr;
+    LuxParser::ExpressionContext* rhsExpr = nullptr;
+
+    if (ctx->IDENTIFIER()) {
+        // *ptr op= value;
+        auto varName = ctx->IDENTIFIER()->getText();
+        auto it = locals_.find(varName);
+        if (it == locals_.end()) {
+            std::cerr << "lux: undefined variable '" << varName << "'\n";
+            return {};
+        }
+
+        auto* alloca = it->second.alloca;
+        ptrTI = it->second.typeInfo;
+        if (!ptrTI || ptrTI->kind != TypeKind::Pointer || !ptrTI->pointeeType) {
+            std::cerr << "lux: '" << varName << "' is not a pointer\n";
+            return {};
+        }
+
+        ptrVal = builder_->CreateLoad(
+            llvm::PointerType::getUnqual(*context_), alloca, varName + "_load");
+        rhsExpr = ctx->expression(0);
+    } else {
+        // *(expr) op= value;
+        ptrVal = castValue(visit(ctx->expression(0)));
+        auto* exprTI = resolveExprTypeInfo(ctx->expression(0));
+        if (exprTI && exprTI->kind == TypeKind::Pointer)
+            ptrTI = exprTI;
+
+        rhsExpr = ctx->expression(1);
+    }
+
+    if (!ptrTI || !ptrTI->pointeeType) {
+        std::cerr << "lux: cannot dereference non-pointer expression\n";
+        return {};
+    }
+
+    auto* pointeeTy = ptrTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+    auto* cur = builder_->CreateLoad(pointeeTy, ptrVal, "deref_compound_cur");
+    auto* rhs = castValue(visit(rhsExpr));
+
+    if (rhs->getType() != pointeeTy) {
+        if (rhs->getType()->isIntegerTy() && pointeeTy->isIntegerTy())
+            rhs = builder_->CreateIntCast(rhs, pointeeTy, ptrTI->pointeeType->isSigned);
+        else if (rhs->getType()->isFloatingPointTy() && pointeeTy->isFloatingPointTy()) {
+            if (rhs->getType()->getPrimitiveSizeInBits() > pointeeTy->getPrimitiveSizeInBits())
+                rhs = builder_->CreateFPTrunc(rhs, pointeeTy);
+            else
+                rhs = builder_->CreateFPExt(rhs, pointeeTy);
+        }
+    }
+
+    bool isFloat = pointeeTy->isFloatingPointTy();
+    llvm::Value* result = nullptr;
+
+    if (!isFloat && (ctx->op->getType() == LuxLexer::SLASH_ASSIGN ||
+                     ctx->op->getType() == LuxLexer::PERCENT_ASSIGN)) {
+        emitDivByZeroGuard(rhs, ctx->op);
+    }
+
+    switch (ctx->op->getType()) {
+    case LuxLexer::PLUS_ASSIGN:
+        result = isFloat ? builder_->CreateFAdd(cur, rhs) : builder_->CreateAdd(cur, rhs);
+        break;
+    case LuxLexer::MINUS_ASSIGN:
+        result = isFloat ? builder_->CreateFSub(cur, rhs) : builder_->CreateSub(cur, rhs);
+        break;
+    case LuxLexer::STAR_ASSIGN:
+        result = isFloat ? builder_->CreateFMul(cur, rhs) : builder_->CreateMul(cur, rhs);
+        break;
+    case LuxLexer::SLASH_ASSIGN:
+        result = isFloat ? builder_->CreateFDiv(cur, rhs) : builder_->CreateSDiv(cur, rhs);
+        break;
+    case LuxLexer::PERCENT_ASSIGN:
+        result = isFloat ? builder_->CreateFRem(cur, rhs) : builder_->CreateSRem(cur, rhs);
+        break;
+    case LuxLexer::AMP_ASSIGN:
+        result = builder_->CreateAnd(cur, rhs);
+        break;
+    case LuxLexer::PIPE_ASSIGN:
+        result = builder_->CreateOr(cur, rhs);
+        break;
+    case LuxLexer::CARET_ASSIGN:
+        result = builder_->CreateXor(cur, rhs);
+        break;
+    case LuxLexer::LSHIFT_ASSIGN:
+        result = builder_->CreateShl(cur, rhs);
+        break;
+    case LuxLexer::RSHIFT_ASSIGN:
+        result = builder_->CreateAShr(cur, rhs);
+        break;
+    default:
+        result = cur;
+        break;
+    }
+
+    builder_->CreateStore(result, ptrVal);
+    return {};
+}
+
 std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
     auto* baseExpr = ctx->expression();
 

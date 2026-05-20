@@ -450,7 +450,7 @@ void MethodRegistry::registerBuiltins() {
     registerMethod({ "removeSuffix",{TypeKind::String}, {"string"}, "string",
                      .emitTag = "string.removeSuffix" });
 
-    registerMethod({ "split",     {TypeKind::String}, {"string"}, "string",
+    registerMethod({ "split",     {TypeKind::String}, {"string"}, "Vec<string>",
                      .emitTag = "string.split" });
 
     registerMethod({ "join",      {TypeKind::String}, {"string"}, "string",
@@ -468,16 +468,16 @@ void MethodRegistry::registerBuiltins() {
     registerMethod({ "remove",    {TypeKind::String}, {"usize", "usize"}, "string",
                      .emitTag = "string.remove" });
 
-    registerMethod({ "chars",     {TypeKind::String}, {}, "char",
+    registerMethod({ "chars",     {TypeKind::String}, {}, "Vec<char>",
                      .emitTag = "string.chars" });
 
-    registerMethod({ "bytes",     {TypeKind::String}, {}, "uint8",
+    registerMethod({ "bytes",     {TypeKind::String}, {}, "Vec<uint8>",
                      .emitTag = "string.bytes" });
 
-    registerMethod({ "lines",     {TypeKind::String}, {}, "string",
+    registerMethod({ "lines",     {TypeKind::String}, {}, "Vec<string>",
                      .emitTag = "string.lines" });
 
-    registerMethod({ "words",     {TypeKind::String}, {}, "string",
+    registerMethod({ "words",     {TypeKind::String}, {}, "Vec<string>",
                      .emitTag = "string.words" });
 
     registerMethod({ "concat",    {TypeKind::String}, {"string"}, "string",

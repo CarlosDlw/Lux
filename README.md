@@ -15,6 +15,30 @@ int32 main() {
 
 ---
 
+## Table of Contents
+
+- [Lux](#lux)
+- [Features](#features)
+- [Building](#building)
+- [Install dependencies](#install-dependencies)
+- [Configure and build (recommended)](#configure-and-build-recommended)
+- [Alternative: pure CMake](#alternative-pure-cmake)
+- [Dependency discovery notes](#dependency-discovery-notes)
+- [Troubleshooting](#troubleshooting)
+- [Usage](#usage)
+- [Quick Example](#quick-example)
+- [Documentation](#documentation)
+- [Getting Started](#getting-started)
+- [Language Guide](#language-guide)
+- [Standard Library](#standard-library)
+- [Advanced Topics](#advanced-topics)
+- [FFI](#ffi)
+- [Reference](#reference)
+- [Final Notes](#final-notes)
+- [License](#license)
+
+---
+
 ## Features
 
 - **Native compilation** — LLVM backend targeting x86-64, ARM, and more; full `-o1`/`-o2`/`-o3` optimization pipeline
@@ -34,7 +58,7 @@ int32 main() {
 
 ## Building
 
-**Dependencies:**
+Dependencies:
 
 | Dependency | Version |
 |---|---|
@@ -45,15 +69,66 @@ int32 main() {
 | libclang | any |
 | zlib, pthreads | any |
 
+### Install dependencies
+
+Install the equivalent development packages for your distro. Typical package names:
+
+- Ubuntu/Debian: `cmake`, `build-essential`, `llvm-dev`, `libclang-dev`, `libantlr4-runtime-dev`, `zlib1g-dev`, `pkg-config`
+- Arch Linux: `cmake`, `base-devel`, `llvm`, `clang`, `antlr4-runtime`, `zlib`, `pkgconf`
+- Fedora: `cmake`, `gcc-c++`, `llvm-devel`, `clang-devel`, `antlr4-cpp-runtime-devel`, `zlib-devel`, `pkgconf-pkg-config`
+
+### Configure and build (recommended)
+
+Use the project Makefile (portable wrappers around CMake):
+
 ```bash
 git clone https://github.com/CarlosDlw/Lux.git
 cd Lux
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+make configure BUILD_TYPE=Debug SANITIZERS=ON
+make build
 ```
 
 The compiled binary is at `build/lux`.
+
+Useful configure variants:
+
+```bash
+# Release build without sanitizers
+make configure BUILD_TYPE=Release SANITIZERS=OFF
+
+# Force Ninja generator
+make configure GENERATOR="Ninja"
+
+# Pass extra CMake hints (custom prefixes/toolchains)
+make configure CMAKE_FLAGS="-DCMAKE_PREFIX_PATH=/opt/custom"
+```
+
+### Alternative: pure CMake
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DLUX_ENABLE_SANITIZERS=ON
+cmake --build build --parallel
+```
+
+### Dependency discovery notes
+
+- The build system prefers pkg-config when available.
+- It also searches common system locations for ANTLR4 runtime and libclang.
+- If LLVM is installed in a non-standard prefix, pass `-DLLVM_DIR=...` or include it in `CMAKE_PREFIX_PATH`.
+
+### Troubleshooting
+
+If CMake reports missing ANTLR4 runtime or libclang:
+
+1. Ensure development packages are installed (headers + libraries, not only runtime binaries).
+2. Check pkg-config visibility:
+    - `pkg-config --cflags --libs antlr4-runtime`
+    - `pkg-config --cflags --libs libclang`
+3. If pkg-config cannot find them, export paths:
+    - `export PKG_CONFIG_PATH=/your/prefix/lib/pkgconfig:$PKG_CONFIG_PATH`
+4. Provide explicit CMake hints:
+    - `-DCMAKE_PREFIX_PATH=/your/prefix`
+    - `-DLLVM_DIR=/your/prefix/lib/cmake/llvm`
 
 ---
 
@@ -261,3 +336,19 @@ int32 main() {
 | [Builtins](docs/reference/builtins.md) | Built-in functions and operators |
 | [Type Methods](docs/reference/type-methods.md) | Methods available on all types |
 | [Changelog](docs/reference/changelog.md) | Version history |
+
+---
+
+## Final Notes
+
+Lux is actively evolving. If a build fails on your platform, open an issue with:
+
+- distro and version
+- compiler and CMake versions
+- full CMake configure output
+
+This helps keep cross-distro support reliable and fast to maintain.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

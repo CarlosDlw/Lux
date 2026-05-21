@@ -34,6 +34,7 @@ int32 main() {
     testGenericsTaskAndConstraints();
     testOperatorsFull();
     testRangesFull();
+    testTuplesFull();
     testStructsCore();
     testStructsPointers();
     testStructsMethodsAndExtend();

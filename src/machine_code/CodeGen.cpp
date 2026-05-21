@@ -56,6 +56,38 @@ static auto createTargetMachineCompat(TargetT* target,
                                        opt, llvm::Reloc::PIC_);
 }
 
+static auto lookupTargetCompat(const llvm::Triple& triple,
+                               std::string& lookupError,
+                               int)
+    -> decltype(llvm::TargetRegistry::lookupTarget(triple, lookupError)) {
+    return llvm::TargetRegistry::lookupTarget(triple, lookupError);
+}
+
+static auto lookupTargetCompat(const llvm::Triple& triple,
+                               std::string& lookupError,
+                               long)
+    -> decltype(llvm::TargetRegistry::lookupTarget(llvm::StringRef(), lookupError)) {
+    auto tripleStr = triple.str();
+    return llvm::TargetRegistry::lookupTarget(llvm::StringRef(tripleStr), lookupError);
+}
+
+template <typename ModuleT>
+static auto setModuleTargetTripleCompat(ModuleT* module,
+                                        const llvm::Triple& triple,
+                                        int)
+    -> decltype(module->setTargetTriple(triple), void()) {
+    module->setTargetTriple(triple);
+}
+
+template <typename ModuleT>
+static auto setModuleTargetTripleCompat(ModuleT* module,
+                                        const llvm::Triple& triple,
+                                        long)
+    -> decltype(module->setTargetTriple(triple.str()), void()) {
+    auto tripleStr = triple.str();
+    module->setTargetTriple(tripleStr);
+}
+
 // Spawn `linker objectPath builtinsPath -o outputPath` and wait for it.
 // Returns true only if the child exits with code 0.
 static bool tryLink(const char*        linker,
@@ -265,8 +297,7 @@ bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath
     llvm::Triple targetTriple(llvm::sys::getDefaultTargetTriple());
 
     std::string lookupError;
-    const auto* target = llvm::TargetRegistry::lookupTarget(
-        targetTriple.getArchName(), targetTriple, lookupError);
+    const auto* target = lookupTargetCompat(targetTriple, lookupError, 0);
     if (!target) {
         std::cerr << "lux: target lookup failed: " << lookupError << "\n";
         return false;
@@ -278,6 +309,7 @@ bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath
     std::unique_ptr<llvm::TargetMachine> machine(
         createTargetMachineCompat(target, targetTriple, cpu, features, opt, 0));
 
+    setModuleTargetTripleCompat(module, targetTriple, 0);
     module->setDataLayout(machine->createDataLayout());
 
     std::error_code ec;

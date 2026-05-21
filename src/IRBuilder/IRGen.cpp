@@ -832,13 +832,19 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
     int variadicIdx = -1;
     if (auto* params = ctx->paramList()) {
         auto paramList = params->param();
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         for (size_t i = 0; i < paramList.size(); i++) {
             auto* param = paramList[i];
             auto* pInfo = resolveTypeInfo(param->typeSpec());
+            auto pDims  = countArrayDims(param->typeSpec());
             if (param->SPREAD()) {
                 variadicIdx = static_cast<int>(i);
                 paramTypes.push_back(llvm::PointerType::getUnqual(*context_));
                 paramTypes.push_back(llvm::Type::getInt64Ty(*context_));
+            } else if (pDims > 0) {
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* sliceTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+                paramTypes.push_back(sliceTy);
             } else {
                 paramTypes.push_back(pInfo->toLLVMType(*context_, module_->getDataLayout()));
             }
@@ -901,14 +907,21 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
     int variadicIdx = -1; // index of the variadic param in the grammar param list
     if (auto* params = ctx->paramList()) {
         auto paramList = params->param();
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         for (size_t i = 0; i < paramList.size(); i++) {
             auto* param = paramList[i];
             auto* pInfo = resolveTypeInfo(param->typeSpec());
+            auto pDims  = countArrayDims(param->typeSpec());
             if (param->SPREAD()) {
                 // Variadic: emit as (ptr, i64) for the packed array
                 variadicIdx = static_cast<int>(i);
                 paramTypes.push_back(llvm::PointerType::getUnqual(*context_));
                 paramTypes.push_back(llvm::Type::getInt64Ty(*context_));
+            } else if (pDims > 0) {
+                // []T-like parameter ABI: {ptr, len}
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* sliceTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+                paramTypes.push_back(sliceTy);
             } else {
                 paramTypes.push_back(pInfo->toLLVMType(*context_, module_->getDataLayout()));
             }
@@ -998,7 +1011,14 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
                 variadicParams_[pName] = { ptrAlloca, lenAlloca, pInfo };
                 llvmIdx += 2;
             } else {
-                auto* pType = pInfo->toLLVMType(*context_, module_->getDataLayout());
+                llvm::Type* pType = nullptr;
+                if (pDims > 0) {
+                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                    pType = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+                } else {
+                    pType = pInfo->toLLVMType(*context_, module_->getDataLayout());
+                }
                 auto* alloca = builder_->CreateAlloca(pType, nullptr, pName);
                 builder_->CreateStore(func->getArg(llvmIdx), alloca);
                 locals_[pName] = { alloca, pInfo, pDims, /*isParam=*/true };
@@ -12425,7 +12445,11 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
             auto* arrayDesc = methodRegistry_.lookupArrayMethod(methodName);
             if (arrayDesc) {
                 if (arrayDesc->returnType == "_self") return recvTI;
-                if (arrayDesc->returnType == "_elem") return recvTI->elementType;
+                if (arrayDesc->returnType == "_elem") {
+                    // For []T receivers, resolveExprTypeInfo already returns T
+                    // (not an array wrapper), so fall back to recvTI itself.
+                    return recvTI->elementType ? recvTI->elementType : recvTI;
+                }
                 return typeRegistry_.lookup(arrayDesc->returnType);
             }
         }
@@ -13080,6 +13104,7 @@ void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
     auto* usizeTy = typeRegistry_.lookup("usize")->toLLVMType(*context_, module_->getDataLayout());
     if (info.isParam) return;
     if (!info.typeInfo) return;
+    if (info.arrayDims > 0) return;
 
     if (info.typeInfo->kind == TypeKind::String) {
         if (info.isBorrowed) return;
@@ -13986,6 +14011,71 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(
                     llvm::ConstantInt::get(usizeTy, it->second.fixedArraySizes[0]));
             }
+
+            // []T parameter/values are lowered as a slice-like struct: {ptr, len}.
+            // Support common array-like methods directly on that representation.
+            if (!arrTy) {
+                auto* sliceTy = llvm::dyn_cast<llvm::StructType>(allocaTy);
+                if (sliceTy && sliceTy->getNumElements() == 2) {
+                    auto* ptrFieldTy = sliceTy->getElementType(0);
+                    auto* lenFieldTy = sliceTy->getElementType(1);
+                    if (ptrFieldTy->isPointerTy() && lenFieldTy->isIntegerTy()) {
+                        auto* elemTI = it->second.typeInfo;
+                        if (!elemTI) {
+                            std::cerr << "lux: unable to resolve slice element type for '"
+                                      << receiverVarName << "'\n";
+                            return static_cast<llvm::Value*>(
+                                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                        }
+                        auto* i64Ty   = llvm::Type::getInt64Ty(*context_);
+                        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                        auto* elemTy  = elemTI->toLLVMType(*context_,
+                                                           module_->getDataLayout());
+
+                        auto* ptrGep = builder_->CreateStructGEP(sliceTy, arrAlloca, 0, "slice.ptr.gep");
+                        auto* lenGep = builder_->CreateStructGEP(sliceTy, arrAlloca, 1, "slice.len.gep");
+                        auto* dataPtr = builder_->CreateLoad(ptrFieldTy, ptrGep, "slice.ptr");
+                        auto* lenVal  = builder_->CreateLoad(lenFieldTy, lenGep, "slice.len");
+
+                        auto* lenAsUsize = (lenVal->getType() == usizeTy)
+                            ? lenVal
+                            : builder_->CreateIntCast(lenVal, usizeTy, false, "slice.len.cast");
+
+                        if (methodName == "len") {
+                            return static_cast<llvm::Value*>(lenAsUsize);
+                        }
+                        if (methodName == "isEmpty") {
+                            auto* zero = llvm::ConstantInt::get(usizeTy, 0);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateICmpEQ(lenAsUsize, zero, "slice.empty"));
+                        }
+
+                        llvm::Value* idx = llvm::ConstantInt::get(i64Ty, 0);
+                        if (methodName == "last") {
+                            auto* lenAsI64 = (lenVal->getType() == i64Ty)
+                                ? lenVal
+                                : builder_->CreateIntCast(lenVal, i64Ty, false, "slice.len.i64");
+                            idx = builder_->CreateSub(lenAsI64,
+                                llvm::ConstantInt::get(i64Ty, 1), "slice.last.idx");
+                        } else if (methodName == "at") {
+                            if (args.empty()) {
+                                std::cerr << "lux: at() requires an index argument\n";
+                                return static_cast<llvm::Value*>(llvm::UndefValue::get(elemTy));
+                            }
+                            idx = args[0];
+                            if (idx->getType() != i64Ty)
+                                idx = builder_->CreateIntCast(idx, i64Ty, true, "slice.at.idx");
+                        }
+
+                        if (methodName == "first" || methodName == "last" || methodName == "at") {
+                            auto* elemPtr = builder_->CreateGEP(elemTy, dataPtr, idx, "slice.elem.ptr");
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(elemTy, elemPtr, "slice.elem"));
+                        }
+                    }
+                }
+            }
+
             if (!arrTy) {
                 std::cerr << "lux: expected array type for '" << receiverVarName << "'\n";
                 return static_cast<llvm::Value*>(

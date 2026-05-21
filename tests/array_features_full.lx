@@ -3,6 +3,11 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
+int32 arrayParamLenAndFirst([]string names) {
+    assertEqual(names.first(), "carlos");
+    ret names.len();
+}
+
 int32 testArrayFeaturesFull() {
     println("[Testing full array feature/method coverage...]");
 
@@ -108,6 +113,11 @@ int32 testArrayFeaturesFull() {
     // Array decay + pointer dereference (explicit parentheses to avoid cast precedence ambiguity)
     char firstChar = *((&hello) as *char);
     assertEqual(firstChar, 'H');
+
+    // Regression: []string parameter should lower as slice and keep correct values.
+    []string names = ["carlos", "dlw", "lux"];
+    assertEqual(arrayParamLenAndFirst(names), 3);
+    assertEqual(arrayParamLenAndFirst(["carlos", "dlw", "lux"]), 3);
 
     println("✔ full array feature/method tests passed");
     ret 0;

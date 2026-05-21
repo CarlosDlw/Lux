@@ -236,10 +236,10 @@ bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath
     llvm::InitializeNativeTargetAsmPrinter();
 
     llvm::Triple targetTriple(llvm::sys::getDefaultTargetTriple());
-    module->setTargetTriple(targetTriple);
 
     std::string lookupError;
-    const auto* target = llvm::TargetRegistry::lookupTarget(targetTriple, lookupError);
+    const auto* target = llvm::TargetRegistry::lookupTarget(
+        targetTriple.getArchName(), targetTriple, lookupError);
     if (!target) {
         std::cerr << "lux: target lookup failed: " << lookupError << "\n";
         return false;

@@ -10,7 +10,10 @@
 #include "lsp/SignatureHelpProvider.h"
 #include "lsp/ProjectContext.h"
 
-#include <cstdio>
+#include <stdio.h>
+#ifndef EOF
+#define EOF (-1)
+#endif
 #include <nlohmann/json.hpp>
 #include <string>
 

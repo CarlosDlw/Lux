@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include <filesystem>
 
 #include "generated/LuxParser.h"
 #include "types/TypeRegistry.h"
@@ -52,8 +53,18 @@ private:
     BuiltinRegistry      builtinRegistry_;
     std::vector<DocComment> docComments_;  // rebuilt per hover() call
 
+    struct DocCommentCacheEntry {
+        std::filesystem::file_time_type mtime{};
+        bool hasMtime = false;
+        std::vector<DocComment> docs;
+    };
+    std::unordered_map<std::string, DocCommentCacheEntry> crossFileDocCache_;
+
     // Attach doc-comment (if any) to hover markdown.
     std::string withDoc(const std::string& md, size_t declLine);
+
+    // Load and cache doc-comments for cross-file symbols.
+    const std::vector<DocComment>& docCommentsForFile(const std::string& filePath);
 
     // Collect local variables + params in a function up to a given line.
     std::unordered_map<std::string, LocalVar>

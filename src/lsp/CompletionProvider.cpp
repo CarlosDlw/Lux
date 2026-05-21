@@ -1227,10 +1227,11 @@ std::vector<CompletionItem> CompletionProvider::complete(
         return items;
     }
 
-    // 2) Build a "patched" source for parsing: comment out the cursor line
-    //    so the parser doesn't choke on incomplete expressions like "p." or "ptr->"
-    std::string patchedSource;
-    {
+    // 2) Try parsing raw source first (fast path). Fallback to a patched source
+    //    only when the current line is incomplete and breaks parsing.
+    auto parsed = Parser::parseString(source);
+    if (!parsed.tree) {
+        std::string patchedSource;
         std::istringstream ss(source);
         std::string ln;
         size_t lineIdx = 0;
@@ -1241,38 +1242,50 @@ std::vector<CompletionItem> CompletionProvider::complete(
                 patchedSource += ln + "\n";
             lineIdx++;
         }
+
+        parsed = Parser::parseString(patchedSource);
+        if (!parsed.tree) return {};
     }
 
-    auto parsed = Parser::parseString(patchedSource);
-    if (!parsed.tree) return {};
-
     // Resolve C headers
-    CBindings localBindings;
-    TypeRegistry cTypeReg;
     const CBindings* cBindingsPtr = nullptr;
 
     if (project && project->isValid()) {
         cBindingsPtr = &project->cBindings();
     } else {
-        std::vector<LuxParser::IncludeDeclContext*> includes;
-        for (auto* pre : parsed.tree->preambleDecl())
-            if (auto* inc = pre->includeDecl()) includes.push_back(inc);
-        if (!includes.empty()) {
-            CHeaderResolver resolver(cTypeReg, localBindings);
-            for (auto* incl : includes) {
-                auto text = incl->getText();
-                if (incl->INCLUDE_SYS()) {
-                    auto header = CHeaderResolver::extractSystemHeader(text);
-                    if (!header.empty())
-                        resolver.resolveSystemHeader(header);
-                } else if (incl->INCLUDE_LOCAL()) {
-                    auto header = CHeaderResolver::extractLocalHeader(text);
-                    if (!header.empty())
-                        resolver.resolveLocalHeader(header, ".");
+        auto includeFingerprint = buildIncludeFingerprint(parsed.tree);
+        if (hasIncludeBindingsCache_ && includeFingerprint == includeFingerprintCache_) {
+            cBindingsPtr = &includeBindingsCache_;
+        } else {
+            CBindings localBindings;
+            TypeRegistry cTypeReg;
+            std::vector<LuxParser::IncludeDeclContext*> includes;
+            for (auto* pre : parsed.tree->preambleDecl())
+                if (auto* inc = pre->includeDecl()) includes.push_back(inc);
+
+            if (!includes.empty()) {
+                CHeaderResolver resolver(cTypeReg, localBindings);
+                for (auto* incl : includes) {
+                    auto text = incl->getText();
+                    if (incl->INCLUDE_SYS()) {
+                        auto header = CHeaderResolver::extractSystemHeader(text);
+                        if (!header.empty())
+                            resolver.resolveSystemHeader(header);
+                    } else if (incl->INCLUDE_LOCAL()) {
+                        auto header = CHeaderResolver::extractLocalHeader(text);
+                        if (!header.empty())
+                            resolver.resolveLocalHeader(header, ".");
+                    }
                 }
             }
+
+            includeBindingsCache_ = std::move(localBindings);
+            includeFingerprintCache_ = std::move(includeFingerprint);
+            hasIncludeBindingsCache_ = true;
+            cBindingsPtr = &includeBindingsCache_;
         }
-        cBindingsPtr = &localBindings;
+        if (!cBindingsPtr)
+            cBindingsPtr = &includeBindingsCache_;
     }
 
     // Re-infer receiver type now that we have a valid tree
@@ -2882,6 +2895,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem>& items,
         }
         // Project namespaces
         if (project && project->isValid()) {
+            std::unordered_set<std::string> seenTopLevel;
             for (auto& ns : project->registry().allNamespaces()) {
                 // Skip "std::" prefixed
                 if (ns.substr(0, 5) == "std::") continue;
@@ -2890,6 +2904,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem>& items,
                 auto sep = ns.find("::");
                 if (sep != std::string::npos)
                     topLevel = ns.substr(0, sep);
+                if (!seenTopLevel.insert(topLevel).second) continue;
                 if (!matchesPrefix(topLevel, prefix)) continue;
                 CompletionItem ci;
                 ci.label = topLevel;
@@ -3899,6 +3914,19 @@ void CompletionProvider::dedup(std::vector<CompletionItem>& items) {
             return !seen.insert(item.label).second;
         });
     items.erase(it, items.end());
+}
+
+std::string CompletionProvider::buildIncludeFingerprint(
+    LuxParser::ProgramContext* tree) {
+    if (!tree) return {};
+    std::string out;
+    for (auto* pre : tree->preambleDecl()) {
+        auto* inc = pre->includeDecl();
+        if (!inc) continue;
+        out += inc->getText();
+        out.push_back('\n');
+    }
+    return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

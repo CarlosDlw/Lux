@@ -82,6 +82,9 @@ private:
     TypeRegistry typeRegistry_;
     MethodRegistry methodRegistry_;
     ExtendedTypeRegistry extTypeRegistry_;
+    bool hasIncludeBindingsCache_ = false;
+    std::string includeFingerprintCache_;
+    CBindings includeBindingsCache_;
 
     // ── Context detection ───────────────────────────────────────────
 
@@ -273,4 +276,7 @@ private:
 
     // Dedup items by label.
     static void dedup(std::vector<CompletionItem>& items);
+
+    // Build a stable key from include declarations for C binding cache.
+    static std::string buildIncludeFingerprint(LuxParser::ProgramContext* tree);
 };

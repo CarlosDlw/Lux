@@ -7,6 +7,7 @@
 
 #include <sstream>
 #include <fstream>
+#include <filesystem>
 
 // Normalize lowercase native keywords (vec, map, set) to registry CamelCase (Vec, Map, Set)
 static std::string normalizeExtBaseName(const std::string& name) {
@@ -110,6 +111,40 @@ static std::string normalizeHoverMarkdown(std::string contents) {
 
 std::string HoverProvider::withDoc(const std::string& md, size_t declLine) {
     return appendDocToHover(md, docComments_, declLine);
+}
+
+const std::vector<DocComment>&
+HoverProvider::docCommentsForFile(const std::string& filePath) {
+    static const std::vector<DocComment> kEmpty;
+    if (filePath.empty()) return kEmpty;
+
+    std::error_code ec;
+    auto mtime = std::filesystem::last_write_time(filePath, ec);
+    bool hasMtime = !ec;
+
+    auto it = crossFileDocCache_.find(filePath);
+    if (it != crossFileDocCache_.end()) {
+        bool stale = false;
+        if (hasMtime) {
+            stale = (!it->second.hasMtime) || (it->second.mtime != mtime);
+        }
+        if (!stale) return it->second.docs;
+    }
+
+    DocCommentCacheEntry entry;
+    entry.hasMtime = hasMtime;
+    if (hasMtime) entry.mtime = mtime;
+
+    std::ifstream f(filePath);
+    if (f) {
+        std::string source((std::istreambuf_iterator<char>(f)),
+                           std::istreambuf_iterator<char>());
+        entry.docs = parseDocComments(source);
+    }
+
+    auto [newIt, inserted] = crossFileDocCache_.insert_or_assign(filePath, std::move(entry));
+    (void)inserted;
+    return newIt->second.docs;
 }
 
 static void collectLocalsFromBlock(
@@ -587,15 +622,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             if (!sym) continue;
 
             // Read source file and parse doc-comments for the cross-file symbol.
-            std::vector<DocComment> crossDocs;
-            if (!sym->sourceFile.empty()) {
-                std::ifstream f(sym->sourceFile);
-                if (f) {
-                    std::string crossSource((std::istreambuf_iterator<char>(f)),
-                                             std::istreambuf_iterator<char>());
-                    crossDocs = parseDocComments(crossSource);
-                }
-            }
+            const auto& crossDocs = docCommentsForFile(sym->sourceFile);
 
             switch (sym->kind) {
                 case ExportedSymbol::Function:
@@ -762,15 +789,16 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         ss << "```lux\n(type) " << name;
         if (extDesc->genericArity == 1) ss << "<T>";
         else if (extDesc->genericArity == 2) ss << "<K, V>";
-        ss << "\n```\n\n**Methods:**\n";
+        ss << "\n```\n\n**Methods:**\n```lux\n";
         for (auto& m : extDesc->methods) {
-            ss << "- `" << m.returnType << " " << m.name << "(";
+            ss << m.returnType << " " << m.name << "(";
             for (size_t i = 0; i < m.paramTypes.size(); i++) {
                 if (i > 0) ss << ", ";
                 ss << m.paramTypes[i];
             }
-            ss << ")`\n";
+            ss << ")\n";
         }
+        ss << "```";
         return makeResult(token, ss.str());
     }
 
@@ -2542,17 +2570,9 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                                     auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
                                     if (!ext) continue;
-                                    std::vector<DocComment> crossDocs;
-                                    if (!sym->sourceFile.empty()) {
-                                        std::ifstream ifs(sym->sourceFile);
-                                        if (ifs.is_open()) {
-                                            std::string src((std::istreambuf_iterator<char>(ifs)),
-                                                             std::istreambuf_iterator<char>());
-                                            crossDocs = parseDocComments(src);
-                                        }
-                                    }
                                     for (auto* m : ext->extendMethod()) {
-                                        if (auto r = tryExtend(ext, m, crossDocs))
+                                        if (auto r = tryExtend(ext, m,
+                                                docCommentsForFile(sym->sourceFile)))
                                             return r;
                                     }
                                 }
@@ -2718,15 +2738,16 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
         ss << "```lux\n(type) " << name;
         if (ext->genericArity == 1) ss << "<T>";
         else if (ext->genericArity == 2) ss << "<K, V>";
-        ss << "\n```\n\n**Methods:**\n";
+        ss << "\n```\n\n**Methods:**\n```lux\n";
         for (auto& m : ext->methods) {
-            ss << "- `" << m.returnType << " " << m.name << "(";
+            ss << m.returnType << " " << m.name << "(";
             for (size_t i = 0; i < m.paramTypes.size(); i++) {
                 if (i > 0) ss << ", ";
                 ss << m.paramTypes[i];
             }
-            ss << ")`\n";
+            ss << ")\n";
         }
+        ss << "```";
         return makeResult(token, ss.str());
     }
 
@@ -3062,16 +3083,8 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 if (!ext) continue;
                 for (auto* m : ext->extendMethod()) {
                     if (m->IDENTIFIER(0)->getText() == methodName) {
-                        std::vector<DocComment> crossDocs;
-                        if (!sym->sourceFile.empty()) {
-                            std::ifstream ifs(sym->sourceFile);
-                            if (ifs.is_open()) {
-                                std::string crossSrc((std::istreambuf_iterator<char>(ifs)),
-                                                      std::istreambuf_iterator<char>());
-                                crossDocs = parseDocComments(crossSrc);
-                            }
-                        }
-                        return formatExtendMethod(ext, m, crossDocs);
+                        return formatExtendMethod(ext, m,
+                            docCommentsForFile(sym->sourceFile));
                     }
                 }
             }
@@ -3332,14 +3345,10 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
                     std::string md = "```lux\n(variant) " + typeName + "::" + variantName + "\n```";
                     // Read doc-comments from source file
                     if (!sym->sourceFile.empty()) {
-                        std::ifstream ifs(sym->sourceFile);
-                        if (ifs.is_open()) {
-                            std::string crossSrc((std::istreambuf_iterator<char>(ifs)),
-                                                  std::istreambuf_iterator<char>());
-                            auto crossDocs = parseDocComments(crossSrc);
-                            size_t declLine = enumCtx->getStart()->getLine();
-                            md = appendDocToHover(md, crossDocs, declLine);
-                        }
+                        size_t declLine = enumCtx->getStart()->getLine();
+                        md = appendDocToHover(md,
+                            docCommentsForFile(sym->sourceFile),
+                            declLine);
                     }
                     return makeResult(token, md);
                 }
@@ -3439,14 +3448,10 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
                         std::string md = ss.str();
                         // Read doc-comments from the source file
                         if (!sym->sourceFile.empty()) {
-                            std::ifstream ifs(sym->sourceFile);
-                            if (ifs.is_open()) {
-                                std::string crossSrc((std::istreambuf_iterator<char>(ifs)),
-                                                      std::istreambuf_iterator<char>());
-                                auto crossDocs = parseDocComments(crossSrc);
-                                size_t declLine = m->getStart()->getLine();
-                                md = appendDocToHover(md, crossDocs, declLine);
-                            }
+                            size_t declLine = m->getStart()->getLine();
+                            md = appendDocToHover(md,
+                                docCommentsForFile(sym->sourceFile),
+                                declLine);
                         }
                         return makeResult(token, md);
                     }

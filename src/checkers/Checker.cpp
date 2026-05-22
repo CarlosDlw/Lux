@@ -3020,8 +3020,83 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     // ── Static method call: Struct::method(args) ─────────────────────
     if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
-        auto structName = ids[0]->getText();
-        auto methodName = ids[1]->getText();
+        if (ids.size() < 2) {
+            error(expr, "invalid static call expression");
+            return nullptr;
+        }
+
+        auto structName = ids.front()->getText();
+        auto methodName = ids.back()->getText();
+
+        auto checkStdModuleCall = [&](const std::string& modulePath) -> const TypeInfo* {
+            ImportResolver probe;
+            probe.addImport(modulePath, methodName);
+
+            std::vector<const TypeInfo*> moduleArgTypes;
+            if (auto* argList = smc->argList()) {
+                for (auto* argExpr : argList->expression())
+                    moduleArgTypes.push_back(resolveExprType(argExpr));
+            }
+
+            auto* sig = builtinRegistry_.lookup(methodName);
+            if (!probe.isImported(methodName) || !sig) {
+                error(expr, "module '" + modulePath +
+                             "' does not export callable symbol '" + methodName + "'");
+                return nullptr;
+            }
+
+            if (sig->isVariadic) {
+                if (moduleArgTypes.size() < sig->paramTypes.size()) {
+                    error(expr, "'" + methodName + "' expects at least " +
+                                 std::to_string(sig->paramTypes.size()) +
+                                 " argument(s) " + formatParamTypes(sig->paramTypes) +
+                                 ", got " + std::to_string(moduleArgTypes.size()));
+                }
+            } else if (moduleArgTypes.size() != sig->paramTypes.size()) {
+                error(expr, "'" + methodName + "' expects " +
+                             std::to_string(sig->paramTypes.size()) +
+                             " argument(s) " + formatParamTypes(sig->paramTypes) +
+                             ", got " + std::to_string(moduleArgTypes.size()));
+            }
+
+            auto& retName = sig->returnType;
+            if (retName == "_any" || retName == "_numeric") {
+                if (!moduleArgTypes.empty() && moduleArgTypes[0])
+                    return moduleArgTypes[0];
+                return typeRegistry_.lookup("int32");
+            }
+            return resolveBuiltinReturnType(retName);
+        };
+
+        if (ids.size() > 2) {
+            auto rootName = ids.front()->getText();
+            auto rootImport = userImports_.find(rootName);
+            if (rootImport == userImports_.end() || rootImport->second != rootName) {
+                error(expr, "namespace root '" + rootName +
+                             "' is not imported; add 'use " + rootName + ";'");
+                return nullptr;
+            }
+
+            std::string modulePath;
+            for (size_t i = 0; i + 1 < ids.size(); ++i) {
+                if (!modulePath.empty()) modulePath += "::";
+                modulePath += ids[i]->getText();
+            }
+
+            if (NamespaceRegistry::isStdModule(modulePath)) {
+                return checkStdModuleCall(modulePath);
+            }
+
+            error(expr, "unsupported qualified static call '" + modulePath +
+                         "::" + methodName + "'");
+            return nullptr;
+        }
+
+        auto importedModule = userImports_.find(structName);
+        if (importedModule != userImports_.end() &&
+            NamespaceRegistry::isStdModule(importedModule->second)) {
+            return checkStdModuleCall(importedModule->second);
+        }
 
         std::vector<const TypeInfo*> argTypes;
         if (auto* argList = smc->argList()) {
@@ -3834,16 +3909,31 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
     for (auto* pre : tree->preambleDecl()) {
         auto* useDecl = pre->useDecl();
         if (!useDecl) continue;
-        if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+            auto rootName = root->IDENTIFIER()->getText();
+            if (rootName == "std") {
+                userImports_[rootName] = rootName;
+            } else if (nsRegistry_ && nsRegistry_->hasNamespace(rootName)) {
+                userImports_[rootName] = rootName;
+            } else if (!nsRegistry_) {
+                userImports_[rootName] = rootName;
+            } else {
+                error(root, "unknown module or namespace root '" + rootName + "'");
+            }
+        } else if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
             std::string path;
             for (auto* id : item->modulePath()->IDENTIFIER()) {
                 if (!path.empty()) path += "::";
                 path += id->getText();
             }
             auto symbolName = item->IDENTIFIER()->getText();
+            auto qualifiedPath = path + "::" + symbolName;
 
             if (NamespaceRegistry::isStdModule(path)) {
                 imports_.addImport(path, symbolName);
+            } else if (NamespaceRegistry::isStdModule(qualifiedPath)) {
+                // Module alias import, e.g. `use std::log;`
+                userImports_[symbolName] = qualifiedPath;
             } else if (nsRegistry_ && nsRegistry_->hasNamespace(path)) {
                 auto* sym = nsRegistry_->findSymbol(path, symbolName);
                 if (!sym) {

@@ -142,11 +142,24 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
     else if (auto* ctx = dynamic_cast<LuxParser::UseItemContext*>(node)) {
         // The last IDENTIFIER is the imported symbol (function/type)
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function);
+        uint32_t mods = 0;
+        if (ctx->modulePath() &&
+            ctx->modulePath()->getText().rfind("std::", 0) == 0) {
+            mods = static_cast<uint32_t>(SemanticTokenMod::DefaultLib);
+        }
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function, mods);
     }
     else if (auto* ctx = dynamic_cast<LuxParser::UseGroupContext*>(node)) {
+        uint32_t mods = 0;
+        if (ctx->modulePath() &&
+            ctx->modulePath()->getText().rfind("std::", 0) == 0) {
+            mods = static_cast<uint32_t>(SemanticTokenMod::DefaultLib);
+        }
         for (auto* id : ctx->IDENTIFIER())
-            classifyIdent(map, id, SemanticTokenType::Function);
+            classifyIdent(map, id, SemanticTokenType::Function, mods);
+    }
+    else if (auto* ctx = dynamic_cast<LuxParser::UseRootContext*>(node)) {
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Namespace);
     }
 
     // ── struct ──
@@ -352,9 +365,25 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     else if (auto* ctx = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 2) {
-            classifyIdent(map, ids[0], SemanticTokenType::Type);
-            classifyIdent(map, ids[1], SemanticTokenType::Method,
-                          static_cast<uint32_t>(SemanticTokenMod::Static));
+            std::string ownerPath;
+            for (size_t i = 0; i + 1 < ids.size(); ++i) {
+                if (!ownerPath.empty()) ownerPath += "::";
+                ownerPath += ids[i]->getText();
+            }
+            uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Static);
+            if (ownerPath == "std" || ownerPath.rfind("std::", 0) == 0) {
+                mods |= static_cast<uint32_t>(SemanticTokenMod::DefaultLib);
+            }
+
+            // Multi-segment owner path support: A::B::C::method()
+            if (ids.size() == 2) {
+                classifyIdent(map, ids[0], SemanticTokenType::Type);
+            } else {
+                for (size_t i = 0; i + 1 < ids.size(); ++i)
+                    classifyIdent(map, ids[i], SemanticTokenType::Namespace);
+            }
+
+            classifyIdent(map, ids.back(), SemanticTokenType::Method, mods);
         }
     }
 

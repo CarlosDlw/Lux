@@ -1234,6 +1234,13 @@ std::any IRGen::visitBlock(LuxParser::BlockContext* ctx) {
 }
 
 // use std::log::println;   →  register in ImportResolver
+std::any IRGen::visitUseRoot(LuxParser::UseRootContext* ctx) {
+    auto rootName = ctx->IDENTIFIER()->getText();
+    userImports_[rootName] = rootName;
+    return {};
+}
+
+// use std::log::println;   →  register in ImportResolver
 std::any IRGen::visitUseItem(LuxParser::UseItemContext* ctx) {
     std::string path;
     for (auto* id : ctx->modulePath()->IDENTIFIER()) {
@@ -1241,9 +1248,13 @@ std::any IRGen::visitUseItem(LuxParser::UseItemContext* ctx) {
         path += id->getText();
     }
     auto symbolName = ctx->IDENTIFIER()->getText();
+    auto qualifiedPath = path + "::" + symbolName;
 
     if (NamespaceRegistry::isStdModule(path)) {
         imports_.addImport(path, symbolName);
+    } else if (NamespaceRegistry::isStdModule(qualifiedPath)) {
+        // Module alias import, e.g. `use std::log;`
+        userImports_[symbolName] = qualifiedPath;
     } else {
         // User namespace import — record for call resolution
         userImports_[symbolName] = path;
@@ -7058,8 +7069,243 @@ std::any IRGen::visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVari
 std::any IRGen::visitStaticMethodCallExpr(
         LuxParser::StaticMethodCallExprContext* ctx) {
     auto ids = ctx->IDENTIFIER();
-    auto structName = ids[0]->getText();
-    auto methodName = ids[1]->getText();
+    if (ids.size() < 2) {
+        std::cerr << "lux: invalid static call expression\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto structName = ids.front()->getText();
+    auto methodName = ids.back()->getText();
+
+    auto emitStdModuleCall = [&](const std::string& modulePath) -> llvm::Value* {
+        ImportResolver moduleResolver;
+        moduleResolver.addImport(modulePath, methodName);
+        if (!moduleResolver.isImported(methodName)) {
+            std::cerr << "lux: module '" << modulePath
+                      << "' does not export callable symbol '" << methodName << "'\n";
+            return llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_));
+        }
+
+        if (methodName == "print" || methodName == "println" ||
+            methodName == "eprint" || methodName == "eprintln") {
+            std::vector<llvm::Value*> args;
+            std::vector<LuxParser::ExpressionContext*> argExprs;
+            if (auto* argList = ctx->argList()) {
+                for (auto* exprCtx : argList->expression()) {
+                    argExprs.push_back(exprCtx);
+                    args.push_back(castValue(visit(exprCtx)));
+                }
+            }
+
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+
+            for (size_t ai = 0; ai < args.size(); ai++) {
+                auto* arg = args[ai];
+                auto* argType = arg->getType();
+                if (ai < argExprs.size() && resolveExprArrayDims(argExprs[ai]) > 0) {
+                    std::cerr << "lux: function '" << methodName
+                              << "' does not accept array arguments directly; "
+                                 "use '.toString()' or '.join(...)' before printing\n";
+                    continue;
+                }
+
+                const TypeInfo* argTypeInfo = nullptr;
+                if (auto* load = llvm::dyn_cast<llvm::LoadInst>(arg)) {
+                    auto* src = load->getPointerOperand();
+                    for (auto& [vname, info] : locals_) {
+                        if (info.alloca == src) { argTypeInfo = info.typeInfo; break; }
+                    }
+                    if (argTypeInfo && argTypeInfo->kind == TypeKind::Union)
+                        argTypeInfo = nullptr;
+                }
+
+                bool isString = (argTypeInfo && argTypeInfo->kind == TypeKind::String)
+                             || (!argTypeInfo && argType->isStructTy());
+                if (isString) {
+                    auto cFuncName = moduleResolver.resolve(methodName, "str");
+                    auto* strPtr = builder_->CreateExtractValue(arg, 0, "str_ptr");
+                    auto* strLen = builder_->CreateExtractValue(arg, 1, "str_len");
+                    auto callee = declareBuiltin(cFuncName,
+                                                 llvm::Type::getVoidTy(*context_),
+                                                 { ptrTy, usizeTy });
+                    builder_->CreateCall(callee, { strPtr, strLen });
+                    continue;
+                }
+
+                std::string suffix;
+                if (argTypeInfo)                       suffix = argTypeInfo->builtinSuffix;
+                else if (argType->isIntegerTy(1))      suffix = "bool";
+                else if (argType->isIntegerTy(8))      suffix = "i8";
+                else if (argType->isIntegerTy(16))     suffix = "i16";
+                else if (argType->isIntegerTy(32))     suffix = "i32";
+                else if (argType->isIntegerTy(64))     suffix = "i64";
+                else if (argType->isIntegerTy(128))    suffix = "i128";
+                else if (argType->isFloatTy())         suffix = "f32";
+                else if (argType->isDoubleTy())        suffix = "f64";
+                else                                   suffix = "i32";
+
+                auto cFuncName = moduleResolver.resolve(methodName, suffix);
+                llvm::Value* callArg = arg;
+                llvm::Type* paramType = argType;
+                if (argType->isIntegerTy(256)) {
+                    if (suffix == "i128")
+                        paramType = llvm::Type::getInt128Ty(*context_);
+                    else if (suffix == "i64")
+                        paramType = llvm::Type::getInt64Ty(*context_);
+                    else
+                        paramType = llvm::Type::getInt32Ty(*context_);
+                    callArg = builder_->CreateTrunc(arg, paramType);
+                }
+
+                auto callee = declareBuiltin(cFuncName,
+                                             llvm::Type::getVoidTy(*context_),
+                                             { paramType });
+                builder_->CreateCall(callee, { callArg });
+            }
+
+            return llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_));
+        }
+
+        if (methodName == "sprintf") {
+            auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            auto* strTy   = typeRegistry_.lookup("string")
+                                ->toLLVMType(*context_, module_->getDataLayout());
+
+            std::vector<llvm::Value*> args;
+            if (auto* argList = ctx->argList()) {
+                for (auto* exprCtx : argList->expression())
+                    args.push_back(castValue(visit(exprCtx)));
+            }
+
+            if (args.empty()) {
+                std::cerr << "lux: sprintf requires at least a format string\n";
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+
+            auto* fmtPtr = builder_->CreateExtractValue(args[0], 0, "fmt_ptr");
+            auto* fmtLen = builder_->CreateExtractValue(args[0], 1, "fmt_len");
+
+            auto* sliceTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+
+            llvm::Value* argsPtr;
+            llvm::Value* argsCount;
+
+            if (args.size() <= 1) {
+                argsPtr   = llvm::ConstantPointerNull::get(ptrTy);
+                argsCount = llvm::ConstantInt::get(usizeTy, 0);
+            } else {
+                size_t numArgs = args.size() - 1;
+                auto* arrTy = llvm::ArrayType::get(sliceTy, numArgs);
+                auto* arrAlloca = builder_->CreateAlloca(arrTy, nullptr, "sprintf.args");
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+
+                for (size_t i = 0; i < numArgs; i++) {
+                    auto* arg = args[i + 1];
+                    auto* argTy = arg->getType();
+
+                    if (argTy != sliceTy) {
+                        llvm::Value* converted = nullptr;
+                        if (argTy->isIntegerTy(1)) {
+                            auto* trueStr  = builder_->CreateGlobalString("true", ".str.true", 0, module_);
+                            auto* falseStr = builder_->CreateGlobalString("false", ".str.false", 0, module_);
+                            auto* trueLen  = llvm::ConstantInt::get(usizeTy, 4);
+                            auto* falseLen = llvm::ConstantInt::get(usizeTy, 5);
+                            auto* ptr = builder_->CreateSelect(arg, trueStr, falseStr);
+                            auto* len = builder_->CreateSelect(arg, trueLen, falseLen);
+                            converted = llvm::UndefValue::get(sliceTy);
+                            converted = builder_->CreateInsertValue(converted, ptr, 0);
+                            converted = builder_->CreateInsertValue(converted, len, 1);
+                        } else if (argTy->isIntegerTy()) {
+                            auto* ext = builder_->CreateIntCast(arg, i64Ty, true, "icast");
+                            auto fn = declareBuiltin("lux_itoa", sliceTy, {i64Ty});
+                            converted = builder_->CreateCall(fn, {ext}, "itoa");
+                        } else if (argTy->isFloatingPointTy()) {
+                            auto* dblTy = llvm::Type::getDoubleTy(*context_);
+                            auto* ext = argTy->isFloatTy()
+                                ? builder_->CreateFPExt(arg, dblTy, "fext")
+                                : arg;
+                            auto fn = declareBuiltin("lux_ftoa", sliceTy, {dblTy});
+                            converted = builder_->CreateCall(fn, {ext}, "ftoa");
+                        } else if (argTy->isIntegerTy(8)) {
+                            auto* buf = builder_->CreateAlloca(
+                                llvm::Type::getInt8Ty(*context_), nullptr, "chbuf");
+                            builder_->CreateStore(arg, buf);
+                            converted = llvm::UndefValue::get(sliceTy);
+                            converted = builder_->CreateInsertValue(converted, buf, 0);
+                            converted = builder_->CreateInsertValue(converted,
+                                llvm::ConstantInt::get(usizeTy, 1), 1);
+                        } else {
+                            converted = arg;
+                        }
+                        arg = converted;
+                    }
+
+                    auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                    auto* gep = builder_->CreateGEP(arrTy, arrAlloca, {zero, idx});
+                    builder_->CreateStore(arg, gep);
+                }
+
+                argsPtr = builder_->CreateGEP(arrTy, arrAlloca,
+                             {zero, llvm::ConstantInt::get(i64Ty, 0)}, "args_ptr");
+                argsCount = llvm::ConstantInt::get(usizeTy, numArgs);
+            }
+
+            auto callee = declareBuiltin("lux_sprintf", strTy,
+                {ptrTy, usizeTy, ptrTy, usizeTy});
+            auto* ret = builder_->CreateCall(callee,
+                {fmtPtr, fmtLen, argsPtr, argsCount}, "sprintf");
+
+            auto* retPtr = builder_->CreateExtractValue(ret, 0, "sprintf_ptr");
+            auto* retLen = builder_->CreateExtractValue(ret, 1, "sprintf_len");
+            llvm::Value* strStruct = llvm::UndefValue::get(strTy);
+            strStruct = builder_->CreateInsertValue(strStruct, retPtr, 0);
+            strStruct = builder_->CreateInsertValue(strStruct, retLen, 1);
+            return strStruct;
+        }
+
+        return nullptr;
+    };
+
+    if (ids.size() > 2) {
+        auto rootName = ids.front()->getText();
+        auto rootImport = userImports_.find(rootName);
+        if (rootImport == userImports_.end() || rootImport->second != rootName) {
+            std::cerr << "lux: namespace root '" << rootName
+                      << "' is not imported; add 'use " << rootName << ";'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        std::string modulePath;
+        for (size_t i = 0; i + 1 < ids.size(); ++i) {
+            if (!modulePath.empty()) modulePath += "::";
+            modulePath += ids[i]->getText();
+        }
+
+        if (!NamespaceRegistry::isStdModule(modulePath)) {
+            std::cerr << "lux: unsupported qualified static call '"
+                      << modulePath << "::" << methodName << "'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        if (auto* moduleResult = emitStdModuleCall(modulePath)) {
+            return static_cast<llvm::Value*>(moduleResult);
+        }
+    }
+
+    auto importIt = userImports_.find(structName);
+    if (importIt != userImports_.end() &&
+        NamespaceRegistry::isStdModule(importIt->second)) {
+        if (auto* moduleResult = emitStdModuleCall(importIt->second)) {
+            return static_cast<llvm::Value*>(moduleResult);
+        }
+    }
 
     std::vector<const TypeInfo*> argTypes;
     if (auto* argList = ctx->argList()) {

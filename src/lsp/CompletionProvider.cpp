@@ -677,8 +677,24 @@ static std::string inferExprTypeName(
     if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
         if (ids.size() >= 2) {
-            std::string typeName   = ids[0]->getText();
-            std::string methodName = ids[1]->getText();
+            std::string ownerPath;
+            for (size_t i = 0; i + 1 < ids.size(); ++i) {
+                if (!ownerPath.empty()) ownerPath += "::";
+                ownerPath += ids[i]->getText();
+            }
+
+            std::string typeName = ownerPath;
+            auto lastScope = typeName.rfind("::");
+            if (lastScope != std::string::npos)
+                typeName = typeName.substr(lastScope + 2);
+
+            std::string methodName = ids.back()->getText();
+
+            if (NamespaceRegistry::isStdModule(ownerPath) && flc && flc->builtinReg) {
+                if (auto* sig = flc->builtinReg->lookup(methodName))
+                    return sig->returnType;
+            }
+
             if (flc && flc->tree) {
                 for (auto* tld : flc->tree->topLevelDecl()) {
                     auto* ext = tld->extendDecl();
@@ -1369,8 +1385,8 @@ std::vector<CompletionItem> CompletionProvider::complete(
         }
         case CompletionContext::ScopeAccess: {
             addEnumVariants(items, req.scopeName, parsed.tree,
-                            *cBindingsPtr, project);
-            addStaticMethods(items, req.scopeName, parsed.tree, project);
+                            *cBindingsPtr, project, req.prefix);
+            addStaticMethods(items, req.scopeName, parsed.tree, project, req.prefix);
             break;
         }
         case CompletionContext::TypePosition: {
@@ -1535,34 +1551,60 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
         // handling both plain "Name::" and generic "Name<T>::"
         auto extractScopeName = [&](size_t colonStart) -> std::string {
             // colonStart points to the first ':' of '::'
-            size_t end = colonStart;
-            while (end > 0 && before[end - 1] == ' ') --end;
-            // Check for generic: ends with '>'
-            if (end > 0 && before[end - 1] == '>') {
-                size_t pos2 = end - 1;
-                int depth = 1;
-                while (pos2 > 0 && depth > 0) {
-                    --pos2;
-                    if (before[pos2] == '>') depth++;
-                    else if (before[pos2] == '<') depth--;
+            size_t cursor = colonStart;
+            std::vector<std::string> segments;
+
+            while (cursor > 0) {
+                while (cursor > 0 && before[cursor - 1] == ' ') --cursor;
+                if (cursor == 0) break;
+
+                size_t segEnd = cursor;
+                size_t segStart = segEnd;
+
+                // Generic segment, e.g. Node<int32>
+                if (before[segEnd - 1] == '>') {
+                    size_t pos = segEnd - 1;
+                    int depth = 1;
+                    while (pos > 0 && depth > 0) {
+                        --pos;
+                        if (before[pos] == '>') depth++;
+                        else if (before[pos] == '<') depth--;
+                    }
+                    if (depth != 0) break;
+                    segStart = pos;
+                    while (segStart > 0 && before[segStart - 1] == ' ') --segStart;
+                    while (segStart > 0 &&
+                           (std::isalnum(static_cast<unsigned char>(before[segStart - 1])) ||
+                            before[segStart - 1] == '_')) {
+                        --segStart;
+                    }
+                } else {
+                    while (segStart > 0 &&
+                           (std::isalnum(static_cast<unsigned char>(before[segStart - 1])) ||
+                            before[segStart - 1] == '_')) {
+                        --segStart;
+                    }
                 }
-                // pos2 points at '<'; now extract identifier before it
-                size_t nameEnd = pos2;
-                while (nameEnd > 0 && before[nameEnd - 1] == ' ') --nameEnd;
-                size_t nameStart = nameEnd;
-                while (nameStart > 0 && (std::isalnum(before[nameStart - 1]) || before[nameStart - 1] == '_'))
-                    --nameStart;
-                if (nameStart < nameEnd)
-                    return before.substr(nameStart, nameEnd - nameStart);
-                return "";
+
+                if (segStart == segEnd) break;
+                segments.push_back(before.substr(segStart, segEnd - segStart));
+                cursor = segStart;
+
+                while (cursor > 0 && before[cursor - 1] == ' ') --cursor;
+                if (cursor < 2 || before[cursor - 1] != ':' || before[cursor - 2] != ':')
+                    break;
+                cursor -= 2;
             }
-            // Plain identifier before ::
-            size_t start = end;
-            while (start > 0 && (std::isalnum(before[start - 1]) || before[start - 1] == '_'))
-                --start;
-            if (start < end)
-                return before.substr(start, end - start);
-            return "";
+
+            std::reverse(segments.begin(), segments.end());
+            if (segments.empty()) return "";
+
+            std::string joined;
+            for (size_t i = 0; i < segments.size(); ++i) {
+                if (i > 0) joined += "::";
+                joined += segments[i];
+            }
+            return joined;
         };
 
         size_t pos = before.size();
@@ -2101,7 +2143,10 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem>& items,
         std::string modulePath;
         std::vector<std::string> symbolNames;
 
-        if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+            if (!root->IDENTIFIER()) continue;
+            symbolNames.push_back(root->IDENTIFIER()->getText());
+        } else if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
             if (!item->modulePath() || !item->IDENTIFIER()) continue;
             for (auto* id : item->modulePath()->IDENTIFIER()) {
                 if (!modulePath.empty()) modulePath += "::";
@@ -2121,6 +2166,28 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem>& items,
 
         for (auto& symName : symbolNames) {
             if (!matchesPrefix(symName, prefix)) continue;
+
+            std::string importedPath = modulePath;
+            if (!importedPath.empty()) importedPath += "::";
+            importedPath += symName;
+
+            bool isModule = modulePath.empty();
+            if (!isModule && project && project->isValid()) {
+                isModule = project->registry().hasNamespace(importedPath);
+            }
+            if (!isModule && NamespaceRegistry::isStdModule(importedPath)) {
+                isModule = true;
+            }
+
+            if (isModule) {
+                CompletionItem ci;
+                ci.label = symName;
+                ci.kind = CompletionKind::Module;
+                ci.detail = importedPath;
+                ci.insertText = symName + "::";
+                items.push_back(std::move(ci));
+                continue;
+            }
 
             auto* sym = project->registry().findSymbol(modulePath, symName);
 
@@ -2992,13 +3059,15 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem>& items,
                                          const std::string& enumName,
                                          LuxParser::ProgramContext* tree,
                                          const CBindings& bindings,
-                                         const ProjectContext* project) {
+                                         const ProjectContext* project,
+                                         const std::string& prefix) {
     // Same-file enum
     auto* ed = findEnumDecl(tree, enumName);
     if (ed) {
         for (auto* variant : ed->enumVariant()) {
             auto* v = variant->IDENTIFIER();
             if (!v) continue;
+            if (!matchesPrefix(v->getText(), prefix)) continue;
             CompletionItem ci;
             ci.label = v->getText();
             ci.kind = CompletionKind::EnumMember;
@@ -3018,6 +3087,7 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem>& items,
             for (auto* variant : decl->enumVariant()) {
                 auto* v = variant->IDENTIFIER();
                 if (!v) continue;
+                if (!matchesPrefix(v->getText(), prefix)) continue;
                 CompletionItem ci;
                 ci.label = v->getText();
                 ci.kind = CompletionKind::EnumMember;
@@ -3032,6 +3102,7 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem>& items,
     auto* ce = bindings.findEnum(enumName);
     if (ce) {
         for (auto& [valName, val] : ce->values) {
+            if (!matchesPrefix(valName, prefix)) continue;
             CompletionItem ci;
             ci.label = valName;
             ci.kind = CompletionKind::EnumMember;
@@ -3041,19 +3112,93 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem>& items,
     }
 }
 
+static std::optional<std::string> resolveImportedModuleAlias(
+        const std::string& alias,
+        LuxParser::ProgramContext* tree,
+        const ProjectContext* project) {
+    if (!tree) return std::nullopt;
+
+    for (auto* pre : tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
+
+        // use std::log::println; (alias is println, modulePath is std::log)
+        if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+            if (!item->modulePath() || !item->IDENTIFIER()) continue;
+            if (item->IDENTIFIER()->getText() != alias) continue;
+
+            std::string modulePath;
+            for (auto* id : item->modulePath()->IDENTIFIER()) {
+                if (!modulePath.empty()) modulePath += "::";
+                modulePath += id->getText();
+            }
+
+            auto fullPath = modulePath + "::" + alias;
+            if (modulePath == "std") {
+                return fullPath;
+            }
+            if (project && project->isValid() &&
+                project->registry().hasNamespace(fullPath)) {
+                return fullPath;
+            }
+            return modulePath;
+        }
+
+        // use std; (simple root import, alias is the module name itself)
+        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+            if (!root->IDENTIFIER()) continue;
+            if (root->IDENTIFIER()->getText() == alias) {
+                return alias;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 void CompletionProvider::addStaticMethods(std::vector<CompletionItem>& items,
                                           const std::string& typeName,
                                           LuxParser::ProgramContext* tree,
-                                          const ProjectContext* project) {
+                                          const ProjectContext* project,
+                                          const std::string& prefix) {
+    // Resolve imported module aliases like `use std::log;` → `log`
+    if (auto aliasedPath = resolveImportedModuleAlias(typeName, tree, project)) {
+        std::vector<CompletionItem> moduleItems;
+        addUseCompletions(moduleItems, *aliasedPath, prefix, project);
+        for (auto& ci : moduleItems) {
+            ci.insertText = ci.label;
+            items.push_back(std::move(ci));
+        }
+        return;
+    }
+
+    // std scope chains (std::, std::log::, etc.)
+    if (typeName == "std" || typeName.rfind("std::", 0) == 0) {
+        std::vector<CompletionItem> moduleItems;
+        addUseCompletions(moduleItems, typeName, prefix, project);
+        for (auto& ci : moduleItems) {
+            // In expression scope access we only want the symbol/module name,
+            // never extra scope separators in the inserted text.
+            ci.insertText = ci.label;
+            items.push_back(std::move(ci));
+        }
+        return;
+    }
+
+    std::string baseTypeName = typeName;
+    auto lastScope = baseTypeName.rfind("::");
+    if (lastScope != std::string::npos)
+        baseTypeName = baseTypeName.substr(lastScope + 2);
+
     // Same-file extend blocks
     for (auto* tld : tree->topLevelDecl()) {
         auto* ext = tld->extendDecl();
-        if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+        if (!ext || ext->IDENTIFIER()->getText() != baseTypeName) continue;
         for (auto* m : ext->extendMethod()) {
             bool isStatic = (m->AMPERSAND() == nullptr);
             if (!isStatic) continue;
             CompletionItem ci;
             std::string mName = m->IDENTIFIER(0)->getText();
+            if (!matchesPrefix(mName, prefix)) continue;
             ci.label = mName;
             ci.kind = CompletionKind::Function;
             ci.detail = formatMethodSignature(m);
@@ -3083,12 +3228,13 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem>& items,
             for (auto* sym : syms) {
                 if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                 auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
-                if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                if (!ext || ext->IDENTIFIER()->getText() != baseTypeName) continue;
                 for (auto* m : ext->extendMethod()) {
                     bool isStatic = (m->AMPERSAND() == nullptr);
                     if (!isStatic) continue;
                     CompletionItem ci;
                     std::string mName = m->IDENTIFIER(0)->getText();
+                    if (!matchesPrefix(mName, prefix)) continue;
                     ci.label = mName;
                     ci.kind = CompletionKind::Function;
                     ci.detail = formatMethodSignature(m);

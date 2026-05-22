@@ -105,7 +105,7 @@ private:
         std::string receiverType;    // for dot/arrow: struct type name
         std::string receiverVar;     // for dot/arrow: receiver variable name (resolve later)
         std::string receiverCall;    // for dot: receiver function call name (e.g. foo().|)
-        std::string scopeName;       // for Name::| — the type/enum name
+        std::string scopeName;       // for Name::| or A::B::| — scope path
         std::string modulePath;      // for use: accumulated path (e.g. "std::log")
         unsigned    indexDepth = 0;   // for dot: number of [..] index accesses on receiver
         unsigned    derefDepth = 0;   // for dot: number of explicit unary * before receiver
@@ -171,13 +171,15 @@ private:
                          const std::string& enumName,
                          LuxParser::ProgramContext* tree,
                          const CBindings& bindings,
-                         const ProjectContext* project);
+                         const ProjectContext* project,
+                         const std::string& prefix);
 
     // Add static methods for scope (::) access.
     void addStaticMethods(std::vector<CompletionItem>& items,
                           const std::string& typeName,
                           LuxParser::ProgramContext* tree,
-                          const ProjectContext* project);
+                          const ProjectContext* project,
+                          const std::string& prefix);
 
     // Add type names (for type annotation positions).
     void addTypeNames(std::vector<CompletionItem>& items,

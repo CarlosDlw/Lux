@@ -25,6 +25,8 @@ public:
 
     virtual std::any visitNamespaceDecl(LuxParser::NamespaceDeclContext *context) = 0;
 
+    virtual std::any visitUseRoot(LuxParser::UseRootContext *context) = 0;
+
     virtual std::any visitUseItem(LuxParser::UseItemContext *context) = 0;
 
     virtual std::any visitUseGroup(LuxParser::UseGroupContext *context) = 0;

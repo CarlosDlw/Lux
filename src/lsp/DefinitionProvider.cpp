@@ -269,6 +269,11 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
     for (auto* pre : tree->preambleDecl()) {
         auto* useDecl = pre->useDecl();
         if (!useDecl) continue;
+        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+            if (root->IDENTIFIER() && root->IDENTIFIER()->getSymbol() == hoveredToken) {
+                return std::nullopt;
+            }
+        }
         if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
             if (!item->IDENTIFIER() || !item->modulePath()) continue;
             if (item->IDENTIFIER()->getSymbol() == hoveredToken) {
@@ -939,9 +944,19 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                                    filePath, project);
         }
         // Static method name → resolve to extend method declaration
-        if (ids.size() >= 2 && ids[1]->getSymbol() == hoveredToken) {
-            std::string typeName   = ids[0]->getText();
-            std::string methodName = ids[1]->getText();
+        if (ids.size() >= 2 && ids.back()->getSymbol() == hoveredToken) {
+            std::string ownerPath;
+            for (size_t i = 0; i + 1 < ids.size(); ++i) {
+                if (!ownerPath.empty()) ownerPath += "::";
+                ownerPath += ids[i]->getText();
+            }
+
+            std::string typeName = ownerPath;
+            auto lastScope = typeName.rfind("::");
+            if (lastScope != std::string::npos)
+                typeName = typeName.substr(lastScope + 2);
+
+            std::string methodName = ids.back()->getText();
 
             // Search local extend blocks
             for (auto* tld : tree->topLevelDecl()) {

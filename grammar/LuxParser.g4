@@ -23,7 +23,8 @@ namespaceDecl
 // use std::log::println;
 // use std::log::{ println, print };
 useDecl
-    : USE modulePath SCOPE IDENTIFIER SEMI                                         # useItem
+    : USE IDENTIFIER SEMI                                                            # useRoot
+    | USE modulePath SCOPE IDENTIFIER SEMI                                         # useItem
     | USE modulePath SCOPE LBRACE IDENTIFIER (COMMA IDENTIFIER)* RBRACE SEMI      # useGroup
     ;
 
@@ -411,7 +412,7 @@ expression
     // Special syntax
     | IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # structLitExpr
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # genericStructLitExpr
-    | IDENTIFIER SCOPE IDENTIFIER LPAREN argList? RPAREN        # staticMethodCallExpr
+    | IDENTIFIER (SCOPE IDENTIFIER)+ LPAREN argList? RPAREN     # staticMethodCallExpr
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER  # genericEnumAccessExpr
     | IDENTIFIER SCOPE IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE # enumNamedVariantExpr
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE # genericEnumNamedVariantExpr

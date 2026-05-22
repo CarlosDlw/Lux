@@ -49,6 +49,7 @@ public:
     std::any visitExternDecl(LuxParser::ExternDeclContext* ctx)       override;
     std::any visitFunctionDecl(LuxParser::FunctionDeclContext* ctx)   override;
     std::any visitBlock(LuxParser::BlockContext* ctx)                 override;
+    std::any visitUseRoot(LuxParser::UseRootContext* ctx)             override;
     std::any visitUseItem(LuxParser::UseItemContext* ctx)             override;
     std::any visitUseGroup(LuxParser::UseGroupContext* ctx)           override;
     std::any visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx)     override;

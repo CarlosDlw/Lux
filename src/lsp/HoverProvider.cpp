@@ -242,6 +242,12 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     for (auto* pre : parsed.tree->preambleDecl()) {
         auto* useDecl = pre->useDecl();
         if (!useDecl) continue;
+        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+            if (root->IDENTIFIER() && root->IDENTIFIER()->getSymbol() == hoveredToken) {
+                std::string md = "```lux\n(module) " + root->IDENTIFIER()->getText() + "\n```";
+                return makeResult(hoveredToken, md);
+            }
+        }
         if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
             if (!item->IDENTIFIER() || !item->modulePath()) continue;
             // Hover on the imported symbol name
@@ -823,7 +829,23 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
         LuxParser::ProgramContext* tree,
         const CBindings& bindings,
         const ProjectContext* project) {
-    // Try project registry first
+    std::string importedPath = modulePath;
+    if (!importedPath.empty()) importedPath += "::";
+    importedPath += symbolName;
+
+    // Imported symbol may be a module namespace itself.
+    if (project && project->isValid()) {
+        if (project->registry().hasNamespace(importedPath)) {
+            std::string md = "```lux\n(module) " + importedPath + "\n```";
+            return makeResult(token, md);
+        }
+    }
+    if (NamespaceRegistry::isStdModule(importedPath)) {
+        std::string md = "```lux\n(module) " + importedPath + "\n```";
+        return makeResult(token, md);
+    }
+
+    // Try project registry for non-module imported symbols.
     if (project && project->isValid()) {
         auto* sym = project->registry().findSymbol(modulePath, symbolName);
         if (sym) {
@@ -878,6 +900,51 @@ static bool containsToken(antlr4::ParserRuleContext* ctx, antlr4::Token* token) 
     if (!start || !stop) return false;
     size_t idx = token->getTokenIndex();
     return idx >= start->getTokenIndex() && idx <= stop->getTokenIndex();
+}
+
+static std::optional<std::string> resolveImportedModuleAliasPath(
+        antlr4::Token* token,
+        LuxParser::ProgramContext* tree) {
+    if (!token || !tree) return std::nullopt;
+    std::string name = token->getText();
+
+    for (auto* pre : tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
+
+        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+            auto* id = root->IDENTIFIER();
+            if (id && id->getText() == name)
+                return id->getText();
+        }
+
+        if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+            if (!item->modulePath()) continue;
+            auto* importedId = item->IDENTIFIER();
+            if (importedId && importedId->getText() == name) {
+                std::string modulePath;
+                for (auto* id : item->modulePath()->IDENTIFIER()) {
+                    if (!modulePath.empty()) modulePath += "::";
+                    modulePath += id->getText();
+                }
+                modulePath += "::";
+                modulePath += importedId->getText();
+                return modulePath;
+            }
+            auto ids = item->modulePath()->IDENTIFIER();
+            if (ids.empty()) continue;
+            auto* aliasId = ids.back();
+            if (aliasId->getText() == name) {
+                std::string modulePath;
+                for (auto* id : ids) {
+                    if (!modulePath.empty()) modulePath += "::";
+                    modulePath += id->getText();
+                }
+                return modulePath;
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 std::optional<HoverResult> HoverProvider::walkExprForHover(
@@ -1087,15 +1154,37 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
         if (ids.size() >= 2) {
+            auto* methodTok = ids.back()->getSymbol();
             // Hover on method name
-            if (ids[1]->getSymbol() == hoveredToken) {
+            if (methodTok == hoveredToken) {
                 return hoverStaticMethodCall(smc, tree, bindings, cursorLine, project);
             }
-            // Hover on type name
-            if (ids[0]->getSymbol() == hoveredToken) {
-                std::string typeName = ids[0]->getText();
-                return hoverIdent(typeName, hoveredToken, tree, bindings,
-                                   cursorLine, project);
+            // Hover on owner scope/type path segments.
+            for (size_t i = 0; i + 1 < ids.size(); ++i) {
+                if (ids[i]->getSymbol() != hoveredToken) continue;
+                std::string ownerPath;
+                for (size_t j = 0; j + 1 < ids.size(); ++j) {
+                    if (!ownerPath.empty()) ownerPath += "::";
+                    ownerPath += ids[j]->getText();
+                }
+
+                // std::... scope chain
+                if (ownerPath == "std" || ownerPath.rfind("std::", 0) == 0) {
+                    return makeResult(hoveredToken,
+                        "```lux\n(module) " + ownerPath + "\n```");
+                }
+
+                // Type/namespace: resolve only the first segment as type symbol.
+                if (i == 0) {
+                    if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
+                        return makeResult(hoveredToken,
+                            "```lux\n(module) " + *modulePath + "\n```"
+                        );
+                    }
+                    std::string typeName = ids[0]->getText();
+                    return hoverIdent(typeName, hoveredToken, tree, bindings,
+                                      cursorLine, project);
+                }
             }
         }
         if (auto* al = smc->argList()) {
@@ -1368,6 +1457,11 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     if (auto* gsmc = dynamic_cast<LuxParser::GenericStaticMethodCallExprContext*>(expr)) {
         auto ids = gsmc->IDENTIFIER();
         if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
+            if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
+                return makeResult(hoveredToken,
+                    "```lux\n(module) " + *modulePath + "\n```"
+                );
+            }
             return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings,
                                cursorLine, project);
         }
@@ -3372,9 +3466,39 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
     auto ids = ctx->IDENTIFIER();
     if (ids.size() < 2) return std::nullopt;
 
-    std::string typeName   = ids[0]->getText();
-    std::string methodName = ids[1]->getText();
-    auto* token = ids[1]->getSymbol();
+    std::string ownerPath;
+    for (size_t i = 0; i + 1 < ids.size(); ++i) {
+        if (!ownerPath.empty()) ownerPath += "::";
+        ownerPath += ids[i]->getText();
+    }
+
+    std::string typeName = ownerPath;
+    auto lastScope = typeName.rfind("::");
+    if (lastScope != std::string::npos)
+        typeName = typeName.substr(lastScope + 2);
+
+    std::string methodName = ids.back()->getText();
+    auto* token = ids.back()->getSymbol();
+
+    // std module calls, e.g. std::log::println(...)
+    if (NamespaceRegistry::isStdModule(ownerPath)) {
+        if (const auto* sig = builtinRegistry_.lookup(methodName)) {
+            std::ostringstream ss;
+            ss << "```lux\n(function) " << sig->returnType << " " << ownerPath
+               << "::" << methodName << "(";
+            for (size_t i = 0; i < sig->paramTypes.size(); ++i) {
+                if (i > 0) ss << ", ";
+                ss << sig->paramTypes[i];
+            }
+            if (sig->isVariadic) {
+                if (!sig->paramTypes.empty()) ss << ", ";
+                ss << "...";
+            }
+            ss << ")\n```";
+            return makeResult(token, ss.str());
+        }
+        return std::nullopt;
+    }
 
     // Check user extend block static methods
     for (auto* tld : tree->topLevelDecl()) {
@@ -3988,8 +4112,23 @@ static std::string inferExprTypeName(
     if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
         if (ids.size() >= 2) {
-            std::string typeName   = ids[0]->getText();
-            std::string methodName = ids[1]->getText();
+            std::string ownerPath;
+            for (size_t i = 0; i + 1 < ids.size(); ++i) {
+                if (!ownerPath.empty()) ownerPath += "::";
+                ownerPath += ids[i]->getText();
+            }
+
+            std::string typeName = ownerPath;
+            auto lastScope = typeName.rfind("::");
+            if (lastScope != std::string::npos)
+                typeName = typeName.substr(lastScope + 2);
+
+            std::string methodName = ids.back()->getText();
+
+            if (NamespaceRegistry::isStdModule(ownerPath) && flc && flc->builtinReg) {
+                if (auto* sig = flc->builtinReg->lookup(methodName))
+                    return sig->returnType;
+            }
 
             // Check user-defined extend blocks in current file
             if (flc && flc->tree) {

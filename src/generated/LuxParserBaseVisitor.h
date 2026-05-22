@@ -27,6 +27,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitUseRoot(LuxParser::UseRootContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitUseItem(LuxParser::UseItemContext *ctx) override {
     return visitChildren(ctx);
   }

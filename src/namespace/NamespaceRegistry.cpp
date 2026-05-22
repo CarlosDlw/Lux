@@ -145,8 +145,7 @@ bool NamespaceRegistry::hasNamespace(const std::string& ns) const {
 
 bool NamespaceRegistry::isStdModule(const std::string& modulePath) {
     // Standard library modules all start with "std::"
-    return modulePath.size() >= 4 &&
-           modulePath.compare(0, 4, "std:") == 0;
+    return modulePath.rfind("std::", 0) == 0;
 }
 
 std::string NamespaceRegistry::mangle(const std::string& ns,

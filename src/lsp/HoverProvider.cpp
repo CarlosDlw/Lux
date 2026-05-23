@@ -4,6 +4,7 @@
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
 #include "namespace/NamespaceRegistry.h"
+#include "imports/ImportResolver.h"
 
 #include <sstream>
 #include <fstream>
@@ -833,19 +834,31 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
     if (!importedPath.empty()) importedPath += "::";
     importedPath += symbolName;
 
-    // Imported symbol may be a module namespace itself.
-    if (project && project->isValid()) {
-        if (project->registry().hasNamespace(importedPath)) {
-            std::string md = "```lux\n(module) " + importedPath + "\n```";
+    // 1. Se for stdlib: distinguir função e constante
+    if (ImportResolver::isStdModule(modulePath)) {
+        if (ImportResolver::moduleExportsSymbol(modulePath, symbolName)) {
+            // Função do stdlib
+            auto* builtin = builtinRegistry_.lookup(symbolName);
+            if (builtin)
+                return makeResult(token, formatBuiltinSignature(*builtin));
+            // fallback: só nome
+            std::string md = "```lux\n(function) " + symbolName + "\n```";
+            return makeResult(token, md);
+        }
+        // Constante do stdlib
+        auto& constType = builtinRegistry_.lookupConstant(symbolName);
+        if (!constType.empty()) {
+            std::string md = "```lux\n(constant) " + constType + " " + symbolName + "\n```";
+            return makeResult(token, md);
+        }
+        // Se não for função nem constante, pode ser módulo
+        if (ImportResolver::isStdModule(modulePath + "::" + symbolName)) {
+            std::string md = "```lux\n(module) " + modulePath + "::" + symbolName + "\n```";
             return makeResult(token, md);
         }
     }
-    if (NamespaceRegistry::isStdModule(importedPath)) {
-        std::string md = "```lux\n(module) " + importedPath + "\n```";
-        return makeResult(token, md);
-    }
 
-    // Try project registry for non-module imported symbols.
+    // 2. Project registry (user code)
     if (project && project->isValid()) {
         auto* sym = project->registry().findSymbol(modulePath, symbolName);
         if (sym) {
@@ -880,10 +893,24 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
             }
         }
     }
-    // Fallback to builtins
+
+    // 3. Fallback: builtin função
     auto* builtin = builtinRegistry_.lookup(symbolName);
     if (builtin)
         return makeResult(token, formatBuiltinSignature(*builtin));
+
+    // 4. Fallback: builtin constante
+    auto& constType = builtinRegistry_.lookupConstant(symbolName);
+    if (!constType.empty()) {
+        std::string md = "```lux\n(constant) " + constType + " " + symbolName + "\n```";
+        return makeResult(token, md);
+    }
+
+    // 5. Fallback: módulo
+    if (ImportResolver::isStdModule(modulePath + "::" + symbolName)) {
+        std::string md = "```lux\n(module) " + modulePath + "::" + symbolName + "\n```";
+        return makeResult(token, md);
+    }
 
     return std::nullopt;
 }

@@ -5,7 +5,10 @@
 
 #include <algorithm>
 #include <regex>
+
 #include <unordered_set>
+#include "imports/ImportResolver.h"
+#include "types/BuiltinRegistry.h"
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Legend
@@ -151,12 +154,29 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
     else if (auto* ctx = dynamic_cast<LuxParser::UseGroupContext*>(node)) {
         uint32_t mods = 0;
-        if (ctx->modulePath() &&
-            ctx->modulePath()->getText().rfind("std::", 0) == 0) {
-            mods = static_cast<uint32_t>(SemanticTokenMod::DefaultLib);
+        std::string modulePath;
+        if (ctx->modulePath()) {
+            modulePath = ctx->modulePath()->getText();
+            if (modulePath.rfind("std::", 0) == 0) {
+                mods = static_cast<uint32_t>(SemanticTokenMod::DefaultLib);
+            }
         }
-        for (auto* id : ctx->IDENTIFIER())
+        for (auto* id : ctx->IDENTIFIER()) {
+            std::string sym = id->getText();
+            if (!modulePath.empty() && ImportResolver::isStdModule(modulePath)) {
+                if (ImportResolver::moduleExportsSymbol(modulePath, sym)) {
+                    classifyIdent(map, id, SemanticTokenType::Function, mods);
+                    continue;
+                }
+            }
+            // Fallback: se for constante conhecida
+            if (BuiltinRegistry().lookupConstant(sym) != "") {
+                classifyIdent(map, id, SemanticTokenType::Variable, mods);
+                continue;
+            }
+            // Default: função
             classifyIdent(map, id, SemanticTokenType::Function, mods);
+        }
     }
     else if (auto* ctx = dynamic_cast<LuxParser::UseRootContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Namespace);

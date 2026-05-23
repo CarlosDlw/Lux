@@ -3,6 +3,7 @@
 #include "lsp/DocComment.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
+#include "imports/ImportResolver.h"
 #include "namespace/NamespaceRegistry.h"
 
 #include <algorithm>
@@ -2175,8 +2176,10 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem>& items,
             if (!isModule && project && project->isValid()) {
                 isModule = project->registry().hasNamespace(importedPath);
             }
-            if (!isModule && NamespaceRegistry::isStdModule(importedPath)) {
-                isModule = true;
+            // For `use std::X;` imports, the imported symbol may be a std module.
+            if (!isModule && modulePath == "std") {
+                if (ImportResolver::isStdModule(importedPath))
+                    isModule = true;
             }
 
             if (isModule) {

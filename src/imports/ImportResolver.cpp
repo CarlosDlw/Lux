@@ -123,6 +123,16 @@ std::string ImportResolver::suggestImport(const std::string& symbol) {
     return "";
 }
 
+bool ImportResolver::isStdModule(const std::string& modulePath) {
+    return knownModules_.find(modulePath) != knownModules_.end();
+}
+
+bool ImportResolver::moduleExportsSymbol(const std::string& modulePath,
+                                         const std::string& symbolName) {
+    auto it = knownModules_.find(modulePath);
+    return it != knownModules_.end() && it->second.count(symbolName);
+}
+
 void ImportResolver::addImport(const std::string& modulePath,
                                const std::string& symbol) {
     // Validate against known modules

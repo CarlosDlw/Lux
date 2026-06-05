@@ -78,6 +78,8 @@ private:
     unsigned scopeDepth_ = 0;     // current block nesting depth
     const TypeInfo* currentReturnType_ = nullptr;
     unsigned unwrapCatchItDepth_ = 0;
+    unsigned recursionDepth_ = 0;  // recursion depth guard (max 1000 levels)
+    static constexpr unsigned MAX_RECURSION_DEPTH = 1000;
 
     // Phase 3 (Guard Analysis): Track conditional guards to suppress false positives
     // When code has `if (n <= cap)`, we suppress buffer overflow warnings for calls

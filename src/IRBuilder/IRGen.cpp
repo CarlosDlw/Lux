@@ -494,6 +494,10 @@ std::any IRGen::visitStructDecl(LuxParser::StructDeclContext* ctx) {
     std::vector<llvm::Type*> fieldTypes;
     for (auto* field : ctx->structField()) {
         auto* fieldTI = resolveTypeInfo(field->typeSpec());
+        if (!fieldTI) {
+            std::cerr << "lux: cannot resolve field type in struct '" + structName + "'\n";
+            continue;
+        }
         // Extract array dims/sizes from the typeSpec (e.g. [256]Token → dims=1, sizes={256})
         unsigned fieldDims = 0;
         std::vector<unsigned> fieldSizes;
@@ -513,7 +517,9 @@ std::any IRGen::visitStructDecl(LuxParser::StructDeclContext* ctx) {
                 fieldLLTy = llvm::ArrayType::get(fieldLLTy, *it);
         }
         fieldTypes.push_back(fieldLLTy);
-        ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI, fieldDims, fieldSizes });
+        if (field->IDENTIFIER()) {
+            ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI, fieldDims, fieldSizes });
+        }
     }
 
     // Set the struct body now that all fields are resolved
@@ -550,10 +556,16 @@ std::any IRGen::visitUnionDecl(LuxParser::UnionDeclContext* ctx) {
 
     for (auto* field : ctx->unionField()) {
         auto* fieldTI = resolveTypeInfo(field->typeSpec());
+        if (!fieldTI) {
+            std::cerr << "lux: cannot resolve field type in union\n";
+            continue;
+        }
         auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
         uint64_t fieldSize = module_->getDataLayout().getTypeAllocSize(fieldLLTy);
         if (fieldSize > maxSize) maxSize = fieldSize;
-        fieldInfos.push_back({ field->IDENTIFIER()->getText(), fieldTI });
+        if (field->IDENTIFIER()) {
+            fieldInfos.push_back({ field->IDENTIFIER()->getText(), fieldTI });
+        }
     }
 
     if (maxSize == 0) maxSize = 1;
@@ -690,6 +702,7 @@ std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
     for (auto* method : ctx->extendMethod()) {
         auto methodName = method->IDENTIFIER(0)->getText();
         auto* retTI = resolveTypeInfo(method->typeSpec());
+        if (!retTI) return {};
         auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
 
         bool isStatic = (method->AMPERSAND() == nullptr);
@@ -710,6 +723,7 @@ std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
 
         for (auto* param : params) {
             auto* pTI = resolveTypeInfo(param->typeSpec());
+            if (!pTI) continue;
             paramTIs.push_back(pTI);
             paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
         }
@@ -886,6 +900,7 @@ std::any IRGen::visitExternDecl(LuxParser::ExternDeclContext* ctx) {
         return {};
 
     auto* retTI   = resolveTypeInfo(ctx->typeSpec());
+    if (!retTI) return {};
     auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
 
     bool isVariadic = (ctx->SPREAD() != nullptr);
@@ -894,6 +909,7 @@ std::any IRGen::visitExternDecl(LuxParser::ExternDeclContext* ctx) {
     if (auto* paramList = ctx->externParamList()) {
         for (auto* param : paramList->externParam()) {
             auto* pTI   = resolveTypeInfo(param->typeSpec());
+            if (!pTI) continue;
             auto* pLLTy = pTI->toLLVMType(*context_, module_->getDataLayout());
             paramTypes.push_back(pLLTy);
         }
@@ -944,6 +960,7 @@ std::any IRGen::visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) {
         }
 
         auto* baseTI = resolveTypeInfo(typeSpecCtx);
+        if (!baseTI) return {};
         TypeInfo ti = *baseTI;
         ti.name = name;
 
@@ -961,20 +978,32 @@ std::any IRGen::visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) {
 
 // ── Forward-declare a user function (signature only, no body) ───────────
 void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
+    if (!ctx) return;
     // Generic function templates are not forward-declared — only instantiations are
     if (ctx->typeParamList()) {
+        if (ctx->IDENTIFIER().empty()) {
+            std::cerr << "lux: function must have a name\n";
+            return;
+        }
         auto funcName = ctx->IDENTIFIER(0)->getText();
         GenericFuncTemplate tmpl;
-        for (auto* tp : ctx->typeParamList()->typeParam())
+        for (auto* tp : ctx->typeParamList()->typeParam()) {
+            if (tp->IDENTIFIER().empty()) continue;
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        }
         tmpl.decl = ctx;
         genericFuncTemplates_[funcName] = std::move(tmpl);
         return;
     }
 
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
+    if (!retInfo) return;
     auto retArrayDims = countArrayDims(ctx->typeSpec());
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
+    if (ctx->IDENTIFIER().empty()) {
+        std::cerr << "lux: function must have a name\n";
+        return;
+    }
     auto  funcName   = ctx->IDENTIFIER(0)->getText();
 
     bool isMainWithArgs = (funcName == "main" && ctx->paramList() != nullptr);
@@ -1045,7 +1074,12 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
     if (ctx->typeParamList()) return {};
 
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
+    if (!retInfo) return {};
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
+    if (ctx->IDENTIFIER().empty()) {
+        std::cerr << "lux: function must have a name\n";
+        return {};
+    }
     auto  funcName   = ctx->IDENTIFIER(0)->getText();
 
     // ── Special handling: main(Vec<string> args) ────────────────────────
@@ -6228,7 +6262,7 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
 
 std::any IRGen::visitStructLitExpr(LuxParser::StructLitExprContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
-    auto typeName = identifiers[0]->getText();
+    auto typeName = identifiers.size() > 0 ? identifiers[0]->getText() : "";
     auto* ti = typeRegistry_.lookup(typeName);
     if (!ti || (ti->kind != TypeKind::Struct && ti->kind != TypeKind::Union)) {
         std::cerr << "lux: unknown struct/union type '" << typeName << "'\n";
@@ -6243,7 +6277,7 @@ std::any IRGen::visitStructLitExpr(LuxParser::StructLitExprContext* ctx) {
 
         auto exprs = ctx->expression();
         if (!exprs.empty()) {
-            auto fieldName = identifiers[1]->getText();
+            auto fieldName = identifiers.size() > 1 ? identifiers[1]->getText() : "";
             const TypeInfo* fieldTI = nullptr;
             for (auto& f : ti->fields) {
                 if (f.name == fieldName) { fieldTI = f.typeInfo; break; }
@@ -6968,8 +7002,8 @@ llvm::Value* IRGen::buildEnumVariantValue(const TypeInfo* enumType,
 
 std::any IRGen::visitEnumAccessExpr(LuxParser::EnumAccessExprContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
-    auto enumName = identifiers[0]->getText();
-    auto variantName = identifiers[1]->getText();
+    auto enumName = identifiers.size() > 0 ? identifiers[0]->getText() : "";
+    auto variantName = identifiers.size() > 1 ? identifiers[1]->getText() : "";
 
     auto* ti = typeRegistry_.lookup(enumName);
     if (!ti || ti->kind != TypeKind::Enum) {
@@ -7003,8 +7037,8 @@ std::any IRGen::visitEnumAccessExpr(LuxParser::EnumAccessExprContext* ctx) {
 
 std::any IRGen::visitGenericEnumAccessExpr(LuxParser::GenericEnumAccessExprContext* ctx) {
     auto ids = ctx->IDENTIFIER();
-    auto baseName = ids[0]->getText();
-    auto variantName = ids[1]->getText();
+    auto baseName = ids.size() > 0 ? ids[0]->getText() : "";
+    auto variantName = ids.size() > 1 ? ids[1]->getText() : "";
 
     std::vector<const TypeInfo*> typeArgs;
     for (auto* ts : ctx->typeSpec()) {
@@ -7046,8 +7080,8 @@ std::any IRGen::visitGenericEnumAccessExpr(LuxParser::GenericEnumAccessExprConte
 // ── Qualified struct/union positional init: LIB::Point { x, y } or enum variant: Shape::Circle { 1, 2 } ─────
 
 std::any IRGen::visitQualifiedStructPosInitExpr(LuxParser::QualifiedStructPosInitExprContext* ctx) {
-    auto first = ctx->IDENTIFIER(0)->getText();
-    auto second = ctx->IDENTIFIER(1)->getText();
+    auto first = ctx->IDENTIFIER().size() > 0 ? ctx->IDENTIFIER(0)->getText() : "";
+    auto second = ctx->IDENTIFIER().size() > 1 ? ctx->IDENTIFIER(1)->getText() : "";
 
     // Try as qualified struct/union init: namespace::type
     auto* ti = typeRegistry_.lookup(second);
@@ -7170,8 +7204,8 @@ std::any IRGen::visitQualifiedStructPosInitExpr(LuxParser::QualifiedStructPosIni
 // ── Qualified struct/union named init: LIB::Point { x: 10, y: 20 } or enum variant: Shape::Circle { r: 4.0 } ─
 
 std::any IRGen::visitQualifiedStructNamedInitExpr(LuxParser::QualifiedStructNamedInitExprContext* ctx) {
-    auto first = ctx->IDENTIFIER(0)->getText();
-    auto second = ctx->IDENTIFIER(1)->getText();
+    auto first = ctx->IDENTIFIER().size() > 0 ? ctx->IDENTIFIER(0)->getText() : "";
+    auto second = ctx->IDENTIFIER().size() > 1 ? ctx->IDENTIFIER(1)->getText() : "";
 
     // Try as qualified struct/union init: namespace::type
     auto* ti = typeRegistry_.lookup(second);
@@ -12608,6 +12642,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
 
     // Check for pointer type: *T
     if (isPointerType(ctx)) {
+        if (ctx->typeSpec().empty()) return typeRegistry_.lookup("int32");
         auto* inner = ctx->typeSpec(0);
         auto* pointeeTI = resolveTypeInfo(inner);
         if (!pointeeTI) return typeRegistry_.lookup("int32");
@@ -12821,7 +12856,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
 
     // Unwrap only array dimensions so []T resolves to T, but []*U resolves to *U.
     auto* inner = ctx;
-    while (inner->LBRACKET())
+    while (inner->LBRACKET() && !inner->typeSpec().empty())
         inner = inner->typeSpec(0);
 
     if (inner != ctx)
@@ -13158,7 +13193,7 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
 
     if (auto* genv = dynamic_cast<LuxParser::GenericEnumNamedVariantExprContext*>(ctx)) {
         auto ids = genv->IDENTIFIER();
-        auto baseName = ids[0]->getText();
+        auto baseName = ids.size() > 0 ? ids[0]->getText() : "";
         std::vector<const TypeInfo*> typeArgs;
         for (auto* ts : genv->typeSpec()) {
             auto* argTI = resolveTypeInfo(ts);
@@ -13884,9 +13919,13 @@ std::string IRGen::getVecSuffix(const TypeInfo* elemTI) {
 // Returns nullptr (instead of throwing std::bad_any_cast) when the
 // visit result is empty or holds a different type.
 llvm::Value* IRGen::castValue(std::any result) {
-    if (!result.has_value()) return nullptr;
+    if (!result.has_value()) {
+        std::cerr << "[IRGen] internal error: visit returned empty result\n";
+        return nullptr;
+    }
     if (auto* ptr = std::any_cast<llvm::Value*>(&result))
         return *ptr;
+    std::cerr << "[IRGen] internal error: visit returned unexpected type\n";
     return nullptr;
 }
 

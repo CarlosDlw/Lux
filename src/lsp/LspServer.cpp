@@ -94,52 +94,74 @@ void LspServer::dispatch(const json& msg) {
 // ═══════════════════════════════════════════════════════════════════════
 
 void LspServer::handleInitialize(const json& msg) {
-    std::cerr << "[lux-lsp] initialize\n";
+    try {
+        std::cerr << "[lux-lsp] initialize\n";
 
-    json capabilities = {
-        {"textDocumentSync", {
-            {"openClose", true},
-            {"save", {{"includeText", true}}},
-            {"change", 1}  // Full document sync
-        }},
-        {"hoverProvider", true},
-        {"definitionProvider", true},
-        {"completionProvider", {
-            {"triggerCharacters", {".", ":", ">", "@"}},
-            {"resolveProvider", false}
-        }},
-        {"signatureHelpProvider", {
-            {"triggerCharacters", {"(", ","}}
-        }},
-        {"semanticTokensProvider", {
-            {"full", true},
-            {"legend", {
-                {"tokenTypes", SemanticTokensProvider::tokenTypes()},
-                {"tokenModifiers", SemanticTokensProvider::tokenModifiers()}
+        json capabilities = {
+            {"textDocumentSync", {
+                {"openClose", true},
+                {"save", {{"includeText", true}}},
+                {"change", 1}  // Full document sync
+            }},
+            {"hoverProvider", true},
+            {"definitionProvider", true},
+            {"completionProvider", {
+                {"triggerCharacters", {".", ":", ">", "@"}},
+                {"resolveProvider", false}
+            }},
+            {"signatureHelpProvider", {
+                {"triggerCharacters", {"(", ","}}
+            }},
+            {"semanticTokensProvider", {
+                {"full", true},
+                {"legend", {
+                    {"tokenTypes", SemanticTokensProvider::tokenTypes()},
+                    {"tokenModifiers", SemanticTokensProvider::tokenModifiers()}
+                }}
             }}
-        }}
-    };
+        };
 
-    json result = {
-        {"capabilities", capabilities},
-        {"serverInfo", {
-            {"name", "lux-lsp"},
-            {"version", "0.1.0"}
-        }}
-    };
+        json result = {
+            {"capabilities", capabilities},
+            {"serverInfo", {
+                {"name", "lux-lsp"},
+                {"version", "0.1.0"}
+            }}
+        };
 
-    sendResponse(msg["id"], result);
-    initialized_ = true;
+        sendResponse(msg["id"], result);
+        initialized_ = true;
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] initialize error: " << e.what() << "\n";
+        sendError(msg["id"], kInvalidRequest, "initialize failed");
+    } catch (...) {
+        std::cerr << "[lux-lsp] initialize unknown error\n";
+        sendError(msg["id"], kInvalidRequest, "initialize failed");
+    }
 }
 
 void LspServer::handleInitialized(const json& /*msg*/) {
-    std::cerr << "[lux-lsp] initialized\n";
+    try {
+        std::cerr << "[lux-lsp] initialized\n";
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] initialized error: " << e.what() << "\n";
+    } catch (...) {
+        std::cerr << "[lux-lsp] initialized unknown error\n";
+    }
 }
 
 void LspServer::handleShutdown(const json& msg) {
-    std::cerr << "[lux-lsp] shutdown\n";
-    sendResponse(msg["id"], nullptr);
-    shutdown_ = true;
+    try {
+        std::cerr << "[lux-lsp] shutdown\n";
+        sendResponse(msg["id"], nullptr);
+        shutdown_ = true;
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] shutdown error: " << e.what() << "\n";
+        sendResponse(msg["id"], nullptr);
+    } catch (...) {
+        std::cerr << "[lux-lsp] shutdown unknown error\n";
+        sendResponse(msg["id"], nullptr);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -236,75 +258,99 @@ void LspServer::rebuildContext(const std::string& filePath, bool force) {
 // ═══════════════════════════════════════════════════════════════════════
 
 void LspServer::handleDidOpen(const json& msg) {
-    auto& params = msg["params"];
-    auto& td     = params["textDocument"];
-    std::string uri  = td["uri"];
-    std::string text = td["text"];
+    try {
+        auto& params = msg["params"];
+        auto& td     = params["textDocument"];
+        std::string uri  = td["uri"];
+        std::string text = td["text"];
 
-    documents_.open(uri, text);
-    parseCache_.invalidate(uri);
-    std::cerr << "[lux-lsp] opened: " << uri << "\n";
+        documents_.open(uri, text);
+        parseCache_.invalidate(uri);
+        std::cerr << "[lux-lsp] opened: " << uri << "\n";
 
-    std::string filePath = DocumentStore::uriToPath(uri);
-    rebuildContext(filePath, false);
+        std::string filePath = DocumentStore::uriToPath(uri);
+        rebuildContext(filePath, false);
 
-    publishDiagnostics(uri, text);
+        publishDiagnostics(uri, text);
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] didOpen error: " << e.what() << "\n";
+    } catch (...) {
+        std::cerr << "[lux-lsp] didOpen unknown error\n";
+    }
 }
 
 void LspServer::handleDidSave(const json& msg) {
-    auto& params = msg["params"];
-    auto& td     = params["textDocument"];
-    std::string uri = td["uri"];
+    try {
+        auto& params = msg["params"];
+        auto& td     = params["textDocument"];
+        std::string uri = td["uri"];
 
-    std::string text;
-    if (params.contains("text")) {
-        text = params["text"];
-        documents_.update(uri, text);
-        parseCache_.invalidate(uri);
-        cachedTokens_.erase(uri);
-    } else {
-        text = documents_.get(uri);
+        std::string text;
+        if (params.contains("text")) {
+            text = params["text"];
+            documents_.update(uri, text);
+            parseCache_.invalidate(uri);
+            cachedTokens_.erase(uri);
+        } else {
+            text = documents_.get(uri);
+        }
+
+        std::cerr << "[lux-lsp] saved: " << uri << "\n";
+
+        // Rebuild project context on save (files may have changed).
+        std::string filePath = DocumentStore::uriToPath(uri);
+        rebuildContext(filePath, true);
+
+        publishDiagnostics(uri, text);
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] didSave error: " << e.what() << "\n";
+    } catch (...) {
+        std::cerr << "[lux-lsp] didSave unknown error\n";
     }
-
-    std::cerr << "[lux-lsp] saved: " << uri << "\n";
-
-    // Rebuild project context on save (files may have changed).
-    std::string filePath = DocumentStore::uriToPath(uri);
-    rebuildContext(filePath, true);
-
-    publishDiagnostics(uri, text);
 }
 
 void LspServer::handleDidChange(const json& msg) {
-    auto& params = msg["params"];
-    std::string uri = params["textDocument"]["uri"];
+    try {
+        auto& params = msg["params"];
+        std::string uri = params["textDocument"]["uri"];
 
-    // Full document sync (change mode 1): contentChanges[0].text is the full text
-    auto& changes = params["contentChanges"];
-    if (changes.empty()) return;
+        // Full document sync (change mode 1): contentChanges[0].text is the full text
+        auto& changes = params["contentChanges"];
+        if (changes.empty()) return;
 
-    std::string text = changes[0]["text"];
-    documents_.update(uri, text);
-    parseCache_.invalidate(uri);
-    cachedTokens_.erase(uri);
+        std::string text = changes[0]["text"];
+        documents_.update(uri, text);
+        parseCache_.invalidate(uri);
+        cachedTokens_.erase(uri);
 
-    publishDiagnostics(uri, text);
+        publishDiagnostics(uri, text);
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] didChange error: " << e.what() << "\n";
+    } catch (...) {
+        std::cerr << "[lux-lsp] didChange unknown error\n";
+    }
 }
 
 void LspServer::handleDidClose(const json& msg) {
-    auto& params = msg["params"];
-    std::string uri = params["textDocument"]["uri"];
+    try {
+        auto& params = msg["params"];
+        std::string uri = params["textDocument"]["uri"];
 
-    documents_.close(uri);
-    parseCache_.invalidate(uri);
-    cachedTokens_.erase(uri);
-    std::cerr << "[lux-lsp] closed: " << uri << "\n";
+        documents_.close(uri);
+        parseCache_.invalidate(uri);
+        cachedTokens_.erase(uri);
+        std::cerr << "[lux-lsp] closed: " << uri << "\n";
 
-    // Clear diagnostics for the closed file
-    sendNotification("textDocument/publishDiagnostics", {
-        {"uri", uri},
-        {"diagnostics", json::array()}
-    });
+        // Clear diagnostics for the closed file
+        sendNotification("textDocument/publishDiagnostics", {
+            {"uri", uri},
+            {"diagnostics", json::array()}
+        });
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] didClose error: " << e.what() << "\n";
+    } catch (...) {
+        std::cerr << "[lux-lsp] didClose unknown error\n";
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -313,36 +359,50 @@ void LspServer::handleDidClose(const json& msg) {
 
 void LspServer::publishDiagnostics(const std::string& uri,
                                     const std::string& source) {
-    std::string filePath = DocumentStore::uriToPath(uri);
-    auto* cached = parseCache_.getOrParse(uri, source);
-    auto diags = diagnosticEngine_.run(source, filePath,
-                                        projectContext_.isValid()
-                                            ? &projectContext_ : nullptr,
-                                        cached);
+    try {
+        std::string filePath = DocumentStore::uriToPath(uri);
+        auto* cached = parseCache_.getOrParse(uri, source);
+        auto diags = diagnosticEngine_.run(source, filePath,
+                                            projectContext_.isValid()
+                                                ? &projectContext_ : nullptr,
+                                            cached);
 
-    json lspDiags = json::array();
-    for (auto& d : diags) {
-        json item = {
-            {"range", {
-                {"start", {{"line", d.line}, {"character", d.col}}},
-                {"end",   {{"line", d.endLine}, {"character", d.endCol}}}
-            }},
-            {"severity", static_cast<int>(d.severity)},
-            {"source", d.source},
-            {"message", d.message}
-        };
-        if (!d.code.empty())
-            item["code"] = d.code;
-        lspDiags.push_back(std::move(item));
+        json lspDiags = json::array();
+        for (auto& d : diags) {
+            json item = {
+                {"range", {
+                    {"start", {{"line", d.line}, {"character", d.col}}},
+                    {"end",   {{"line", d.endLine}, {"character", d.endCol}}}
+                }},
+                {"severity", static_cast<int>(d.severity)},
+                {"source", d.source},
+                {"message", d.message}
+            };
+            if (!d.code.empty())
+                item["code"] = d.code;
+            lspDiags.push_back(std::move(item));
+        }
+
+        sendNotification("textDocument/publishDiagnostics", {
+            {"uri", uri},
+            {"diagnostics", lspDiags}
+        });
+
+        std::cerr << "[lux-lsp] published " << diags.size()
+                  << " diagnostic(s) for " << uri << "\n";
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] diagnostics error: " << e.what() << "\n";
+        sendNotification("textDocument/publishDiagnostics", {
+            {"uri", uri},
+            {"diagnostics", json::array()}
+        });
+    } catch (...) {
+        std::cerr << "[lux-lsp] diagnostics unknown error\n";
+        sendNotification("textDocument/publishDiagnostics", {
+            {"uri", uri},
+            {"diagnostics", json::array()}
+        });
     }
-
-    sendNotification("textDocument/publishDiagnostics", {
-        {"uri", uri},
-        {"diagnostics", lspDiags}
-    });
-
-    std::cerr << "[lux-lsp] published " << diags.size()
-              << " diagnostic(s) for " << uri << "\n";
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -350,44 +410,52 @@ void LspServer::publishDiagnostics(const std::string& uri,
 // ═══════════════════════════════════════════════════════════════════════
 
 void LspServer::handleHover(const json& msg) {
-    auto& params = msg["params"];
-    std::string uri = params["textDocument"]["uri"];
-    size_t line = params["position"]["line"];
-    size_t col  = params["position"]["character"];
+    try {
+        auto& params = msg["params"];
+        std::string uri = params["textDocument"]["uri"];
+        size_t line = params["position"]["line"];
+        size_t col  = params["position"]["character"];
 
-    std::string source = documents_.get(uri);
-    if (source.empty()) {
+        std::string source = documents_.get(uri);
+        if (source.empty()) {
+            sendResponse(msg["id"], nullptr);
+            return;
+        }
+
+        // Extract file path from URI for project context
+        std::string filePath = uri;
+        if (filePath.rfind("file://", 0) == 0)
+            filePath = filePath.substr(7);
+
+        auto* cached = parseCache_.getOrParse(uri, source);
+        auto result = hoverProvider_.hover(source, line, col, filePath,
+                                            projectContext_.isValid()
+                                                ? &projectContext_ : nullptr,
+                                            cached);
+        if (!result) {
+            sendResponse(msg["id"], nullptr);
+            return;
+        }
+
+        json hover = {
+            {"contents", {
+                {"kind", "markdown"},
+                {"value", result->contents}
+            }},
+            {"range", {
+                {"start", {{"line", result->line}, {"character", result->col}}},
+                {"end",   {{"line", result->endLine}, {"character", result->endCol}}}
+            }}
+        };
+
+        sendResponse(msg["id"], hover);
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] hover error: " << e.what() << "\n";
         sendResponse(msg["id"], nullptr);
-        return;
-    }
-
-    // Extract file path from URI for project context
-    std::string filePath = uri;
-    if (filePath.rfind("file://", 0) == 0)
-        filePath = filePath.substr(7);
-
-    auto* cached = parseCache_.getOrParse(uri, source);
-    auto result = hoverProvider_.hover(source, line, col, filePath,
-                                        projectContext_.isValid()
-                                            ? &projectContext_ : nullptr,
-                                        cached);
-    if (!result) {
+    } catch (...) {
+        std::cerr << "[lux-lsp] hover unknown error\n";
         sendResponse(msg["id"], nullptr);
-        return;
     }
-
-    json hover = {
-        {"contents", {
-            {"kind", "markdown"},
-            {"value", result->contents}
-        }},
-        {"range", {
-            {"start", {{"line", result->line}, {"character", result->col}}},
-            {"end",   {{"line", result->endLine}, {"character", result->endCol}}}
-        }}
-    };
-
-    sendResponse(msg["id"], hover);
 }
 
 void LspServer::handleDefinition(const json& msg) {

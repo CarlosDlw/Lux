@@ -1095,6 +1095,10 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
     // (avoid double-registration by checking `functions_`).
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* func = decl->functionDecl()) {
+            if (func->IDENTIFIER().empty()) {
+                error(func, "function must have a name");
+                continue;
+            }
             auto funcName = func->IDENTIFIER(0)->getText();
             if (!nsRegistry_ || !functions_.count(funcName)) {
                 registerFunctionSignature(func);
@@ -1141,7 +1145,7 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
     auto* cur = ctx;
 
     // Unwrap array dimensions: [][]T → arrayDims=2, [N]T → arrayDims=1 (fixed)
-    while (cur->LBRACKET()) {
+    while (cur && cur->LBRACKET()) {
         arrayDims++;
         if (cur->INT_LIT()) {
             // Fixed-size array [N]T — validate size is positive
@@ -1152,11 +1156,11 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
                 return nullptr;
             }
         }
-        cur = cur->typeSpec(0);
+        cur = cur->typeSpec().empty() ? nullptr : cur->typeSpec(0);
     }
 
     // Pointer type: *T
-    if (cur->STAR()) {
+    if (cur && cur->STAR()) {
         auto* childTS = cur->typeSpec(0);
         if (childTS) {
             auto starIdx = cur->STAR()->getSymbol()->getTokenIndex();
@@ -1178,7 +1182,8 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
     }
 
     // Function type: fn(params) -> ret
-    if (auto* fnSpec = cur->fnTypeSpec()) {
+    if (cur && cur->fnTypeSpec()) {
+        auto* fnSpec = cur->fnTypeSpec();
         auto specs = fnSpec->typeSpec();
         if (specs.empty()) return nullptr;
 
@@ -1199,6 +1204,10 @@ const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
 
     // Generic extended type: Vec<int32>, Map<string, int32>, etc.
     // Built-in collection types (vec, map, set) — no import required
+    if (!cur) {
+        error(ctx, "invalid type specification");
+        return nullptr;
+    }
     std::string baseName;
     if (cur->VEC())      baseName = "Vec";
     else if (cur->MAP()) baseName = "Map";
@@ -1519,8 +1528,10 @@ const TypeInfo* Checker::makeFunctionType(const TypeInfo* returnType,
 }
 
 std::string Checker::resolveBaseTypeName(LuxParser::TypeSpecContext* ctx) {
+    if (!ctx) return "";
     while (!ctx->typeSpec().empty())
         ctx = ctx->typeSpec(0);
+    if (!ctx) return "";
     auto text = ctx->getText();
     while (!text.empty() && text[0] == '*')
         text = text.substr(1);
@@ -1694,6 +1705,15 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
 
 const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     if (!expr) return nullptr;
+
+    // Guard against infinite recursion in pathological type expressions
+    recursionDepth_++;
+    if (recursionDepth_ > MAX_RECURSION_DEPTH) {
+        recursionDepth_--;
+        error(expr, "type expression nesting exceeds maximum recursion depth of " +
+                    std::to_string(MAX_RECURSION_DEPTH));
+        return typeRegistry_.lookup("int64");  // fallback type
+    }
 
     auto resolveTypeSpecInContext = [&](LuxParser::TypeSpecContext* ts,
                                         unsigned& dims) -> const TypeInfo* {
@@ -2295,6 +2315,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
         // Variant identity check: value is EnumType::Variant
         if (isE->SCOPE()) {
+            if (isE->IDENTIFIER().empty()) {
+                error(expr, "invalid enum variant check in 'is' expression");
+                return typeRegistry_.lookup("bool");
+            }
             auto* variantNode = isE->IDENTIFIER(0);
             if (!variantNode) {
                 error(expr, "invalid enum variant check in 'is' expression");
@@ -2323,7 +2347,15 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             }
 
             // Binding: value is EnumType::Variant(name) — validate the binding
-            if (isE->LPAREN() && isE->IDENTIFIER(1)) {
+            if (isE->LPAREN() && isE->IDENTIFIER().size() > 1) {
+                auto* bindNode = isE->IDENTIFIER(1);
+                if (!bindNode) {
+                    error(expr, "invalid binding in variant 'is' check");
+                } else if (!variantInfo || variantInfo->payloadFields.empty()) {
+                    error(expr, "variant '" + variantName +
+                                "' has no payload to bind");
+                }
+            } else if (isE->LPAREN()) {
                 if (!variantInfo || variantInfo->payloadFields.empty()) {
                     error(expr, "variant '" + variantName +
                                 "' has no payload to bind");
@@ -3142,8 +3174,12 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
     // ── Qualified positional struct/union init or enum variant init: LIB::Point { x, y } or Shape::Circle { 1, 2 } ───
     if (auto* qspi = dynamic_cast<LuxParser::QualifiedStructPosInitExprContext*>(expr)) {
+        if (qspi->IDENTIFIER().empty()) {
+            error(expr, "invalid qualified type initialization");
+            return nullptr;
+        }
         auto first = qspi->IDENTIFIER(0)->getText();
-        auto second = qspi->IDENTIFIER(1)->getText();
+        auto second = qspi->IDENTIFIER().size() > 1 ? qspi->IDENTIFIER(1)->getText() : "";
         auto* typeInfo = tryResolveQualifiedType(expr, first, second);
         if (!typeInfo) return nullptr;
 
@@ -3195,8 +3231,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
     // ── Qualified named struct/union init or enum variant init: LIB::Point { x: 10, y: 20 } or Shape::Circle { r: 4.0 } ───
     if (auto* qsni = dynamic_cast<LuxParser::QualifiedStructNamedInitExprContext*>(expr)) {
-        auto first = qsni->IDENTIFIER(0)->getText();
-        auto second = qsni->IDENTIFIER(1)->getText();
+        auto first = qsni->IDENTIFIER().size() > 0 ? qsni->IDENTIFIER(0)->getText() : "";
+        auto second = qsni->IDENTIFIER().size() > 1 ? qsni->IDENTIFIER(1)->getText() : "";
         auto* typeInfo = tryResolveQualifiedType(expr, first, second);
         if (!typeInfo) return nullptr;
 
@@ -4167,9 +4203,11 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         else
             locals_.erase(varName);
 
+        recursionDepth_--;
         return elemType;
     }
 
+    recursionDepth_--;
     return nullptr;
 }
 
@@ -4759,6 +4797,10 @@ void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
 }
 
 void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
+    if (!func || func->IDENTIFIER().empty()) {
+        error(func, "function must have a valid name");
+        return;
+    }
     auto funcName = func->IDENTIFIER(0)->getText();
 
     // Generic function template — register as template, not as a concrete function
@@ -4855,9 +4897,14 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
 
     if (retType->kind != TypeKind::Void) {
         if (!blockAlwaysReturns(func->block())) {
-            error(func, "function '" + func->IDENTIFIER(0)->getText() +
-                        "' must return a value of type '" + retType->name +
-                        "' on all code paths");
+            if (!func || func->IDENTIFIER().empty()) {
+                error(func, "function must return a value of type '" + retType->name +
+                            "' on all code paths");
+            } else {
+                error(func, "function '" + func->IDENTIFIER(0)->getText() +
+                            "' must return a value of type '" + retType->name +
+                            "' on all code paths");
+            }
         }
     }
 
@@ -5182,8 +5229,8 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
             for (auto* cb : cbs->scopeCallback()) {
                 if (cb->DOT()) {
                     // dot-access: varName.methodName(args)
-                    auto varName    = cb->IDENTIFIER(0)->getText();
-                    auto methodName = cb->IDENTIFIER(1)->getText();
+                    auto varName    = cb->IDENTIFIER().size() > 0 ? cb->IDENTIFIER(0)->getText() : "";
+                    auto methodName = cb->IDENTIFIER().size() > 1 ? cb->IDENTIFIER(1)->getText() : "";
                     if (locals_.find(varName) == locals_.end())
                         warning(cb, "unknown variable '" + varName + "' in #scope callback");
                 } else {
@@ -5475,9 +5522,9 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     // ── Detect namespace prefix (qualified type: LIB::Point) ────────
     bool hasNsPrefix = stmt->SCOPE() != nullptr;
     size_t identOffset = hasNsPrefix ? 1 : 0;
-    std::string nsPrefix = hasNsPrefix ? stmt->IDENTIFIER(0)->getText() : "";
+    std::string nsPrefix = hasNsPrefix && stmt->IDENTIFIER().size() > 0 ? stmt->IDENTIFIER(0)->getText() : "";
 
-    auto name = stmt->IDENTIFIER(identOffset)->getText();
+    auto name = stmt->IDENTIFIER().size() > identOffset ? stmt->IDENTIFIER(identOffset)->getText() : "";
 
     {
         auto it = locals_.find(name);
@@ -6612,9 +6659,9 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
     if (typeSpec->LBRACKET() && typeSpec->typeSpec().size() >= 1) {
         arrayDims = 0;
         auto* outerSpec = typeSpec;
-        while (outerSpec->LBRACKET()) {
+        while (outerSpec && outerSpec->LBRACKET()) {
             arrayDims++;
-            outerSpec = outerSpec->typeSpec(0);
+            outerSpec = outerSpec->typeSpec().empty() ? nullptr : outerSpec->typeSpec(0);
         }
         unsigned elemDims = 0;
         auto* elemType = resolveTypeSpecWithSubst(outerSpec, subst, elemDims);

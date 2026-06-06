@@ -1016,6 +1016,23 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 if (nsSym->kind == ExportedSymbol::ExtendBlock &&
                     nsSym->name == symName) {
                     auto* extDecl = static_cast<LuxParser::ExtendDeclContext*>(nsSym->decl);
+                    // Pre-register types referenced in extend method signatures
+                    // (e.g. return types like ReadFileResult) so resolveTypeSpec
+                    // can find them when checkExtendDecl processes the block.
+                    for (auto* method : extDecl->extendMethod()) {
+                        ensureTypeDependencyFromSpec(
+                            ensureTypeDependencyFromSpec, method->typeSpec(), ns);
+                        for (auto* p : method->param()) {
+                            ensureTypeDependencyFromSpec(
+                                ensureTypeDependencyFromSpec, p->typeSpec(), ns);
+                        }
+                        if (auto* pl = method->paramList()) {
+                            for (auto* p : pl->param()) {
+                                ensureTypeDependencyFromSpec(
+                                    ensureTypeDependencyFromSpec, p->typeSpec(), ns);
+                            }
+                        }
+                    }
                     checkExtendDecl(extDecl);
                 }
             }

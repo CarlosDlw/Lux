@@ -38,6 +38,20 @@ static bool cursorInsideNode(antlr4::ParserRuleContext *node,
   return cursorLine0 >= startLine && cursorLine0 <= stopLine;
 }
 
+static std::string safeText(antlr4::tree::TerminalNode *n) {
+    return n ? n->getText() : "";
+}
+static std::string safeText(antlr4::ParserRuleContext *ctx) {
+    return ctx ? ctx->getText() : "";
+}
+template<typename T>
+static std::string safeIdAt(T *ctx, size_t i) {
+    if (!ctx) return "";
+    if (i >= ctx->IDENTIFIER().size()) return "";
+    auto *n = ctx->IDENTIFIER(i);
+    return n ? n->getText() : "";
+}
+
 static std::string
 substituteTypeParams(const std::string &type,
                      const std::unordered_map<std::string, std::string> &subst);
@@ -132,12 +146,12 @@ static std::string inferIsBindingPayloadType(LuxParser::ExpressionContext *cond,
   if (!rhsType || !rhsType->IDENTIFIER())
     return "";
 
-  auto enumName = rhsType->IDENTIFIER()->getText();
+  auto enumName = safeText(rhsType->IDENTIFIER());
   LuxParser::EnumDeclContext *enumDecl = nullptr;
   if (tree) {
     for (auto *tld : tree->topLevelDecl()) {
       if (auto *ed = tld->enumDecl();
-          ed && ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == enumName) {
+          ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == enumName) {
         enumDecl = ed;
         break;
       }
@@ -146,7 +160,7 @@ static std::string inferIsBindingPayloadType(LuxParser::ExpressionContext *cond,
   if (!enumDecl)
     return "";
 
-  auto variantName = isE->IDENTIFIER(0) ? isE->IDENTIFIER(0)->getText() : "";
+  auto variantName = isE->IDENTIFIER(0) ? safeIdAt(isE, 0) : "";
   if (variantName.empty())
     return "";
 
@@ -195,7 +209,7 @@ static std::string inferCatchUnwrapSuccessType(
   if (!enumDecl && tree) {
     for (auto *tld : tree->topLevelDecl()) {
       if (auto *ed = tld->enumDecl();
-          ed && ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == baseName) {
+          ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == baseName) {
         enumDecl = ed;
         break;
       }
@@ -258,7 +272,7 @@ static std::string inferCatchUnwrapItType(
   if (!enumDecl && tree) {
     for (auto *tld : tree->topLevelDecl()) {
       if (auto *ed = tld->enumDecl();
-          ed && ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == baseName) {
+          ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == baseName) {
         enumDecl = ed;
         break;
       }
@@ -283,7 +297,7 @@ static std::string inferCatchUnwrapItType(
   for (auto *variant : enumDecl->enumVariant()) {
     if (!variant || variant->typeSpec().size() != 1) continue;
     auto payloadName = variant->typeSpec(0)->getText();
-    auto variantName = variant->IDENTIFIER() ? variant->IDENTIFIER()->getText() : "";
+    auto variantName = variant->IDENTIFIER() ? safeText(variant->IDENTIFIER()) : "";
     bool isErrName = variantName == "Err" || variantName == "Error" ||
                      variantName == "Failure" || variantName == "Fail" ||
                      variantName == "None";
@@ -351,7 +365,7 @@ findFunctionDeclForInference(const std::string &name,
   if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *fd = tld->functionDecl();
-      if (fd && !fd->IDENTIFIER().empty() && fd->IDENTIFIER(0)->getText() == name)
+      if (fd && !fd->IDENTIFIER().empty() && safeIdAt(fd, 0) == name)
         return fd;
     }
   }
@@ -374,7 +388,7 @@ findEnumDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *ed = tld->enumDecl();
-      if (ed && ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name)
+      if (ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
         return ed;
     }
   }
@@ -397,7 +411,7 @@ findStructDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *sd = tld->structDecl();
-      if (sd && sd->IDENTIFIER() && sd->IDENTIFIER()->getText() == name)
+      if (sd && sd->IDENTIFIER() && safeText(sd->IDENTIFIER()) == name)
         return sd;
     }
   }
@@ -420,7 +434,7 @@ findUnionDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *ud = tld->unionDecl();
-      if (ud && ud->IDENTIFIER() && ud->IDENTIFIER()->getText() == name)
+      if (ud && ud->IDENTIFIER() && safeText(ud->IDENTIFIER()) == name)
         return ud;
     }
   }
@@ -550,14 +564,14 @@ static std::string lookupFuncReturnType(const std::string &funcName,
   if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       if (auto *fd = tld->functionDecl()) {
-        if (!fd->IDENTIFIER().empty() && fd->IDENTIFIER(0)->getText() == funcName &&
+        if (!fd->IDENTIFIER().empty() && safeIdAt(fd, 0) == funcName &&
             fd->typeSpec())
-          return fd->typeSpec()->getText();
+          return safeText(fd->typeSpec());
       }
       if (auto *ext = tld->externDecl()) {
-        if (ext->IDENTIFIER() && ext->IDENTIFIER()->getText() == funcName &&
+        if (ext->IDENTIFIER() && safeText(ext->IDENTIFIER()) == funcName &&
             ext->typeSpec()) {
-          auto ret = ext->typeSpec()->getText();
+          auto ret = safeText(ext->typeSpec());
           if (ret != "auto")
             return ret;
         }
@@ -573,7 +587,7 @@ static std::string lookupFuncReturnType(const std::string &funcName,
       if (sym->kind == ExportedSymbol::Function) {
         auto *fd = dynamic_cast<LuxParser::FunctionDeclContext *>(sym->decl);
         if (fd)
-          return fd->typeSpec()->getText();
+          return safeText(fd->typeSpec());
       }
     }
   }
@@ -608,7 +622,7 @@ static std::string inferExprTypeName(
   if (dynamic_cast<LuxParser::CStrLitExprContext *>(expr))
     return "*char";
   if (auto *id = dynamic_cast<LuxParser::IdentExprContext *>(expr)) {
-    auto it = locals.find(id->IDENTIFIER()->getText());
+    auto it = locals.find(safeText(id->IDENTIFIER()));
     if (it != locals.end())
       return it->second.typeName;
     return "";
@@ -637,8 +651,8 @@ static std::string inferExprTypeName(
         }
       }
       for (auto *f : sd->structField()) {
-        if (f->IDENTIFIER()->getText() == fieldName)
-          return substituteTypeParams(f->typeSpec()->getText(), subst);
+        if (safeText(f->IDENTIFIER()) == fieldName)
+          return substituteTypeParams(safeText(f->typeSpec()), subst);
       }
     }
 
@@ -652,8 +666,8 @@ static std::string inferExprTypeName(
         }
       }
       for (auto *f : ud->unionField()) {
-        if (f->IDENTIFIER()->getText() == fieldName)
-          return substituteTypeParams(f->typeSpec()->getText(), subst);
+        if (safeText(f->IDENTIFIER()) == fieldName)
+          return substituteTypeParams(safeText(f->typeSpec()), subst);
       }
     }
 
@@ -673,19 +687,19 @@ static std::string inferExprTypeName(
     auto baseType = inferExprTypeName(fa->expression(), locals, flc);
     if (baseType.empty())
       return "";
-    return resolveFieldType(baseType, fa->IDENTIFIER()->getText());
+    return resolveFieldType(baseType, safeText(fa->IDENTIFIER()));
   }
 
   if (auto *aa = dynamic_cast<LuxParser::ArrowAccessExprContext *>(expr)) {
     auto baseType = inferExprTypeName(aa->expression(), locals, flc);
     if (baseType.empty() || baseType[0] != '*')
       return "";
-    return resolveFieldType(baseType.substr(1), aa->IDENTIFIER()->getText());
+    return resolveFieldType(baseType.substr(1), safeText(aa->IDENTIFIER()));
   }
   if (auto *addr = dynamic_cast<LuxParser::AddrOfExprContext *>(expr)) {
     if (auto *ident =
             dynamic_cast<LuxParser::IdentExprContext *>(addr->expression())) {
-      auto it = locals.find(ident->IDENTIFIER()->getText());
+      auto it = locals.find(safeText(ident->IDENTIFIER()));
       if (it != locals.end())
         return "*" + it->second.typeName;
     }
@@ -695,11 +709,11 @@ static std::string inferExprTypeName(
   if (auto *fn = dynamic_cast<LuxParser::FnCallExprContext *>(expr)) {
     if (auto *ident =
             dynamic_cast<LuxParser::IdentExprContext *>(fn->expression())) {
-      auto funcName = ident->IDENTIFIER()->getText();
+      auto funcName = safeText(ident->IDENTIFIER());
       if (auto *fd = findFunctionDeclForInference(funcName, flc)) {
         // Non-generic function: direct return type.
         if (!fd->typeParamList()) {
-          auto ret = fd->typeSpec()->getText();
+          auto ret = safeText(fd->typeSpec());
           if (!ret.empty())
             return ret;
         } else {
@@ -724,7 +738,7 @@ static std::string inferExprTypeName(
             std::unordered_map<std::string, std::string> inferred;
             bool ok = true;
             for (size_t i = 0; i < formalParams.size(); i++) {
-              auto formal = formalParams[i]->typeSpec()->getText();
+              auto formal = safeText(formalParams[i]->typeSpec());
               auto actual = actualArgTypes[i];
               if (actual.empty()) {
                 ok = false;
@@ -745,7 +759,7 @@ static std::string inferExprTypeName(
 
             if (ok) {
               auto ret =
-                  substituteTypeParams(fd->typeSpec()->getText(), inferred);
+                  substituteTypeParams(safeText(fd->typeSpec()), inferred);
               if (!ret.empty())
                 return ret;
             }
@@ -769,7 +783,7 @@ static std::string inferExprTypeName(
 
     if (auto *fd = findFunctionDeclForInference(funcName, flc)) {
       if (!fd->typeParamList()) {
-        auto ret = fd->typeSpec()->getText();
+        auto ret = safeText(fd->typeSpec());
         if (!ret.empty())
           return ret;
       } else {
@@ -782,7 +796,7 @@ static std::string inferExprTypeName(
             subst[ids[0]->getText()] = args[i]->getText();
         }
 
-        auto ret = substituteTypeParams(fd->typeSpec()->getText(), subst);
+        auto ret = substituteTypeParams(safeText(fd->typeSpec()), subst);
         if (!ret.empty())
           return ret;
       }
@@ -830,14 +844,14 @@ static std::string inferExprTypeName(
           auto *ext = tld->extendDecl();
           if (!ext)
             continue;
-          if (ext->IDENTIFIER()->getText() != typeName)
+          if (safeText(ext->IDENTIFIER()) != typeName)
             continue;
           for (auto *m : ext->extendMethod()) {
-            if (m->IDENTIFIER(0)->getText() != methodName)
+            if (safeIdAt(m, 0) != methodName)
               continue;
 
             if (!ext->typeParamList())
-              return m->typeSpec()->getText();
+              return safeText(m->typeSpec());
 
             std::unordered_set<std::string> tps;
             for (auto *tp : ext->typeParamList()->typeParam()) {
@@ -856,12 +870,12 @@ static std::string inferExprTypeName(
             if (auto *pl = m->paramList())
               formalParams = pl->param();
             if (actualArgTypes.size() != formalParams.size())
-              return m->typeSpec()->getText();
+              return safeText(m->typeSpec());
 
             std::unordered_map<std::string, std::string> inferred;
             bool ok = true;
             for (size_t i = 0; i < formalParams.size(); i++) {
-              auto formal = formalParams[i]->typeSpec()->getText();
+              auto formal = safeText(formalParams[i]->typeSpec());
               auto actual = actualArgTypes[i];
               if (actual.empty()) {
                 ok = false;
@@ -880,8 +894,8 @@ static std::string inferExprTypeName(
             }
 
             if (ok)
-              return substituteTypeParams(m->typeSpec()->getText(), inferred);
-            return m->typeSpec()->getText();
+              return substituteTypeParams(safeText(m->typeSpec()), inferred);
+            return safeText(m->typeSpec());
           }
         }
       }
@@ -892,11 +906,11 @@ static std::string inferExprTypeName(
             if (sym->kind != ExportedSymbol::ExtendBlock)
               continue;
             auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
-            if (!ext || ext->IDENTIFIER()->getText() != typeName)
+            if (!ext || safeText(ext->IDENTIFIER()) != typeName)
               continue;
             for (auto *m : ext->extendMethod()) {
-              if (m->IDENTIFIER(0)->getText() == methodName)
-                return m->typeSpec()->getText();
+              if (safeIdAt(m, 0) == methodName)
+                return safeText(m->typeSpec());
             }
           }
         }
@@ -917,7 +931,7 @@ static std::string inferExprTypeName(
   if (auto *mc = dynamic_cast<LuxParser::MethodCallExprContext *>(expr)) {
     auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
     if (!receiverType.empty()) {
-      std::string methodName = mc->IDENTIFIER()->getText();
+      std::string methodName = safeText(mc->IDENTIFIER());
 
       if (!receiverType.empty() && receiverType[0] == '[' && flc &&
           flc->methodReg) {
@@ -948,11 +962,11 @@ static std::string inferExprTypeName(
           auto *ext = tld->extendDecl();
           if (!ext)
             continue;
-          if (ext->IDENTIFIER()->getText() != receiverType)
+          if (safeText(ext->IDENTIFIER()) != receiverType)
             continue;
           for (auto *m : ext->extendMethod()) {
-            if (m->IDENTIFIER(0)->getText() == methodName && m->typeSpec())
-              return m->typeSpec()->getText();
+            if (safeIdAt(m, 0) == methodName && m->typeSpec())
+              return safeText(m->typeSpec());
           }
         }
       }
@@ -965,11 +979,11 @@ static std::string inferExprTypeName(
             if (sym->kind != ExportedSymbol::ExtendBlock)
               continue;
             auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
-            if (!ext || ext->IDENTIFIER()->getText() != receiverType)
+            if (!ext || safeText(ext->IDENTIFIER()) != receiverType)
               continue;
             for (auto *m : ext->extendMethod()) {
-              if (m->IDENTIFIER(0)->getText() == methodName && m->typeSpec())
-                return m->typeSpec()->getText();
+              if (safeIdAt(m, 0) == methodName && m->typeSpec())
+                return safeText(m->typeSpec());
             }
           }
         }
@@ -1056,7 +1070,7 @@ static std::string inferExprTypeName(
   if (auto *paren = dynamic_cast<LuxParser::ParenExprContext *>(expr))
     return inferExprTypeName(paren->expression(), locals, flc);
   if (auto *cast = dynamic_cast<LuxParser::CastExprContext *>(expr))
-    return cast->typeSpec() ? cast->typeSpec()->getText() : "";
+    return cast->typeSpec() ? safeText(cast->typeSpec()) : "";
   if (auto *tern = dynamic_cast<LuxParser::TernaryExprContext *>(expr))
     return inferExprTypeName(tern->expression(1), locals, flc);
   if (auto *cu = dynamic_cast<LuxParser::CatchUnwrapExprContext *>(expr)) {
@@ -1111,7 +1125,7 @@ static std::string inferExprTypeName(
   if (auto *gsl =
           dynamic_cast<LuxParser::GenericStructLitExprContext *>(expr)) {
     if (!gsl->IDENTIFIER().empty()) {
-      std::string base = gsl->IDENTIFIER(0)->getText();
+      std::string base = safeIdAt(gsl, 0);
       std::string outType = base + "<";
       auto args = gsl->typeSpec();
       for (size_t i = 0; i < args.size(); i++) {
@@ -1139,7 +1153,7 @@ static void collectLocalsFromStmts(
     if (auto *vd = stmt->varDeclStmt()) {
       std::string typeName;
       if (vd->typeSpec())
-        typeName = vd->typeSpec()->getText();
+        typeName = safeText(vd->typeSpec());
       if (typeName == "auto" && vd->expression()) {
         auto inferred = inferExprTypeName(vd->expression(), out, flc);
         if (!inferred.empty())
@@ -1147,7 +1161,7 @@ static void collectLocalsFromStmts(
       }
       if (vd->IDENTIFIER().empty())
         continue;
-      out[vd->IDENTIFIER(0)->getText()] = {typeName, 0};
+      out[safeIdAt(vd, 0)] = {typeName, 0};
 
       if (auto *cu = dynamic_cast<LuxParser::CatchUnwrapExprContext *>(
               vd->expression())) {
@@ -1190,7 +1204,7 @@ static void collectLocalsFromStmts(
                 isE && isE->IDENTIFIER(1)) {
               auto bindType = inferIsBindingPayloadType(
                   ifS->expression(), flc ? flc->tree : nullptr);
-              out[isE->IDENTIFIER(1)->getText()] = {
+              out[safeIdAt(isE, 1)] = {
                   bindType.empty() ? "auto" : bindType, 0};
             }
             collectLocalsFromBlock(b, beforeLine, out, flc);
@@ -1202,7 +1216,7 @@ static void collectLocalsFromStmts(
                 isE && isE->IDENTIFIER(1)) {
               auto bindType = inferIsBindingPayloadType(
                   ifS->expression(), flc ? flc->tree : nullptr);
-              out[isE->IDENTIFIER(1)->getText()] = {
+              out[safeIdAt(isE, 1)] = {
                   bindType.empty() ? "auto" : bindType, 0};
             }
             collectLocalsFromStmts({s}, beforeLine, out, flc);
@@ -1218,7 +1232,7 @@ static void collectLocalsFromStmts(
                   isE && isE->IDENTIFIER(1)) {
                 auto bindType = inferIsBindingPayloadType(
                     elif->expression(), flc ? flc->tree : nullptr);
-                out[isE->IDENTIFIER(1)->getText()] = {
+                out[safeIdAt(isE, 1)] = {
                     bindType.empty() ? "auto" : bindType, 0};
               }
               collectLocalsFromBlock(b, beforeLine, out, flc);
@@ -1230,7 +1244,7 @@ static void collectLocalsFromStmts(
                   isE && isE->IDENTIFIER(1)) {
                 auto bindType = inferIsBindingPayloadType(
                     elif->expression(), flc ? flc->tree : nullptr);
-                out[isE->IDENTIFIER(1)->getText()] = {
+                out[safeIdAt(isE, 1)] = {
                     bindType.empty() ? "auto" : bindType, 0};
               }
               collectLocalsFromStmts({s}, beforeLine, out, flc);
@@ -1254,14 +1268,14 @@ static void collectLocalsFromStmts(
       if (auto *fin = dynamic_cast<LuxParser::ForInStmtContext *>(forS)) {
         if (cursorInsideNode(fin, beforeLine)) {
           if (fin->IDENTIFIER() && fin->typeSpec())
-            out[fin->IDENTIFIER()->getText()] = {fin->typeSpec()->getText(), 0};
+            out[safeText(fin->IDENTIFIER())] = {safeText(fin->typeSpec()), 0};
           collectLocalsFromBlock(fin->block(), beforeLine, out, flc);
         }
       }
       if (auto *fc = dynamic_cast<LuxParser::ForClassicStmtContext *>(forS)) {
         if (cursorInsideNode(fc, beforeLine)) {
           if (fc->IDENTIFIER() && fc->typeSpec())
-            out[fc->IDENTIFIER()->getText()] = {fc->typeSpec()->getText(), 0};
+            out[safeText(fc->IDENTIFIER())] = {safeText(fc->typeSpec()), 0};
           collectLocalsFromBlock(fc->block(), beforeLine, out, flc);
         }
       }
@@ -1290,7 +1304,7 @@ static void collectLocalsFromStmts(
       for (auto *cc : tc->catchClause()) {
         if (cursorInsideNode(cc, beforeLine)) {
           if (cc->IDENTIFIER() && cc->typeSpec())
-            out[cc->IDENTIFIER()->getText()] = {cc->typeSpec()->getText(), 0};
+            out[safeText(cc->IDENTIFIER())] = {safeText(cc->typeSpec()), 0};
           collectLocalsFromBlock(cc->block(), beforeLine, out, flc);
         }
       }
@@ -1566,9 +1580,9 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
         std::string resolved = varType;
         for (auto *tld : parsed->tree->topLevelDecl()) {
           if (auto *ta = tld->typeAliasDecl()) {
-            if (ta->IDENTIFIER() && ta->IDENTIFIER()->getText() == resolved &&
+            if (ta->IDENTIFIER() && safeText(ta->IDENTIFIER()) == resolved &&
                 ta->typeSpec()) {
-              resolved = ta->typeSpec()->getText();
+              resolved = safeText(ta->typeSpec());
               break;
             }
           }
@@ -2231,7 +2245,7 @@ void CompletionProvider::addLocals(std::vector<CompletionItem> &items,
       for (auto *p : params->param()) {
         if (!p->IDENTIFIER())
           continue;
-        std::string name = p->IDENTIFIER()->getText();
+        std::string name = safeText(p->IDENTIFIER());
         if (!matchesPrefix(name, prefix))
           continue;
         CompletionItem item;
@@ -2268,7 +2282,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
     if (auto *func = tld->functionDecl()) {
       if (func->IDENTIFIER().empty())
         continue;
-      std::string name = func->IDENTIFIER(0)->getText();
+      std::string name = safeIdAt(func, 0);
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -2285,7 +2299,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
           if (i > 0)
             snippet += ", ";
           snippet += "${" + std::to_string(i + 1) + ":" +
-                     paramList[i]->IDENTIFIER()->getText() + "}";
+                     safeText(paramList[i]->IDENTIFIER()) + "}";
         }
         snippet += ")";
         item.insertText = snippet;
@@ -2300,7 +2314,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
 
     // Structs
     if (auto *sd = tld->structDecl()) {
-      std::string name = sd->IDENTIFIER()->getText();
+      std::string name = safeText(sd->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -2333,7 +2347,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
     if (auto *ed = tld->enumDecl()) {
       if (!ed->IDENTIFIER())
         continue;
-      std::string name = ed->IDENTIFIER()->getText();
+      std::string name = safeText(ed->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -2347,7 +2361,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
     if (auto *ud = tld->unionDecl()) {
       if (!ud->IDENTIFIER())
         continue;
-      std::string name = ud->IDENTIFIER()->getText();
+      std::string name = safeText(ud->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -2379,7 +2393,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
     if (auto *ta = tld->typeAliasDecl()) {
       if (!ta->IDENTIFIER())
         continue;
-      std::string name = ta->IDENTIFIER()->getText();
+      std::string name = safeText(ta->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -2393,7 +2407,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
     if (auto *ext = tld->externDecl()) {
       if (!ext->IDENTIFIER())
         continue;
-      std::string name = ext->IDENTIFIER()->getText();
+      std::string name = safeText(ext->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -2408,7 +2422,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
           first = false;
           detail += typeSpecToString(p->typeSpec());
           if (p->IDENTIFIER())
-            detail += " " + p->IDENTIFIER()->getText();
+            detail += " " + safeText(p->IDENTIFIER());
         }
       }
       if (ext->SPREAD()) {
@@ -2428,7 +2442,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
           if (i > 0)
             snippet += ", ";
           std::string pname = paramList[i]->IDENTIFIER()
-                                  ? paramList[i]->IDENTIFIER()->getText()
+                                  ? safeText(paramList[i]->IDENTIFIER())
                                   : "p" + std::to_string(i);
           snippet += "${" + std::to_string(i + 1) + ":" + pname + "}";
         }
@@ -2461,7 +2475,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
     if (auto *root = dynamic_cast<LuxParser::UseRootContext *>(useDecl)) {
       if (!root->IDENTIFIER())
         continue;
-      symbolNames.push_back(root->IDENTIFIER()->getText());
+      symbolNames.push_back(safeText(root->IDENTIFIER()));
     } else if (auto *item =
                    dynamic_cast<LuxParser::UseItemContext *>(useDecl)) {
       if (!item->modulePath() || !item->IDENTIFIER())
@@ -2471,7 +2485,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
           modulePath += "::";
         modulePath += id->getText();
       }
-      symbolNames.push_back(item->IDENTIFIER()->getText());
+      symbolNames.push_back(safeText(item->IDENTIFIER()));
     } else if (auto *group =
                    dynamic_cast<LuxParser::UseGroupContext *>(useDecl)) {
       if (!group->modulePath())
@@ -2607,7 +2621,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
               if (i > 0)
                 snippet += ", ";
               snippet += "${" + std::to_string(i + 1) + ":" +
-                         pList[i]->IDENTIFIER()->getText() + "}";
+                         safeText(pList[i]->IDENTIFIER()) + "}";
             }
             snippet += ")";
             ci.insertText = snippet;
@@ -2683,7 +2697,7 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,
               if (i > 0)
                 snippet += ", ";
               snippet += "${" + std::to_string(i + 1) + ":" +
-                         pList[i]->IDENTIFIER()->getText() + "}";
+                         safeText(pList[i]->IDENTIFIER()) + "}";
             }
             snippet += ")";
             ci.insertText = snippet;
@@ -2883,7 +2897,7 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
     }
     for (auto *field : sd->structField()) {
       CompletionItem ci;
-      ci.label = field->IDENTIFIER()->getText();
+      ci.label = safeText(field->IDENTIFIER());
       ci.kind = CompletionKind::Field;
       ci.detail =
           substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
@@ -2905,7 +2919,7 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
     }
     for (auto *field : ud->unionField()) {
       CompletionItem ci;
-      ci.label = field->IDENTIFIER()->getText();
+      ci.label = safeText(field->IDENTIFIER());
       ci.kind = CompletionKind::Field;
       ci.detail =
           substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
@@ -2934,7 +2948,7 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
         }
         for (auto *field : decl->structField()) {
           CompletionItem ci;
-          ci.label = field->IDENTIFIER()->getText();
+          ci.label = safeText(field->IDENTIFIER());
           ci.kind = CompletionKind::Field;
           ci.detail =
               substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
@@ -2956,7 +2970,7 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
         }
         for (auto *field : decl->unionField()) {
           CompletionItem ci;
-          ci.label = field->IDENTIFIER()->getText();
+          ci.label = safeText(field->IDENTIFIER());
           ci.kind = CompletionKind::Field;
           ci.detail =
               substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
@@ -3013,7 +3027,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
   // Same-file extend blocks
   for (auto *tld : tree->topLevelDecl()) {
     auto *ext = tld->extendDecl();
-    if (!ext || ext->IDENTIFIER()->getText() != lookupName)
+    if (!ext || safeText(ext->IDENTIFIER()) != lookupName)
       continue;
     if (!args.empty() && ext->typeParamList()) {
       auto tps = ext->typeParamList()->typeParam();
@@ -3029,7 +3043,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
       if (!isInstance)
         continue;
       CompletionItem ci;
-      std::string mName = m->IDENTIFIER(0)->getText();
+      std::string mName = safeIdAt(m, 0);
       ci.label = mName;
       ci.kind = CompletionKind::Method;
       ci.detail = substituteTypeParams(formatMethodSignature(m), subst);
@@ -3042,7 +3056,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
           if (i > 0)
             snippet += ", ";
           snippet += "${" + std::to_string(i + 1) + ":" +
-                     methodParams[i]->IDENTIFIER()->getText() + "}";
+                     safeText(methodParams[i]->IDENTIFIER()) + "}";
         }
         snippet += ")";
         ci.insertText = snippet;
@@ -3062,7 +3076,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
         if (sym->kind != ExportedSymbol::ExtendBlock)
           continue;
         auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
-        if (!ext || ext->IDENTIFIER()->getText() != lookupName)
+        if (!ext || safeText(ext->IDENTIFIER()) != lookupName)
           continue;
         if (!args.empty() && ext->typeParamList()) {
           auto tps = ext->typeParamList()->typeParam();
@@ -3077,7 +3091,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
           if (!isInstance)
             continue;
           CompletionItem ci;
-          std::string mName = m->IDENTIFIER(0)->getText();
+          std::string mName = safeIdAt(m, 0);
           ci.label = mName;
           ci.kind = CompletionKind::Method;
           ci.detail = substituteTypeParams(formatMethodSignature(m), subst);
@@ -3089,7 +3103,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
               if (i > 0)
                 snippet += ", ";
               snippet += "${" + std::to_string(i + 1) + ":" +
-                         methodParams[i]->IDENTIFIER()->getText() + "}";
+                         safeText(methodParams[i]->IDENTIFIER()) + "}";
             }
             snippet += ")";
             ci.insertText = snippet;
@@ -3511,7 +3525,7 @@ resolveImportedModuleAlias(const std::string &alias,
     if (auto *item = dynamic_cast<LuxParser::UseItemContext *>(useDecl)) {
       if (!item->modulePath() || !item->IDENTIFIER())
         continue;
-      if (item->IDENTIFIER()->getText() != alias)
+      if (safeText(item->IDENTIFIER()) != alias)
         continue;
 
       std::string modulePath;
@@ -3536,7 +3550,7 @@ resolveImportedModuleAlias(const std::string &alias,
     if (auto *root = dynamic_cast<LuxParser::UseRootContext *>(useDecl)) {
       if (!root->IDENTIFIER())
         continue;
-      if (root->IDENTIFIER()->getText() == alias) {
+      if (safeText(root->IDENTIFIER()) == alias) {
         return alias;
       }
     }
@@ -3581,14 +3595,14 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
   // Same-file extend blocks
   for (auto *tld : tree->topLevelDecl()) {
     auto *ext = tld->extendDecl();
-    if (!ext || ext->IDENTIFIER()->getText() != baseTypeName)
+    if (!ext || safeText(ext->IDENTIFIER()) != baseTypeName)
       continue;
     for (auto *m : ext->extendMethod()) {
       bool isStatic = (m->AMPERSAND() == nullptr);
       if (!isStatic)
         continue;
       CompletionItem ci;
-      std::string mName = m->IDENTIFIER(0)->getText();
+      std::string mName = safeIdAt(m, 0);
       if (!matchesPrefix(mName, prefix))
         continue;
       ci.label = mName;
@@ -3602,7 +3616,7 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
           if (i > 0)
             snippet += ", ";
           snippet += "${" + std::to_string(i + 1) + ":" +
-                     pList[i]->IDENTIFIER()->getText() + "}";
+                     safeText(pList[i]->IDENTIFIER()) + "}";
         }
         snippet += ")";
         ci.insertText = snippet;
@@ -3622,14 +3636,14 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
         if (sym->kind != ExportedSymbol::ExtendBlock)
           continue;
         auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
-        if (!ext || ext->IDENTIFIER()->getText() != baseTypeName)
+        if (!ext || safeText(ext->IDENTIFIER()) != baseTypeName)
           continue;
         for (auto *m : ext->extendMethod()) {
           bool isStatic = (m->AMPERSAND() == nullptr);
           if (!isStatic)
             continue;
           CompletionItem ci;
-          std::string mName = m->IDENTIFIER(0)->getText();
+          std::string mName = safeIdAt(m, 0);
           if (!matchesPrefix(mName, prefix))
             continue;
           ci.label = mName;
@@ -3643,7 +3657,7 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
               if (i > 0)
                 snippet += ", ";
               snippet += "${" + std::to_string(i + 1) + ":" +
-                         pList[i]->IDENTIFIER()->getText() + "}";
+                         safeText(pList[i]->IDENTIFIER()) + "}";
             }
             snippet += ")";
             ci.insertText = snippet;
@@ -3717,7 +3731,7 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
   // Same-file structs, enums, unions, type aliases
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *sd = tld->structDecl()) {
-      std::string name = sd->IDENTIFIER()->getText();
+      std::string name = safeText(sd->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       items.push_back({name, CompletionKind::Struct, "struct " + name});
@@ -3725,13 +3739,13 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
     if (auto *ed = tld->enumDecl()) {
       if (!ed->IDENTIFIER())
         continue;
-      std::string name = ed->IDENTIFIER()->getText();
+      std::string name = safeText(ed->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       items.push_back({name, CompletionKind::Enum, "enum " + name});
     }
     if (auto *ud = tld->unionDecl()) {
-      std::string name = ud->IDENTIFIER()->getText();
+      std::string name = safeText(ud->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -3759,7 +3773,7 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
       items.push_back(std::move(item));
     }
     if (auto *ta = tld->typeAliasDecl()) {
-      std::string name = ta->IDENTIFIER()->getText();
+      std::string name = safeText(ta->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
         continue;
       items.push_back({name, CompletionKind::Class, "type " + name});
@@ -4048,7 +4062,8 @@ std::string CompletionProvider::resolveMethodReturnType(
         auto inner = receiverType.substr(ab + 1);
         auto comma = inner.find(',');
         auto closeAngle = inner.rfind('>');
-        if (comma != std::string::npos && closeAngle != std::string::npos) {
+        if (comma != std::string::npos && closeAngle != std::string::npos &&
+            closeAngle > comma) {
           auto val = inner.substr(comma + 1, closeAngle - comma - 1);
           while (!val.empty() && val[0] == ' ')
             val.erase(0, 1);
@@ -4075,7 +4090,8 @@ std::string CompletionProvider::resolveMethodReturnType(
         auto inner = receiverType.substr(ab + 1);
         auto comma = inner.find(',');
         auto closeAngle = inner.rfind('>');
-        if (comma != std::string::npos && closeAngle != std::string::npos) {
+        if (comma != std::string::npos && closeAngle != std::string::npos &&
+            closeAngle > comma) {
           auto val = inner.substr(comma + 1, closeAngle - comma - 1);
           while (!val.empty() && val[0] == ' ')
             val.erase(0, 1);
@@ -4132,7 +4148,7 @@ std::string CompletionProvider::resolveMethodReturnType(
       auto *ext = tld->extendDecl();
       if (!ext || !ext->IDENTIFIER())
         continue;
-      std::string extTypeName = ext->IDENTIFIER()->getText();
+      std::string extTypeName = safeText(ext->IDENTIFIER());
       if (extTypeName != receiverLookup)
         continue;
 
@@ -4148,9 +4164,9 @@ std::string CompletionProvider::resolveMethodReturnType(
       for (auto *m : ext->extendMethod()) {
         if (!m->IDENTIFIER(0))
           continue;
-        if (m->IDENTIFIER(0)->getText() == methodName) {
+        if (safeIdAt(m, 0) == methodName) {
           if (m->typeSpec())
-            return substituteTypeParams(m->typeSpec()->getText(), subst);
+            return substituteTypeParams(safeText(m->typeSpec()), subst);
           return "void";
         }
       }
@@ -4167,7 +4183,7 @@ std::string CompletionProvider::resolveMethodReturnType(
         auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
         if (!ext || !ext->IDENTIFIER())
           continue;
-        if (ext->IDENTIFIER()->getText() != receiverLookup)
+        if (safeText(ext->IDENTIFIER()) != receiverLookup)
           continue;
 
         if (!rArgs.empty() && ext->typeParamList()) {
@@ -4182,9 +4198,9 @@ std::string CompletionProvider::resolveMethodReturnType(
         for (auto *m : ext->extendMethod()) {
           if (!m->IDENTIFIER(0))
             continue;
-          if (m->IDENTIFIER(0)->getText() == methodName) {
+          if (safeIdAt(m, 0) == methodName) {
             if (m->typeSpec())
-              return substituteTypeParams(m->typeSpec()->getText(), subst);
+              return substituteTypeParams(safeText(m->typeSpec()), subst);
             return "void";
           }
         }
@@ -4214,7 +4230,7 @@ std::string CompletionProvider::resolveFieldType(
   if (tree) {
     for (auto *tld : tree->topLevelDecl()) {
       if (auto *sd = tld->structDecl()) {
-        if (!sd->IDENTIFIER() || sd->IDENTIFIER()->getText() != receiverLookup)
+        if (!sd->IDENTIFIER() || safeText(sd->IDENTIFIER()) != receiverLookup)
           continue;
         if (!rArgs.empty() && sd->typeParamList()) {
           auto tps = sd->typeParamList()->typeParam();
@@ -4226,13 +4242,13 @@ std::string CompletionProvider::resolveFieldType(
         }
         for (auto *field : sd->structField()) {
           if (field->IDENTIFIER() &&
-              field->IDENTIFIER()->getText() == fieldName)
+              safeText(field->IDENTIFIER()) == fieldName)
             return substituteTypeParams(typeSpecToString(field->typeSpec()),
                                         subst);
         }
       }
       if (auto *ud = tld->unionDecl()) {
-        if (!ud->IDENTIFIER() || ud->IDENTIFIER()->getText() != receiverLookup)
+        if (!ud->IDENTIFIER() || safeText(ud->IDENTIFIER()) != receiverLookup)
           continue;
         if (!rArgs.empty() && ud->typeParamList()) {
           auto tps = ud->typeParamList()->typeParam();
@@ -4244,7 +4260,7 @@ std::string CompletionProvider::resolveFieldType(
         }
         for (auto *field : ud->unionField()) {
           if (field->IDENTIFIER() &&
-              field->IDENTIFIER()->getText() == fieldName)
+              safeText(field->IDENTIFIER()) == fieldName)
             return substituteTypeParams(typeSpecToString(field->typeSpec()),
                                         subst);
         }
@@ -4272,7 +4288,7 @@ std::string CompletionProvider::resolveFieldType(
         }
         for (auto *field : decl->structField()) {
           if (field->IDENTIFIER() &&
-              field->IDENTIFIER()->getText() == fieldName)
+              safeText(field->IDENTIFIER()) == fieldName)
             return substituteTypeParams(typeSpecToString(field->typeSpec()),
                                         subst);
         }
@@ -4292,7 +4308,7 @@ std::string CompletionProvider::resolveFieldType(
         }
         for (auto *field : decl->unionField()) {
           if (field->IDENTIFIER() &&
-              field->IDENTIFIER()->getText() == fieldName)
+              safeText(field->IDENTIFIER()) == fieldName)
             return substituteTypeParams(typeSpecToString(field->typeSpec()),
                                         subst);
         }
@@ -4341,7 +4357,7 @@ CompletionProvider::collectLocals(LuxParser::FunctionDeclContext *func,
 
   if (auto *params = func->paramList()) {
     for (auto *p : params->param()) {
-      result[p->IDENTIFIER()->getText()] = {p->typeSpec()->getText(), 0};
+      result[safeText(p->IDENTIFIER())] = {safeText(p->typeSpec()), 0};
     }
   }
 
@@ -4357,15 +4373,15 @@ CompletionProvider::collectLocalsFromMethod(
   bool isInstance = (method->AMPERSAND() != nullptr);
   if (isInstance) {
     // &self param
-    result[method->IDENTIFIER(1)->getText()] = {"&self", 0};
+    result[safeIdAt(method, 1)] = {"&self", 0};
     // Extra params
     for (auto *p : method->param()) {
-      result[p->IDENTIFIER()->getText()] = {p->typeSpec()->getText(), 0};
+      result[safeText(p->IDENTIFIER())] = {safeText(p->typeSpec()), 0};
     }
   } else {
     if (auto *pl = method->paramList()) {
       for (auto *p : pl->param()) {
-        result[p->IDENTIFIER()->getText()] = {p->typeSpec()->getText(), 0};
+        result[safeText(p->IDENTIFIER())] = {safeText(p->typeSpec()), 0};
       }
     }
   }
@@ -4414,7 +4430,7 @@ CompletionProvider::findStructDecl(LuxParser::ProgramContext *tree,
                                    const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *sd = tld->structDecl()) {
-      if (sd->IDENTIFIER()->getText() == name)
+      if (safeText(sd->IDENTIFIER()) == name)
         return sd;
     }
   }
@@ -4426,7 +4442,7 @@ CompletionProvider::findUnionDecl(LuxParser::ProgramContext *tree,
                                   const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ud = tld->unionDecl()) {
-      if (ud->IDENTIFIER()->getText() == name)
+      if (safeText(ud->IDENTIFIER()) == name)
         return ud;
     }
   }
@@ -4438,7 +4454,7 @@ CompletionProvider::findEnumDecl(LuxParser::ProgramContext *tree,
                                  const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ed = tld->enumDecl()) {
-      if (ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name)
+      if (ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
         return ed;
     }
   }
@@ -4450,7 +4466,7 @@ CompletionProvider::findExtendDecl(LuxParser::ProgramContext *tree,
                                    const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ext = tld->extendDecl()) {
-      if (ext->IDENTIFIER()->getText() == name)
+      if (safeText(ext->IDENTIFIER()) == name)
         return ext;
     }
   }
@@ -4487,7 +4503,7 @@ std::string CompletionProvider::inferVarType(const std::string &varName,
             continue;
           for (auto *m : ext->extendMethod()) {
             if (m == method)
-              return ext->IDENTIFIER()->getText();
+              return safeText(ext->IDENTIFIER());
           }
         }
       }
@@ -4501,7 +4517,7 @@ std::string CompletionProvider::inferVarType(const std::string &varName,
 std::string
 CompletionProvider::formatFuncSignature(LuxParser::FunctionDeclContext *func) {
   std::string sig = typeSpecToString(func->typeSpec()) + " " +
-                    func->IDENTIFIER(0)->getText() + "(";
+                    safeIdAt(func, 0) + "(";
   if (auto *params = func->paramList()) {
     bool first = true;
     for (auto *p : params->param()) {
@@ -4513,7 +4529,7 @@ CompletionProvider::formatFuncSignature(LuxParser::FunctionDeclContext *func) {
         sig += " ...";
       else
         sig += " ";
-      sig += p->IDENTIFIER()->getText();
+      sig += safeText(p->IDENTIFIER());
     }
   }
   sig += ")";
@@ -4523,14 +4539,14 @@ CompletionProvider::formatFuncSignature(LuxParser::FunctionDeclContext *func) {
 std::string CompletionProvider::formatMethodSignature(
     LuxParser::ExtendMethodContext *method) {
   std::string sig = typeSpecToString(method->typeSpec()) + " " +
-                    method->IDENTIFIER(0)->getText() + "(";
+                    safeIdAt(method, 0) + "(";
   bool isInstance = (method->AMPERSAND() != nullptr);
   if (isInstance) {
-    sig += "&" + method->IDENTIFIER(1)->getText();
+    sig += "&" + safeIdAt(method, 1);
     bool first = true;
     for (auto *p : method->param()) {
       sig += ", ";
-      sig += typeSpecToString(p->typeSpec()) + " " + p->IDENTIFIER()->getText();
+      sig += typeSpecToString(p->typeSpec()) + " " + safeText(p->IDENTIFIER());
     }
   } else {
     if (auto *pl = method->paramList()) {
@@ -4540,7 +4556,7 @@ std::string CompletionProvider::formatMethodSignature(
           sig += ", ";
         first = false;
         sig +=
-            typeSpecToString(p->typeSpec()) + " " + p->IDENTIFIER()->getText();
+            typeSpecToString(p->typeSpec()) + " " + safeText(p->IDENTIFIER());
       }
     }
   }

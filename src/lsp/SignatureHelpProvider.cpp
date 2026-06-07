@@ -19,6 +19,20 @@ static std::string normalizeExtBaseName(const std::string& name) {
     return name;
 }
 
+static std::string safeText(antlr4::tree::TerminalNode *n) {
+    return n ? n->getText() : "";
+}
+static std::string safeText(antlr4::ParserRuleContext *ctx) {
+    return ctx ? ctx->getText() : "";
+}
+template<typename T>
+static std::string safeIdAt(T *ctx, size_t i) {
+    if (!ctx) return "";
+    if (i >= ctx->IDENTIFIER().size()) return "";
+    auto *n = ctx->IDENTIFIER(i);
+    return n ? n->getText() : "";
+}
+
 std::string SignatureHelpProvider::typeSpecToString(LuxParser::TypeSpecContext* ctx) {
     return ctx ? ctx->getText() : "void";
 }
@@ -219,7 +233,7 @@ SignatureInfo SignatureHelpProvider::buildFromFunction(
     SignatureInfo sig;
 
     std::string retType = typeSpecToString(func->typeSpec());
-    std::string name = func->IDENTIFIER(0)->getText();
+    std::string name = safeIdAt(func, 0);
 
     std::ostringstream label;
     label << retType << " " << name << "(";
@@ -229,7 +243,7 @@ SignatureInfo SignatureHelpProvider::buildFromFunction(
         for (size_t i = 0; i < params.size(); i++) {
             if (i > 0) label << ", ";
             std::string pType = typeSpecToString(params[i]->typeSpec());
-            std::string pName = params[i]->IDENTIFIER()->getText();
+            std::string pName = safeText(params[i]->IDENTIFIER());
             bool isVariadic = params[i]->SPREAD() != nullptr;
 
             std::string paramLabel;
@@ -260,7 +274,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtern(
     SignatureInfo sig;
 
     std::string retType = typeSpecToString(ext->typeSpec());
-    std::string name = ext->IDENTIFIER()->getText();
+    std::string name = safeText(ext->IDENTIFIER());
     bool isVariadic = ext->SPREAD() != nullptr;
 
     std::ostringstream label;
@@ -273,7 +287,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtern(
             std::string pType = typeSpecToString(params[i]->typeSpec());
             std::string pName;
             if (params[i]->IDENTIFIER())
-                pName = params[i]->IDENTIFIER()->getText();
+                pName = safeText(params[i]->IDENTIFIER());
             else
                 pName = paramNameFromType(pType);
 
@@ -379,7 +393,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtendMethod(
     SignatureInfo sig;
 
     std::string retType = typeSpecToString(method->typeSpec());
-    std::string name = method->IDENTIFIER()[0]->getText();
+    std::string name = safeIdAt(method, 0);
     bool hasReceiver = method->AMPERSAND() != nullptr;
 
     std::ostringstream label;
@@ -397,7 +411,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtendMethod(
     for (size_t i = 0; i < params.size(); i++) {
         if (i > 0) label << ", ";
         std::string pType = typeSpecToString(params[i]->typeSpec());
-        std::string pName = params[i]->IDENTIFIER()->getText();
+        std::string pName = safeText(params[i]->IDENTIFIER());
         bool isVariadic = params[i]->SPREAD() != nullptr;
 
         std::string paramLabel;
@@ -527,10 +541,10 @@ SignatureHelpProvider::signatureHelp(
         for (auto* tld : parsed.tree->topLevelDecl()) {
             auto* ext = tld->extendDecl();
             if (!ext || !ext->IDENTIFIER()) continue;
-            std::string structName = ext->IDENTIFIER()->getText();
+            std::string structName = safeText(ext->IDENTIFIER());
             for (auto* method : ext->extendMethod()) {
                 if (method->IDENTIFIER().empty()) continue;
-                if (method->IDENTIFIER()[0]->getText() == name) {
+                if (safeIdAt(method, 0) == name) {
                     auto sig = buildFromExtendMethod(method, structName, docs);
                     sig.activeParameter = site->activeParam;
                     result.signatures.push_back(std::move(sig));
@@ -591,10 +605,10 @@ SignatureHelpProvider::signatureHelp(
                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                     auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
                     if (!ext || !ext->IDENTIFIER()) continue;
-                    std::string structName = ext->IDENTIFIER()->getText();
+                    std::string structName = safeText(ext->IDENTIFIER());
                     for (auto* method : ext->extendMethod()) {
                         if (method->IDENTIFIER().empty()) continue;
-                        if (method->IDENTIFIER()[0]->getText() == name) {
+                        if (safeIdAt(method, 0) == name) {
                             auto sig = buildFromExtendMethod(method, structName, {});
                             sig.activeParameter = site->activeParam;
                             result.signatures.push_back(std::move(sig));
@@ -616,10 +630,10 @@ SignatureHelpProvider::signatureHelp(
         for (auto* tld : parsed.tree->topLevelDecl()) {
             auto* ext = tld->extendDecl();
             if (!ext || !ext->IDENTIFIER()) continue;
-            if (ext->IDENTIFIER()->getText() != site->staticTypeName) continue;
+            if (safeText(ext->IDENTIFIER()) != site->staticTypeName) continue;
             for (auto* method : ext->extendMethod()) {
                 if (method->IDENTIFIER().empty()) continue;
-                if (method->IDENTIFIER()[0]->getText() == name) {
+                if (safeIdAt(method, 0) == name) {
                     auto sig = buildFromExtendMethod(method, site->staticTypeName, docs);
                     sig.activeParameter = site->activeParam;
                     result.signatures.push_back(std::move(sig));
@@ -635,10 +649,10 @@ SignatureHelpProvider::signatureHelp(
                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                     auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
                     if (!ext || !ext->IDENTIFIER()) continue;
-                    if (ext->IDENTIFIER()->getText() != site->staticTypeName) continue;
+                    if (safeText(ext->IDENTIFIER()) != site->staticTypeName) continue;
                     for (auto* method : ext->extendMethod()) {
                         if (method->IDENTIFIER().empty()) continue;
-                        if (method->IDENTIFIER()[0]->getText() == name) {
+                        if (safeIdAt(method, 0) == name) {
                             // Read doc-comments from source file
                             std::vector<DocComment> crossDocs;
                             if (!sym->sourceFile.empty()) {
@@ -683,7 +697,7 @@ SignatureHelpProvider::signatureHelp(
     // 1) User-defined function in current file
     for (auto* tld : parsed.tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
-            if (func->IDENTIFIER(0)->getText() == name) {
+            if (safeIdAt(func, 0) == name) {
                 auto sig = buildFromFunction(func, docs);
                 sig.activeParameter = site->activeParam;
                 result.signatures.push_back(std::move(sig));
@@ -694,7 +708,7 @@ SignatureHelpProvider::signatureHelp(
     // 2) Extern declaration in current file
     for (auto* tld : parsed.tree->topLevelDecl()) {
         if (auto* ext = tld->externDecl()) {
-            if (ext->IDENTIFIER() && ext->IDENTIFIER()->getText() == name) {
+            if (ext->IDENTIFIER() && safeText(ext->IDENTIFIER()) == name) {
                 auto sig = buildFromExtern(ext, docs);
                 sig.activeParameter = site->activeParam;
                 result.signatures.push_back(std::move(sig));

@@ -151,6 +151,10 @@ int RunCommand::run(const ArgParser& parser) {
             argv.push_back(irPath.c_str());
             auto builtinsPath = CodeGen::builtinsLibraryPath();
             argv.push_back(builtinsPath.c_str());
+#ifdef LUX_RUNTIME_DIAGNOSTICS
+            argv.push_back("-fsanitize=address,undefined");
+            argv.push_back("-fno-omit-frame-pointer");
+#endif
             for (auto& lf : pipeline->linkerFlags)
                 argv.push_back(lf.c_str());
             argv.push_back("-lm");

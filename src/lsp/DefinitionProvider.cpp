@@ -17,6 +17,20 @@ static bool containsToken(antlr4::ParserRuleContext* ctx, antlr4::Token* token) 
     return idx >= start->getTokenIndex() && idx <= stop->getTokenIndex();
 }
 
+static std::string safeText(antlr4::tree::TerminalNode *n) {
+    return n ? n->getText() : "";
+}
+static std::string safeText(antlr4::ParserRuleContext *ctx) {
+    return ctx ? ctx->getText() : "";
+}
+template<typename T>
+static std::string safeIdAt(T *ctx, size_t i) {
+    if (!ctx) return "";
+    if (i >= ctx->IDENTIFIER().size()) return "";
+    auto *n = ctx->IDENTIFIER(i);
+    return n ? n->getText() : "";
+}
+
 // Forward declarations for local collectors
 static void collectLocalsFromBlock(
     LuxParser::BlockContext* block, size_t beforeLine,
@@ -42,7 +56,7 @@ static void collectLocalsFromStmts(
 
         if (auto* vd = stmt->varDeclStmt()) {
             std::string typeName;
-            if (vd->typeSpec()) typeName = vd->typeSpec()->getText();
+            if (vd->typeSpec()) typeName = safeText(vd->typeSpec());
             if (!vd->IDENTIFIER().empty()) {
                 auto* id = vd->IDENTIFIER(0);
                 std::string varName = id->getText();
@@ -118,16 +132,16 @@ static void collectLocalsFromStmts(
         if (auto* forIn = stmt->forStmt()) {
             if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forIn)) {
                 if (fin->typeSpec() && fin->IDENTIFIER()) {
-                    std::string tname = fin->typeSpec()->getText();
-                    out[fin->IDENTIFIER()->getText()] =
+                    std::string tname = safeText(fin->typeSpec());
+                    out[safeText(fin->IDENTIFIER())] =
                         {tname, 0, fin->IDENTIFIER()->getSymbol()};
                 }
                 collectLocalsFromBlock(fin->block(), beforeLine, out);
             }
             if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(forIn)) {
                 if (fc->typeSpec() && fc->IDENTIFIER()) {
-                    std::string tname = fc->typeSpec()->getText();
-                    out[fc->IDENTIFIER()->getText()] =
+                    std::string tname = safeText(fc->typeSpec());
+                    out[safeText(fc->IDENTIFIER())] =
                         {tname, 0, fc->IDENTIFIER()->getSymbol()};
                 }
                 collectLocalsFromBlock(fc->block(), beforeLine, out);
@@ -149,8 +163,8 @@ static void collectLocalsFromStmts(
             collectLocalsFromBlock(tc->block(), beforeLine, out);
             for (auto* cc : tc->catchClause()) {
                 if (cc->IDENTIFIER() && cc->typeSpec()) {
-                    out[cc->IDENTIFIER()->getText()] =
-                        {cc->typeSpec()->getText(), 0, cc->IDENTIFIER()->getSymbol()};
+                    out[safeText(cc->IDENTIFIER())] =
+                        {safeText(cc->typeSpec()), 0, cc->IDENTIFIER()->getSymbol()};
                 }
                 collectLocalsFromBlock(cc->block(), beforeLine, out);
             }
@@ -284,7 +298,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
                     if (!modulePath.empty()) modulePath += "::";
                     modulePath += id->getText();
                 }
-                return resolveImportedSymbol(item->IDENTIFIER()->getText(),
+                return resolveImportedSymbol(safeText(item->IDENTIFIER()),
                                              modulePath, project);
             }
         }
@@ -481,7 +495,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
                     params = method->param();
                 }
                 for (auto* p : params) {
-                    if (p->IDENTIFIER() && p->IDENTIFIER()->getText() == name)
+                    if (p->IDENTIFIER() && safeText(p->IDENTIFIER()) == name)
                         return makeResult(p->IDENTIFIER()->getSymbol(), filePath);
                 }
 
@@ -768,7 +782,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                     auto* encFunc = findEnclosingFunction(tree, cursorLine);
                     if (encFunc) {
                         auto locals = collectLocals(encFunc, cursorLine);
-                        auto it = locals.find(ident->IDENTIFIER()->getText());
+                        auto it = locals.find(safeText(ident->IDENTIFIER()));
                         if (it != locals.end())
                             receiverTypeName = it->second.typeName;
                     }
@@ -779,10 +793,10 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                     auto* ext = tld->extendDecl();
                     if (!ext) continue;
                     if (!receiverTypeName.empty() &&
-                        ext->IDENTIFIER()->getText() != receiverTypeName)
+                        safeText(ext->IDENTIFIER()) != receiverTypeName)
                         continue;
                     for (auto* m : ext->extendMethod()) {
-                        if (m->IDENTIFIER(0)->getText() == methodName)
+                        if (safeIdAt(m, 0) == methodName)
                             return makeResult(m->IDENTIFIER(0)->getSymbol(), filePath);
                     }
                 }
@@ -796,10 +810,10 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                             auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
                             if (!ext) continue;
                             if (!receiverTypeName.empty() &&
-                                ext->IDENTIFIER()->getText() != receiverTypeName)
+                                safeText(ext->IDENTIFIER()) != receiverTypeName)
                                 continue;
                             for (auto* m : ext->extendMethod()) {
-                                if (m->IDENTIFIER(0)->getText() == methodName)
+                                if (safeIdAt(m, 0) == methodName)
                                     return makeResult(m->IDENTIFIER(0)->getSymbol(),
                                                       filePath, sym->sourceFile);
                             }
@@ -834,7 +848,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
             if (structName.empty()) {
                 if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(fa->expression())) {
                     if (auto* callee = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
-                        std::string calleeName = callee->IDENTIFIER()->getText();
+                        std::string calleeName = safeText(callee->IDENTIFIER());
 
                         if (auto* cf = bindings.findFunction(calleeName)) {
                             if (cf->returnType) structName = cf->returnType->name;
@@ -842,7 +856,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
 
                         if (structName.empty()) {
                             if (auto* fd = findFunctionDecl(tree, calleeName)) {
-                                if (fd->typeSpec()) structName = fd->typeSpec()->getText();
+                                if (fd->typeSpec()) structName = safeText(fd->typeSpec());
                             }
                         }
 
@@ -852,7 +866,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                                 if (!sym || sym->kind != ExportedSymbol::Function) continue;
                                 auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
                                 if (fd && fd->typeSpec()) {
-                                    structName = fd->typeSpec()->getText();
+                                    structName = safeText(fd->typeSpec());
                                     break;
                                 }
                             }
@@ -883,7 +897,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
             if (structName.empty()) {
                 if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(aa->expression())) {
                     if (auto* callee = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
-                        auto* cf = bindings.findFunction(callee->IDENTIFIER()->getText());
+                        auto* cf = bindings.findFunction(safeText(callee->IDENTIFIER()));
                         if (cf && cf->returnType) structName = cf->returnType->name;
                     }
                 }
@@ -963,9 +977,9 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
             // Search local extend blocks
             for (auto* tld : tree->topLevelDecl()) {
                 auto* ext = tld->extendDecl();
-                if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                 for (auto* m : ext->extendMethod()) {
-                    if (m->IDENTIFIER(0)->getText() == methodName)
+                    if (safeIdAt(m, 0) == methodName)
                         return makeResult(m->IDENTIFIER(0)->getSymbol(), filePath);
                 }
             }
@@ -977,9 +991,9 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                         auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
-                        if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                        if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                         for (auto* m : ext->extendMethod()) {
-                            if (m->IDENTIFIER(0)->getText() == methodName)
+                            if (safeIdAt(m, 0) == methodName)
                                 return makeResult(m->IDENTIFIER(0)->getSymbol(),
                                                   filePath, sym->sourceFile);
                         }
@@ -1293,8 +1307,8 @@ std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
                 if (auto* sd = findStructDecl(tree, currentType)) {
                     std::string nextType;
                     for (auto* f : sd->structField()) {
-                        if (f->IDENTIFIER()->getText() == fid->getText()) {
-                            nextType = f->typeSpec()->getText();
+                        if (safeText(f->IDENTIFIER()) == fid->getText()) {
+                            nextType = safeText(f->typeSpec());
                             while (!nextType.empty() && nextType.front() == '*')
                                 nextType.erase(nextType.begin());
                             break;
@@ -1350,8 +1364,8 @@ std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
                 if (auto* sd = findStructDecl(tree, currentType)) {
                     std::string nextType;
                     for (auto* f : sd->structField()) {
-                        if (f->IDENTIFIER()->getText() == fid->getText()) {
-                            nextType = f->typeSpec()->getText();
+                        if (safeText(f->IDENTIFIER()) == fid->getText()) {
+                            nextType = safeText(f->typeSpec());
                             while (!nextType.empty() && nextType.front() == '*')
                                 nextType.erase(nextType.begin());
                             break;
@@ -1409,8 +1423,8 @@ std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
                         if (!ms || !me) continue;
                         if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
                         if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
-                            method->IDENTIFIER(1)->getText() == "self") {
-                            structName = ext->IDENTIFIER()->getText();
+                            safeIdAt(method, 1) == "self") {
+                            structName = safeText(ext->IDENTIFIER());
                             break;
                         }
                     }
@@ -1468,8 +1482,8 @@ std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
                         if (!ms || !me) continue;
                         if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
                         if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
-                            method->IDENTIFIER(1)->getText() == "self") {
-                            structName = ext->IDENTIFIER()->getText();
+                            safeIdAt(method, 1) == "self") {
+                            structName = safeText(ext->IDENTIFIER());
                             break;
                         }
                     }
@@ -1712,8 +1726,8 @@ DefinitionProvider::collectLocals(LuxParser::FunctionDeclContext* func,
     // Parameters
     if (auto* params = func->paramList()) {
         for (auto* p : params->param()) {
-            std::string typeName = p->typeSpec()->getText();
-            std::string paramName = p->IDENTIFIER()->getText();
+            std::string typeName = safeText(p->typeSpec());
+            std::string paramName = safeText(p->IDENTIFIER());
             result[paramName] = {typeName, 0, p->IDENTIFIER()->getSymbol()};
         }
     }
@@ -1748,7 +1762,7 @@ DefinitionProvider::findFunctionDecl(LuxParser::ProgramContext* tree,
                                      const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl())
-            if (func->IDENTIFIER(0)->getText() == name)
+            if (safeIdAt(func, 0) == name)
                 return func;
     }
     return nullptr;
@@ -1759,7 +1773,7 @@ DefinitionProvider::findStructDecl(LuxParser::ProgramContext* tree,
                                    const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl())
-            if (sd->IDENTIFIER()->getText() == name)
+            if (safeText(sd->IDENTIFIER()) == name)
                 return sd;
     }
     return nullptr;
@@ -1770,7 +1784,7 @@ DefinitionProvider::findEnumDecl(LuxParser::ProgramContext* tree,
                                  const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl())
-            if (ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name)
+            if (ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
                 return ed;
     }
     return nullptr;
@@ -1781,7 +1795,7 @@ DefinitionProvider::findUnionDecl(LuxParser::ProgramContext* tree,
                                   const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ud = tld->unionDecl())
-            if (ud->IDENTIFIER()->getText() == name)
+            if (safeText(ud->IDENTIFIER()) == name)
                 return ud;
     }
     return nullptr;
@@ -1792,7 +1806,7 @@ DefinitionProvider::findTypeAliasDecl(LuxParser::ProgramContext* tree,
                                       const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ta = tld->typeAliasDecl())
-            if (ta->IDENTIFIER()->getText() == name)
+            if (safeText(ta->IDENTIFIER()) == name)
                 return ta;
     }
     return nullptr;
@@ -1803,7 +1817,7 @@ DefinitionProvider::findExtendDecl(LuxParser::ProgramContext* tree,
                                    const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->extendDecl())
-            if (ext->IDENTIFIER()->getText() == name)
+            if (safeText(ext->IDENTIFIER()) == name)
                 return ext;
     }
     return nullptr;
@@ -1814,7 +1828,7 @@ DefinitionProvider::findExternDecl(LuxParser::ProgramContext* tree,
                                    const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->externDecl())
-            if (ext->IDENTIFIER()->getText() == name)
+            if (safeText(ext->IDENTIFIER()) == name)
                 return ext;
     }
     return nullptr;
@@ -1871,12 +1885,12 @@ std::string DefinitionProvider::inferExprStructType(
 
         // Same-file function
         if (auto* fd = findFunctionDecl(tree, funcName)) {
-            if (fd->typeSpec()) return fd->typeSpec()->getText();
+            if (fd->typeSpec()) return safeText(fd->typeSpec());
         }
 
         // Same-file extern declaration
         if (auto* ed = findExternDecl(tree, funcName)) {
-            if (ed->typeSpec()) return ed->typeSpec()->getText();
+            if (ed->typeSpec()) return safeText(ed->typeSpec());
         }
 
         return {};
@@ -1884,7 +1898,7 @@ std::string DefinitionProvider::inferExprStructType(
 
     // Simple identifier: look up in locals/params
     if (auto* ie = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
-        std::string varName = ie->IDENTIFIER()->getText();
+        std::string varName = safeText(ie->IDENTIFIER());
 
         // Check function params + locals
         auto* func = findEnclosingFunction(tree, cursorLine);
@@ -1907,8 +1921,8 @@ std::string DefinitionProvider::inferExprStructType(
                 if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
                 // Check params
                 for (auto* p : method->param()) {
-                    if (p->IDENTIFIER()->getText() == varName && p->typeSpec())
-                        return stripPointers(p->typeSpec()->getText());
+                    if (safeText(p->IDENTIFIER()) == varName && p->typeSpec())
+                        return stripPointers(safeText(p->typeSpec()));
                 }
                 // Check locals
                 std::unordered_map<std::string, LocalVar> locals;
@@ -1923,7 +1937,7 @@ std::string DefinitionProvider::inferExprStructType(
     // Function call: fn(...) -> infer from declared return type
     if (auto* fc = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
         if (auto* calleeIdent = dynamic_cast<LuxParser::IdentExprContext*>(fc->expression())) {
-            auto ret = lookupFuncReturnType(calleeIdent->IDENTIFIER()->getText());
+            auto ret = lookupFuncReturnType(safeText(calleeIdent->IDENTIFIER()));
             if (!ret.empty()) return stripPointers(ret);
         }
     }
@@ -1935,10 +1949,10 @@ std::string DefinitionProvider::inferExprStructType(
         // Find struct, look up field type
         auto* sd = findStructDecl(tree, baseType);
         if (sd) {
-            std::string fieldName = fa->IDENTIFIER()->getText();
+            std::string fieldName = safeText(fa->IDENTIFIER());
             for (auto* f : sd->structField()) {
-                if (f->IDENTIFIER()->getText() == fieldName)
-                    return stripPointers(f->typeSpec()->getText());
+                if (safeText(f->IDENTIFIER()) == fieldName)
+                    return stripPointers(safeText(f->typeSpec()));
             }
         }
     }
@@ -1949,10 +1963,10 @@ std::string DefinitionProvider::inferExprStructType(
         if (baseType.empty()) return {};
         auto* sd = findStructDecl(tree, baseType);
         if (sd) {
-            std::string fieldName = aa->IDENTIFIER()->getText();
+            std::string fieldName = safeText(aa->IDENTIFIER());
             for (auto* f : sd->structField()) {
-                if (f->IDENTIFIER()->getText() == fieldName)
-                    return stripPointers(f->typeSpec()->getText());
+                if (safeText(f->IDENTIFIER()) == fieldName)
+                    return stripPointers(safeText(f->typeSpec()));
             }
         }
     }
@@ -1971,7 +1985,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveStructField(
     auto* sd = findStructDecl(tree, structName);
     if (sd) {
         for (auto* f : sd->structField()) {
-            if (f->IDENTIFIER()->getText() == fieldName)
+            if (safeText(f->IDENTIFIER()) == fieldName)
                 return makeResult(f->IDENTIFIER()->getSymbol(), filePath);
         }
     }
@@ -1984,7 +1998,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveStructField(
             auto* sd2 = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
             if (!sd2) continue;
             for (auto* f : sd2->structField()) {
-                if (f->IDENTIFIER()->getText() == fieldName)
+                if (safeText(f->IDENTIFIER()) == fieldName)
                     return makeResult(f->IDENTIFIER()->getSymbol(), filePath,
                                       sym->sourceFile);
             }

@@ -7,6 +7,8 @@
 #include "parser/Parser.h"
 #include "namespace/NamespaceRegistry.h"
 
+class Command;
+
 struct CLIOptions {
     bool isLSP = false;
     std::string inputFile;
@@ -18,41 +20,29 @@ struct CLIOptions {
     bool        showVersion = false;
     bool        runJIT      = false;   // lux run <file.lx>
 
-    std::vector<std::string> linkerFlags;   // -lxxx
-    std::vector<std::string> libPaths;      // -Lpath
-    std::vector<std::string> includePaths;  // -Ipath
-    std::vector<std::string> runArgs;       // args forwarded to main (after --)
+    std::vector<std::string> linkerFlags;
+    std::vector<std::string> libPaths;
+    std::vector<std::string> includePaths;
+    std::vector<std::string> runArgs;
 };
 
-// Holds a parsed source file together with its namespace.
-struct SourceUnit {
-    std::string filePath;
-    std::string namespaceName;
-    ParseResult parseResult;
-};
+class Command;
 
 class CLI {
 public:
     CLI(int argc, char* argv[]);
+    ~CLI();
     int run();
 
 private:
-    CLIOptions options_;
     int    argc_ = 0;
     char** argv_ = nullptr;
-    bool   isHelpC_ = false;
-    bool   isLSP_   = false;
-    bool   isRun_   = false;
 
-    bool parse(int argc, char* argv[]);
-    void printHelp()    const;
-    void printVersion() const;
-    int  compile();
-    int  jitRun();
+    std::vector<std::unique_ptr<Command>> commands_;
+    Command* findCommand(const std::string& name) const;
 
-    // Multi-file pipeline helpers
-    std::string getProjectRoot() const;
-    std::string ensureBuildDir(const std::string& projectRoot) const;
-    static std::string extractNamespace(LuxParser::ProgramContext* tree);
-    static std::string makeObjectName(const SourceUnit& unit);
+    CLIOptions legacyOpts_;
+
+    // Parse legacy positional mode (no subcommand given)
+    bool parseLegacy(int argc, char* argv[]);
 };

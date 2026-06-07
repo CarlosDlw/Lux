@@ -155,26 +155,30 @@ If CMake reports missing ANTLR4 runtime or libclang:
 ## Usage
 
 ```
-lux <file.lx>               Compile and print LLVM IR to stdout
-lux <file.lx> <output>      Compile and emit a native binary
-lux <file.lx> <output> -oN  Compile with optimization level N (1, 2, 3)
-lux helpc <lib> [symbol]    C library reference helper
-lux help                    Show help message
-lux version                 Show compiler version
+lux build <file> [-o <out>] [-O <level>] [--emit-llvm]  Compile to binary
+lux run   <file> [-O <level>] [-- args...]                JIT execution
+lux check <file> [-I <dir>]                                Type-check only
+lux test  [filter] [-q]                                    Run test suite
+lux help  [command]                                        Show help
+lux helpc <lib> [symbol]                                   C library reference
 ```
 
 ```bash
-# Print LLVM IR
-lux examples/main.lx
-
 # Compile to binary
-lux examples/main.lx ./main
-
-# Compile with optimizations
-lux examples/main.lx ./main -o2
-
-# Run
+lux build main.lx -o ./main -O2
 ./main
+
+# Show LLVM IR
+lux build main.lx --emit-llvm
+
+# Run via JIT
+lux run main.lx
+
+# Type-check only
+lux check main.lx
+
+# Run the test suite
+lux test -q
 ```
 
 ---

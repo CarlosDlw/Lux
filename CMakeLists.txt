@@ -225,6 +225,13 @@ set(GENERATED_SOURCES
 set(SOURCES
     src/main.cpp
     src/cli/CLI.cpp
+    src/cli/ArgParser.cpp
+    src/cli/LuxPipeline.cpp
+    src/cli/BuildCommand.cpp
+    src/cli/RunCommand.cpp
+    src/cli/CheckCommand.cpp
+    src/cli/TestCommand.cpp
+    src/cli/HelpCommand.cpp
     src/parser/Parser.cpp
     src/checkers/Checker.cpp
     src/IRBuilder/IRGen.cpp

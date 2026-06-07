@@ -166,8 +166,10 @@ static bool tryLinkMulti(const char*                      linker,
             argv.push_back("-fno-omit-frame-pointer");
 #endif
         }
-        for (auto& lp : extraLibPaths)
+        for (auto& lp : extraLibPaths) {
+            argv.push_back("-L");
             argv.push_back(lp.c_str());
+        }
         argv.push_back("-lm");
         argv.push_back("-lz");
         argv.push_back("-lpthread");

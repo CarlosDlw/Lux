@@ -5,173 +5,142 @@ This page documents all command-line options for the Lux compiler (`lux`).
 ## Synopsis
 
 ```
-lux <file.lx>              Compile and print LLVM IR to stdout
-lux <file.lx> <output>     Compile and emit native binary
-lux <file.lx> <output> -oN Compile with optimization level N
-lux run <file.lx>          Run via JIT (no binary produced)
-lux helpc <lib> [symbol]   C library reference helper
-lux help                   Show help message
-lux version                Show compiler version
+lux <command> [args...]
+
+Commands:
+  build       Compile a Lux project into a native binary
+  run         Compile and execute a Lux program via JIT
+  check       Type-check a Lux project without generating code
+  test        Run the Lux test suite
+  help        Show help for a command
+  helpc       C library reference helper
 ```
 
-## Arguments
+Legacy positional mode (`lux <file.lx> [<output>]`) is deprecated and will be
+removed in a future release. Use `lux build <file> [-o <output>]` instead.
 
-### Input File (Required)
+## Global Flags
 
-The first positional argument is the path to a `.lx` source file:
+```
+--help, -h     Show help
+--version, -v  Show version
+```
+
+## build — Compile to Binary
+
+```
+lux build <file> [-o <output>] [-O <level>] [--emit-llvm]
+               [-l <lib>] [-L <dir>] [-I <dir>] [-q]
+```
+
+Compiles the project to a native binary. Without `-o`, the output defaults to
+`<input-stem>.out`.
+
+| Flag | Description |
+|------|-------------|
+| `-o, --output <FILE>` | Output binary path (default: `<input>.out`) |
+| `-O, --opt <LEVEL>` | Optimization level: 0, 1, 2, or 3 (default: 0) |
+| `--emit-llvm` | Print LLVM IR to stdout and exit |
+| `-l, --link <LIB>` | Link against a library (repeatable) |
+| `-L, --lib-path <DIR>` | Add library search path (repeatable) |
+| `-I, --include <DIR>` | Add include search path (repeatable) |
+| `-q, --quiet` | Suppress pipeline logs |
 
 ```bash
-lux main.lx
-lux examples/hello.lx
-lux src/app.lx
+lux build main.lx -o ./main -O2
+lux build main.lx --emit-llvm > debug.ll
+lux build main.lx -lSDL2 -L/opt/lib
 ```
 
-The compiler scans the directory tree containing this file to discover all `.lx` modules (for namespace resolution and multi-file projects).
-
-### Output File (Optional)
-
-The second positional argument is the path for the compiled native binary:
-
-```bash
-lux main.lx ./main
-lux src/app.lx build/app
-```
-
-If omitted, the compiler prints the generated LLVM IR to stdout instead of producing a binary:
-
-```bash
-lux main.lx              # prints IR to stdout
-lux main.lx > output.ll  # redirect IR to a file
-```
-
-## Flags
-
-### Optimization Level
+## run — JIT Execution
 
 ```
--o1    Basic optimizations (constant folding, dead code elimination)
--o2    Standard optimizations (inlining, loop optimizations) — recommended
--o3    Aggressive optimizations (vectorization, full LTO)
+lux run <file> [-O <level>] [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-- args...]
 ```
 
-The default optimization level is 0 (no optimization). Use `-o2` for production builds:
-
-```bash
-lux main.lx ./main -o2
-```
-
-### Linker Flags
-
-```
--lname    Link against library 'name'
-```
-
-Links the output binary against a system or third-party library. The flag is passed directly to the system linker.
-
-```bash
-lux app.lx ./app -lSDL2           # link against SDL2
-lux app.lx ./app -lm -lpthread    # link against math and pthreads
-```
-
-### Library Search Paths
-
-```
--Lpath    Add 'path' to the library search path
-```
-
-Adds a directory where the linker looks for libraries specified with `-l`:
-
-```bash
-lux app.lx ./app -L/opt/lib -lmylib
-lux app.lx ./app -L./vendor/lib -lvendor
-```
-
-### Include Search Paths
-
-```
--Ipath    Add 'path' to the C header include search path
-```
-
-Adds a directory where the compiler looks for C header files used with `#include`:
-
-```bash
-lux app.lx ./app -I/opt/include -lmylib
-lux app.lx ./app -I./vendor/include -L./vendor/lib -lvendor
-```
-
-### Help and Version
-
-```bash
-lux help        # or --help, -h
-lux version     # or --version, -v
-```
-
-## Examples
-
-### Print LLVM IR (Debugging)
-
-```bash
-lux main.lx
-```
-
-Useful for inspecting the generated IR without producing a binary. The output can be piped or redirected:
-
-```bash
-lux main.lx | less
-lux main.lx > debug.ll
-```
-
-### Simple Compilation
-
-```bash
-lux main.lx ./main
-./main
-```
-
-### JIT Run (No Binary)
+Compiles and immediately executes the program via LLVM JIT — no binary is
+written to disk.
 
 ```bash
 lux run main.lx
+lux run game.lx -lraylib
+lux run app.lx -- arg1 arg2
 ```
 
-Compiles and executes immediately without writing a binary to disk. Useful for quick iteration:
+## check — Type Checking
+
+```
+lux check <file> [-I <dir>] [-q]
+```
+
+Runs the parser and semantic checker without generating any code or binary.
 
 ```bash
-lux run main.lx -lraylib         # run a raylib program directly
-lux run main.lx -- foo bar       # pass args to main()
+lux check main.lx
+lux check main.lx -q
 ```
 
-### Optimized Build
+## test — Run Test Suite
+
+```
+lux test [filter] [-l] [-q]
+```
+
+Runs the Lux project's test suite (expects a `tests/main.lx` in the project).
+
+| Flag | Description |
+|------|-------------|
+| `filter` | Optional substring match to filter tests |
+| `-l, --list` | List available test files |
+| `-q, --quiet` | Suppress output |
 
 ```bash
-lux main.lx ./main -o2
-./main
+lux test
+lux test -q
+lux test structs
 ```
 
-### Linking with External C Libraries
+## help — Command Help
+
+```
+lux help [command]
+```
+
+Shows general help or help for a specific command.
 
 ```bash
-# Link against SDL2
-lux game.lx ./game -lSDL2
-
-# Link against a custom library in a non-standard path
-lux app.lx ./app -L/opt/custom/lib -I/opt/custom/include -lcustom
-
-# Link against multiple libraries
-lux server.lx ./server -lssl -lcrypto -lpthread
+lux help
+lux help build
 ```
 
-### Using Make
+## helpc — C Library Reference
 
-The project Makefile provides a shortcut for building and running:
+```
+lux helpc <lib> [symbol] [flags]
+```
+
+Inspects C library headers and displays type information mapped to Lux
+equivalents.
 
 ```bash
-make run FILE=examples/main.lx
+lux helpc raylib InitWindow
+lux helpc stdio printf
+lux helpc math sin --json
 ```
+
+See [helpc](../tools/helpc.md) for the full reference.
+
+## Project Scanning
+
+When you run `lux build <file>` or `lux run <file>`, the compiler scans the
+directory containing `<file>` for all `.lx` files. Every `.lx` file must have a
+`namespace` declaration. Files are compiled together to support cross-file
+namespace resolution.
 
 ## Build Artifacts
 
-When compiling to a binary, the compiler creates a `.luxbuild/` directory in the project root. This directory contains intermediate object files (`.o`) generated during compilation:
+The compiler creates a `.luxbuild/` directory in the project root for
+intermediate object files:
 
 ```
 project/
@@ -179,34 +148,31 @@ project/
 ├── utils.lx
 └── .luxbuild/
     ├── Main__main.o
-    ├── Utils__utils.o
-    └── c__helper.o      # if local C files are included
+    └── Utils__utils.o
 ```
 
-These files are reused across compilations. You can safely delete `.luxbuild/` to force a clean rebuild.
+These files are reused across compilations. You can safely delete `.luxbuild/`
+to force a clean rebuild.
 
 ## Compiler Pipeline
 
-When you run `lux main.lx ./main`, the compiler performs these steps in order:
+When you run `lux build`, the compiler performs these steps:
 
 1. **Scan** — Discover all `.lx` files in the project directory
 2. **Parse** — Parse each file using the ANTLR4 grammar
 3. **Register** — Build a namespace registry for cross-file module resolution
-4. **Resolve Headers** — Process `#include` directives (system and local C headers)
-5. **Compile C** — Compile any local `.c` files referenced by `#include` to object files
-6. **Check** — Run semantic analysis and type checking on all Lux code
+4. **Resolve Headers** — Process `#include` directives
+5. **Compile C** — Compile local `.c` files to object files
+6. **Check** — Run semantic analysis and type checking
 7. **Generate IR** — Emit LLVM intermediate representation
-8. **Optimize** — Apply LLVM optimization passes (if `-oN` is specified)
+8. **Optimize** — Apply LLVM optimization passes (if `-O` is specified)
 9. **Emit Objects** — Write `.o` object files to `.luxbuild/`
 10. **Link** — Invoke the system linker to produce the final native binary
 
 ## Error Messages
 
-The compiler produces clear error messages. Some common ones:
-
 ```
-lux: unknown flag '-xyz'
-lux: Run 'lux help' for usage.
+lux: unknown flag '--xyz'
 ```
 
 Unknown command-line flag. Check the flag spelling.
@@ -227,57 +193,8 @@ Every `.lx` file must begin with a `namespace` declaration.
 lux: cannot find header '<mylib.h>'. Check '-I' include paths
 ```
 
-A `#include` directive references a header that cannot be found. Add the correct `-I` path.
-
-## Subcommands
-
-### run — JIT Execution
-
-```bash
-lux run <file.lx> [flags] [-- args...]
-```
-
-Compiles and immediately runs the program in-process via LLVM MCJIT — no binary is written to disk. Accepts the same `-l`, `-L`, and `-I` flags as the standard compile command.
-
-```bash
-lux run main.lx                        # run with no extra libs
-lux run game.lx -lraylib               # run and load libraylib at runtime
-lux run app.lx -L./lib -lmylib         # custom library path
-lux run app.lx -I./include -lmylib     # custom include path
-lux run app.lx -- arg1 arg2            # pass arguments to main()
-```
-
-Auto-linking still applies: if your code includes a header that requires a library (e.g., `<raylib.h>` → `-lraylib`), the compiler prints:
-
-```
-lux: auto-linking '-lraylib' (required by <raylib.h>)
-```
-
-**Notes:**
-- The program runs inside the compiler process, so it shares the same address space. Crashes in the program will crash the compiler process.
-- No binary artifacts are produced (no `.luxbuild/` directory is created).
-- Optimization is not applied (equivalent to `-o0`).
-
-### helpc — C Library Reference
-
-```bash
-lux helpc <lib> [symbol] [flags]
-```
-
-A built-in tool that inspects C library headers and displays detailed information
-about functions, structs, enums, macros, and typedefs. Maps every C type to its
-Lux equivalent.
-
-```bash
-lux helpc raylib InitWindow     # look up a function
-lux helpc raylib Color          # look up a struct
-lux helpc raylib --list         # list all symbols
-lux helpc raylib -s Draw        # search by name
-lux helpc stdio printf          # works with any installed header
-lux helpc math sin --json       # JSON output
-```
-
-See [helpc](../tools/helpc.md) for the full reference.
+A `#include` directive references a header that cannot be found. Add the
+correct `-I` path.
 
 ## See Also
 

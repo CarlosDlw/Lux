@@ -4445,9 +4445,7 @@ static bool typeSpecMentionsGenericParam(
 }
 
 void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
-    for (auto* pre : tree->preambleDecl()) {
-        auto* useDecl = pre->useDecl();
-        if (!useDecl) continue;
+    auto processUse = [&](LuxParser::UseDeclContext* useDecl) {
         if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
             auto rootName = root->IDENTIFIER()->getText();
             if (rootName == "std") {
@@ -4518,6 +4516,17 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
                 error(grp, "unknown module or namespace '" + path + "'");
             }
         }
+    };
+
+    for (auto* pre : tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
+        processUse(useDecl);
+    }
+    for (auto* tld : tree->topLevelDecl()) {
+        auto* useDecl = tld->useDecl();
+        if (!useDecl) continue;
+        processUse(useDecl);
     }
 }
 

@@ -399,6 +399,9 @@ std::any IRGen::visitProgram(LuxParser::ProgramContext* ctx) {
     for (auto* pre : ctx->preambleDecl()) {
         if (auto* ud = pre->useDecl()) visit(ud);
     }
+    for (auto* tld : ctx->topLevelDecl()) {
+        if (auto* ud = tld->useDecl()) visit(ud);
+    }
 
     // Register cross-file symbols (extern declarations, types, etc.)
     registerCrossFileSymbols(ctx);

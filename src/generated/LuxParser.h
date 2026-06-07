@@ -286,6 +286,8 @@ public:
   public:
     TopLevelDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    UseDeclContext *useDecl();
+    IncludeDeclContext *includeDecl();
     TypeAliasDeclContext *typeAliasDecl();
     StructDeclContext *structDecl();
     UnionDeclContext *unionDecl();

@@ -1145,6 +1145,8 @@ static void collectLocalsFromStmts(
         if (!inferred.empty())
           typeName = inferred;
       }
+      if (vd->IDENTIFIER().empty())
+        continue;
       out[vd->IDENTIFIER(0)->getText()] = {typeName, 0};
 
       if (auto *cu = dynamic_cast<LuxParser::CatchUnwrapExprContext *>(

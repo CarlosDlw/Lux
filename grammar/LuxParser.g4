@@ -42,7 +42,9 @@ includeDecl
 
 // Top-level declarations
 topLevelDecl
-    : typeAliasDecl
+    : useDecl
+    | includeDecl
+    | typeAliasDecl
     | structDecl
     | unionDecl
     | enumDecl

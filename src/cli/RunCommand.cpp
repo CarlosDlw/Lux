@@ -105,7 +105,7 @@ int RunCommand::run(const ArgParser& parser) {
     }
 
     // ── Cache and produce temp binary ──────────────────────────────────────
-    const std::string cacheDir = std::string(fs::temp_directory_path()) + "/lux-run-cache";
+    const std::string cacheDir = pipeline->projectRoot + "/.luxcache";
     fs::create_directories(cacheDir);
 
     std::string irText;

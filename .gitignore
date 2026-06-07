@@ -3,6 +3,7 @@ build-asan/
 .cache/
 *.vsix
 .luxbuild/
+.luxcache
 *.o
 errors/
 node_modules/

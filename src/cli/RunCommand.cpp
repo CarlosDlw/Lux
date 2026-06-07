@@ -31,6 +31,7 @@ void RunCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lx entrypoint file");
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, or 3 (default: 0)");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
+    parser.addFlag("clean", 'c', "Clear cache before compiling");
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
     parser.addOption("lib-path", 'L', "DIR", "Add library search path (repeatable)", true);
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
@@ -106,6 +107,12 @@ int RunCommand::run(const ArgParser& parser) {
 
     // ── Cache and produce temp binary ──────────────────────────────────────
     const std::string cacheDir = pipeline->projectRoot + "/.luxcache";
+    if (parser.has("clean")) {
+        if (!pipeOpts.quiet)
+            std::cerr << "lux: [run] clearing cache...";
+        std::error_code ec;
+        fs::remove_all(cacheDir, ec);
+    }
     fs::create_directories(cacheDir);
 
     std::string irText;

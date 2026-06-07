@@ -133,6 +133,31 @@ auto value = divide(10, 2) catch {
 - `it` exists only inside the `catch` block of `expr catch { ... }`.
 - Using `it` outside this block is a checker error. The type of `it` is the error variant's payload type.
 
+### Importing variants with `use Type::*;`
+
+Instead of qualifying every variant with the enum name (e.g. `Response::Ok(value)`), use `use` to bring all variant names into scope:
+
+```tm
+fn example() {
+    use Response::*;
+    ret Ok(42);        // instead of Response::Ok(42)
+}
+```
+
+The `use` declaration works both at the top level and inside function bodies. Variants are scoped like local variables — visible only after the `use` statement and limited to the enclosing block.
+
+```tm
+fn scope_demo() {
+    // Response::Ok not available here
+    use Response::*;
+    // Ok and Err are now in scope
+    {
+        // still visible inside nested blocks
+        ret Ok(a / b);
+    }
+}
+```
+
 ### Valid and invalid patterns
 
 Valid (built-in `Error` payload):
@@ -212,14 +237,16 @@ enum Response {
 }
 
 Response divide(int32 a, int32 b) {
+    use Response::*;
+
     try {
         if b == 0 {
-            ret Response::Err(Error { message: "Division by zero!" });
+            ret Err(Error { message: "Division by zero!" });
         }
 
-        ret Response::Ok(a / b);
+        ret Ok(a / b);
     } catch(Error e) {
-        ret Response::Err(e);
+        ret Err(e);
     }
 }
 
@@ -251,16 +278,19 @@ enum HttpResponse {
 
 /// Simulates an HTTP GET that may fail.
 HttpResponse httpGet(string url) {
+    use HttpResponse::*;
+
     if url == "" {
-        ret HttpResponse::Err(HttpError { status: 400, message: "empty url" });
+        ret Err(HttpError { status: 400, message: "empty url" });
     }
     // On success, return body as string.
-    ret HttpResponse::Ok("<html>...</html>");
+    ret Ok("<html>...</html>");
 }
 
 /// Fetches a URL and returns the body length.
 /// Propagates any HttpError to the caller.
 int32 fetchAndMeasure(string url) ? {
+    use HttpResponse::*;
     string body = httpGet(url) ?;
     ret body.len();
 }
@@ -361,14 +391,16 @@ enum ProcessResult {
 }
 
 ProcessResult process() {
+    use ProcessResult::*;
     string contents = readFile("input.txt") ?;
     // If readFile failed, process() returns the Err variant immediately.
     // Otherwise contents holds the file data.
     int32 lines = countLines(contents);
-    ret ProcessResult::Ok(lines);
+    ret Ok(lines);
 }
 
 int32 main() {
+    use ProcessResult::*;
     int32 result = process() ?;
     // If process() failed, main() returns the Err variant.
     // Otherwise result holds the line count.

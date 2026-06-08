@@ -42,5 +42,6 @@ int32 main() {
     testStructsMethodsAndExtend();
     testErrorHandlingCustomTypes();
     testPropagateOperator();
+    testVecPointers();
     ret 0;
 }

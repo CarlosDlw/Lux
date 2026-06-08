@@ -8,14 +8,23 @@
 
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 #include <filesystem>
+#include <unistd.h>
+
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/Support/raw_ostream.h>
 
 namespace fs = std::filesystem;
 
 void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lx entrypoint file");
     parser.addOption("output", 'o', "FILE", "Output binary path (default: <input>.out)");
-    parser.addFlag("emit-llvm", '\0', "Print LLVM IR to stdout and exit");
+    parser.addFlag("emit-llvm", '\0', "Emit LLVM IR (.ll)");
+    parser.addFlag("emit-asm",  '\0', "Emit assembly (.s)");
+    parser.addFlag("emit-bc",   '\0', "Emit LLVM bitcode (.bc)");
+    parser.addFlag("emit-obj",  '\0', "Emit object file (.o)");
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
     parser.addFlag("lto", '\0', "Enable Link Time Optimization");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
@@ -54,6 +63,10 @@ int BuildCommand::run(const ArgParser& parser) {
 
     std::string outputFile = parser.get("output");
     bool emitLLVM     = parser.has("emit-llvm");
+    bool emitAsm      = parser.has("emit-asm");
+    bool emitBc       = parser.has("emit-bc");
+    bool emitObj      = parser.has("emit-obj");
+    bool isEmitMode   = emitLLVM || emitAsm || emitBc || emitObj;
     bool useLTO       = parser.has("lto");
 
     auto pipeline = LuxPipeline::run(pipeOpts);
@@ -82,6 +95,8 @@ int BuildCommand::run(const ArgParser& parser) {
     bool anyIRError = false;
     size_t irIdx = 0;
 
+    auto mainPath = fs::canonical(fs::path(pipeOpts.inputFile)).string();
+
     for (auto& unit : pipeline->units) {
         ++irIdx;
         if (!pipeOpts.quiet)
@@ -98,31 +113,85 @@ int BuildCommand::run(const ArgParser& parser) {
             continue;
         }
 
-        // Show IR mode: print only the main file's IR
-        if (emitLLVM) {
-            auto mainPath = fs::canonical(fs::path(pipeOpts.inputFile)).string();
-            if (unit.filePath == mainPath)
-                irModule->print();
-            continue;
-        }
-
         // Optimize
         if (luxOptLevel != OptimizationLevel::O0)
             Optimizer::optimize(*irModule, luxOptLevel);
 
-        // Emit object file
+        // Handle Emit modes (LLVM, ASM, BC) - only for the main file
+        if (isEmitMode && unit.filePath == mainPath) {
+            if (emitLLVM) {
+                if (!outputFile.empty()) {
+                    std::error_code ec;
+                    llvm::raw_fd_ostream dest(outputFile, ec, llvm::sys::fs::OF_None);
+                    if (ec) {
+                        std::cerr << "lux: could not open '" << outputFile << "': " << ec.message() << "\n";
+                        anyIRError = true;
+                    } else {
+                        irModule->module()->print(dest, nullptr);
+                        if (!pipeOpts.quiet) std::cout << "lux: LLVM IR written to '" << outputFile << "'\n";
+                    }
+                } else {
+                    irModule->print();
+                }
+            } else if (emitAsm) {
+                if (!outputFile.empty()) {
+                    if (CodeGen::emitAssembly(irModule->module(), outputFile)) {
+                        if (!pipeOpts.quiet) std::cout << "lux: assembly written to '" << outputFile << "'\n";
+                    } else anyIRError = true;
+                } else {
+                    // To stdout
+                    char tmpAsm[] = "/tmp/lux-asm-XXXXXX.s";
+                    int fd = mkstemps(tmpAsm, 2);
+                    if (fd != -1) {
+                        ::close(fd);
+                        if (CodeGen::emitAssembly(irModule->module(), tmpAsm)) {
+                            std::ifstream in(tmpAsm);
+                            std::cout << in.rdbuf();
+                            fs::remove(tmpAsm);
+                        } else anyIRError = true;
+                    } else anyIRError = true;
+                }
+            } else if (emitBc) {
+                if (!outputFile.empty()) {
+                    if (CodeGen::emitBitcode(irModule->module(), outputFile)) {
+                        if (!pipeOpts.quiet) std::cout << "lux: bitcode written to '" << outputFile << "'\n";
+                    } else anyIRError = true;
+                } else {
+                    // Bitcode to stdout
+                    llvm::WriteBitcodeToFile(*irModule->module(), llvm::outs());
+                }
+            } else if (emitObj) {
+                // If emitObj, we just need to continue and the normal object emit will handle it, 
+                // but we need to stop before linking.
+            }
+
+            if (anyIRError) continue;
+            if (!emitObj) continue; // Skip object generation if not emitObj
+        }
+
+        // Emit object file (normal path or --emit-obj)
         auto stem = unit.namespaceName + "__" + fs::path(unit.filePath).stem().string();
-        auto objPath = pipeline->buildDir + "/" + stem + ".o";
+        auto objPath = (emitObj && unit.filePath == mainPath && !outputFile.empty()) 
+                       ? outputFile 
+                       : pipeline->buildDir + "/" + stem + ".o";
+
         if (!CodeGen::emitObjectFile(irModule->module(), objPath)) {
             std::cerr << "lux: failed to emit object for '" << unit.filePath << "'\n";
             anyIRError = true;
             continue;
         }
+
+        if (emitObj && unit.filePath == mainPath) {
+            if (!pipeOpts.quiet) std::cout << "lux: object file written to '" << objPath << "'\n";
+            continue; 
+        }
+
         objectFiles.push_back(objPath);
     }
 
     if (anyIRError) return 1;
-    if (emitLLVM) return 0;
+    if (isEmitMode && !emitObj) return 0;
+    if (emitObj) return 0;
 
     // Append C objects
     objectFiles.insert(objectFiles.end(), cObjectFiles.begin(), cObjectFiles.end());

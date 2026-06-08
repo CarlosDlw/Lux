@@ -12,6 +12,12 @@ public:
     // Emit a single LLVM module as an object file.
     static bool emitObjectFile(llvm::Module* module, const std::string& objectPath);
 
+    // Emit a single LLVM module as assembly text.
+    static bool emitAssembly(llvm::Module* module, const std::string& assemblyPath);
+
+    // Emit a single LLVM module as bitcode.
+    static bool emitBitcode(llvm::Module* module, const std::string& bitcodePath);
+
     // Link multiple object files into a single executable.
     static bool linkObjectFiles(const std::vector<std::string>& objectPaths,
                                 const std::string& outputPath,

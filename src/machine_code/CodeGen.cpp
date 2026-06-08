@@ -295,7 +295,7 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
-bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath) {
+static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -319,20 +319,48 @@ bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath
     module->setDataLayout(machine->createDataLayout());
 
     std::error_code ec;
-    llvm::raw_fd_ostream dest(objectPath, ec, llvm::sys::fs::OF_None);
+    llvm::raw_fd_ostream dest(outputPath, ec, llvm::sys::fs::OF_None);
     if (ec) {
-        std::cerr << "lux: could not open '" << objectPath << "': "
+        std::cerr << "lux: could not open '" << outputPath << "': "
                   << ec.message() << "\n";
         return false;
     }
 
     llvm::legacy::PassManager passManager;
-    if (machine->addPassesToEmitFile(passManager, dest, nullptr, LUX_CGFT_OBJECT)) {
-        std::cerr << "lux: target machine cannot emit object files\n";
+    if (machine->addPassesToEmitFile(passManager, dest, nullptr, fileType)) {
+        std::cerr << "lux: target machine cannot emit this file type\n";
         return false;
     }
 
     passManager.run(*module);
+    dest.flush();
+    return true;
+}
+
+bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath) {
+    return emitToFile(module, objectPath, LUX_CGFT_OBJECT);
+}
+
+bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath) {
+#ifdef LLVM_VERSION_18_OR_NEWER
+    auto type = llvm::CodeGenFileType::AssemblyFile;
+#else
+    auto type = llvm::CGFT_AssemblyFile;
+#endif
+    return emitToFile(module, assemblyPath, type);
+}
+
+#include <llvm/Bitcode/BitcodeWriter.h>
+
+bool CodeGen::emitBitcode(llvm::Module* module, const std::string& bitcodePath) {
+    std::error_code ec;
+    llvm::raw_fd_ostream dest(bitcodePath, ec, llvm::sys::fs::OF_None);
+    if (ec) {
+        std::cerr << "lux: could not open '" << bitcodePath << "': "
+                  << ec.message() << "\n";
+        return false;
+    }
+    llvm::WriteBitcodeToFile(*module, dest);
     dest.flush();
     return true;
 }

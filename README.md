@@ -42,7 +42,7 @@ int32 main() {
 
 ## Features
 
-- **Native compilation** — LLVM backend targeting x86-64, ARM, and more; full `-o1`/`-o2`/`-o3` optimization pipeline
+- **Native compilation** — LLVM backend targeting x86-64, ARM, and more; full optimization pipeline (`-O1` through `-O3`, `-Os`, `-Oz`, `-Ofast`) and Link Time Optimization (`--lto`)
 - **C FFI** — call any C function with `extern`, include headers with `#include`, pass structs by value; zero glue code
 - **User-defined generics** — monomorphized `struct Node<T>`, `extend Node<T>` methods, generic functions `T max<T>(T a, T b)`, and type inference from call arguments when possible
 - **Built-in collections** — `vec<T>`, `map<K, V>`, `set<T>` with full method suites
@@ -155,24 +155,26 @@ If CMake reports missing ANTLR4 runtime or libclang:
 ## Usage
 
 ```
-lux build <file> [-o <out>] [-O <level>] [--emit-llvm]  Compile to binary
-lux run   <file> [-O <level>] [-- args...]                JIT execution
-lux check <file> [-I <dir>]                                Type-check only
-lux test  [filter] [-q]                                    Run test suite
-lux help  [command]                                        Show help
-lux helpc <lib> [symbol]                                   C library reference
+lux build <file> [-o <out>] [-O <lvl>] [--lto] [--emit-...]  Compile to binary
+lux run   <file> [-O <lvl>] [--lto] [-- args...]             JIT execution
+lux check <file> [-I <dir>]                                   Type-check only
+lux test  [filter] [-q]                                       Run test suite
+lux help  [command]                                           Show help
+lux helpc <lib> [symbol]                                      C library reference
 ```
 
 ```bash
-# Compile to binary
-lux build main.lx -o ./main -O2
-./main
+# Compile to binary with LTO and size optimization
+lux build main.lx -o ./main -Oz --lto
 
-# Show LLVM IR
+# Emit Assembly to file
+lux build main.lx --emit-asm -o main.s
+
+# Show LLVM IR in terminal
 lux build main.lx --emit-llvm
 
-# Run via JIT
-lux run main.lx
+# Run via JIT with O3 optimization
+lux run main.lx -O3
 
 # Type-check only
 lux check main.lx

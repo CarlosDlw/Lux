@@ -29,7 +29,8 @@ removed in a future release. Use `lux build <file> [-o <output>]` instead.
 ## build — Compile to Binary
 
 ```
-lux build <file> [-o <output>] [-O <level>] [--emit-llvm]
+lux build <file> [-o <output>] [-O <level>] [--lto]
+               [--emit-llvm] [--emit-asm] [--emit-bc] [--emit-obj]
                [-l <lib>] [-L <dir>] [-I <dir>] [-q]
 ```
 
@@ -38,33 +39,59 @@ Compiles the project to a native binary. Without `-o`, the output defaults to
 
 | Flag | Description |
 |------|-------------|
-| `-o, --output <FILE>` | Output binary path (default: `<input>.out`) |
-| `-O, --opt <LEVEL>` | Optimization level: 0, 1, 2, or 3 (default: 0) |
-| `--emit-llvm` | Print LLVM IR to stdout and exit |
+| `-o, --output <FILE>` | Output file path (binary, IR, asm, bitcode, or object) |
+| `-O, --opt <LEVEL>` | Optimization level: `0`, `1`, `2`, `3`, `s`, `z`, or `fast` (default: `0`) |
+| `--lto` | Enable Link Time Optimization (LTO) |
+| `--emit-llvm` | Emit LLVM IR (`.ll`) |
+| `--emit-asm` | Emit assembly (`.s`) |
+| `--emit-bc` | Emit LLVM bitcode (`.bc`) |
+| `--emit-obj` | Emit object file (`.o`) |
 | `-l, --link <LIB>` | Link against a library (repeatable) |
 | `-L, --lib-path <DIR>` | Add library search path (repeatable) |
 | `-I, --include <DIR>` | Add include search path (repeatable) |
 | `-q, --quiet` | Suppress pipeline logs |
 
+**Optimization Levels:**
+- `0-3`: Standard optimization levels.
+- `s`: Optimize for size, balancing performance.
+- `z`: Optimize aggressively for size.
+- `fast`: Enable aggressive optimizations (O3 + fast-math).
+
+**Emit Modes:**
+By default, `--emit-llvm` and `--emit-asm` print to **stdout**. If `-o` is provided, the output is redirected to the specified file.
+`--emit-obj` requires `-o` to specify the object file path; otherwise, it writes to the build directory.
+
 ```bash
+# Standard build
 lux build main.lx -o ./main -O2
-lux build main.lx --emit-llvm > debug.ll
-lux build main.lx -lSDL2 -L/opt/lib
+
+# Emit Assembly to file
+lux build main.lx --emit-asm -o main.s
+
+# Emit LLVM IR to stdout
+lux build main.lx --emit-llvm | less
+
+# Size-optimized build with LTO
+lux build main.lx -Oz --lto
 ```
 
 ## run — JIT Execution
 
 ```
-lux run <file> [-O <level>] [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-- args...]
+lux run <file> [-O <level>] [--lto] [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-- args...]
 ```
 
 Compiles and immediately executes the program via LLVM JIT — no binary is
 written to disk.
 
+| Flag | Description |
+|------|-------------|
+| `-O, --opt <LEVEL>` | Optimization level: `0`, `1`, `2`, `3`, `s`, `z`, or `fast` |
+| `--lto` | Enable Link Time Optimization for JIT |
+
 ```bash
-lux run main.lx
-lux run game.lx -lraylib
-lux run app.lx -- arg1 arg2
+lux run main.lx -O3
+lux run app.lx --lto -- arg1 arg2
 ```
 
 ## check — Type Checking

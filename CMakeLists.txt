@@ -209,6 +209,7 @@ add_library(lux_builtins STATIC
     src/builtins/thread/thread.c
     src/builtins/error/error.c
 )
+set_target_properties(lux_builtins PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(lux_builtins PRIVATE
     ${CMAKE_SOURCE_DIR}/src/builtins
 )

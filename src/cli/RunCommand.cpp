@@ -141,6 +141,7 @@ int RunCommand::run(const ArgParser& parser) {
     }
 
     auto linkWithCompiler = [&](const char* cc, const std::string& irPath,
+                                 const std::vector<std::string>& cObjects,
                                  const std::string& outBinPath) -> bool {
         pid_t lpid = ::fork();
         if (lpid < 0) return false;
@@ -156,6 +157,11 @@ int RunCommand::run(const ArgParser& parser) {
             std::vector<const char*> argv;
             argv.push_back(cc);
             argv.push_back(irPath.c_str());
+
+            // Add C objects
+            for (auto& obj : cObjects)
+                argv.push_back(obj.c_str());
+
             auto builtinsPath = CodeGen::builtinsLibraryPath();
             argv.push_back(builtinsPath.c_str());
 #ifdef LUX_RUNTIME_DIAGNOSTICS
@@ -184,6 +190,24 @@ int RunCommand::run(const ArgParser& parser) {
         if (!pipeOpts.quiet)
             std::cerr << "\nlux: [run] --- compiler/linker output ---\n\n";
 
+        // ── Compile C sources if any ───────────────────────────────────────
+        std::vector<std::string> cObjectFiles;
+        if (!pipeline->cSourceFiles.empty()) {
+            std::vector<std::string> cIncFlags;
+            for (auto& ip : parser.getAll("include"))
+                cIncFlags.push_back("-I" + ip);
+            for (auto& cSrc : pipeline->cSourceFiles) {
+                auto stem = fs::path(cSrc).stem().string();
+                cIncFlags.push_back("-I" + fs::path(cSrc).parent_path().string());
+                auto objPath = pipeline->buildDir + "/c__" + stem + ".o";
+                if (!CodeGen::compileCSource(cSrc, objPath, cIncFlags, pipeOpts.quiet)) {
+                    std::cerr << "lux: failed to compile C source '" << cSrc << "'\n";
+                    return 1;
+                }
+                cObjectFiles.push_back(objPath);
+            }
+        }
+
         std::string runLLTemplate = fs::temp_directory_path().string() + "/lux-run-ir-XXXXXX.ll";
         std::vector<char> llTmpl(runLLTemplate.begin(), runLLTemplate.end());
         llTmpl.push_back('\0');
@@ -202,8 +226,8 @@ int RunCommand::run(const ArgParser& parser) {
 
         const std::string runBinTempPath = runBinPath + ".tmp-" + std::to_string(::getpid());
         fs::remove(runBinTempPath);
-        if (!linkWithCompiler("clang", runLLPath, runBinTempPath)
-            && !linkWithCompiler("gcc", runLLPath, runBinTempPath)) {
+        if (!linkWithCompiler("clang", runLLPath, cObjectFiles, runBinTempPath)
+            && !linkWithCompiler("gcc", runLLPath, cObjectFiles, runBinTempPath)) {
             std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
             fs::remove(runLLPath);
             return 1;

@@ -56,10 +56,14 @@ Compiles the project to a native binary. Without `-o`, the output defaults to
 | `-q, --quiet` | Suppress pipeline logs |
 ...
 # Build a shared library (automatically enables --fPIC)
+```bash
 lux build module.lx --shared -o libmodule.so
+```
 
 # Build a static binary
+```
 lux build main.lx --static -o main_static
+```
 
 **Optimization Levels:**
 - `0-3`: Standard optimization levels.

@@ -1603,10 +1603,15 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
       // Resolve member chain: x.field.method().| → walk each step
       if (!req.methodChain.empty() && !varType.empty()) {
         for (auto &memberName : req.methodChain) {
-          std::string retType = resolveMethodReturnType(varType, memberName,
+          // Unwrap pointer for field lookup (e.g. *Buffer → Buffer)
+          std::string lookupType = varType;
+          while (!lookupType.empty() && lookupType[0] == '*')
+            lookupType = lookupType.substr(1);
+
+          std::string retType = resolveMethodReturnType(lookupType, memberName,
                                                         parsed->tree, project);
           if (retType.empty()) {
-            retType = resolveFieldType(varType, memberName, parsed->tree,
+            retType = resolveFieldType(lookupType, memberName, parsed->tree,
                                        cBindingsPtr, project);
           }
           if (retType.empty())
@@ -2104,7 +2109,9 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
 
           // If preceded by a dot, this identifier is an intermediate
           // field access in the chain; otherwise it is the base variable.
-          if (nameStart > 0 && before[nameStart - 1] == '.') {
+          // Guard against `..` (range operator) which is not field access.
+          if (nameStart > 0 && before[nameStart - 1] == '.' &&
+              !(nameStart >= 2 && before[nameStart - 2] == '.')) {
             chain.push_back(before.substr(nameStart, nameEnd - nameStart));
             recEnd = nameStart - 1; // continue before the dot
           } else if (nameStart >= 2 && before[nameStart - 1] == '>' &&

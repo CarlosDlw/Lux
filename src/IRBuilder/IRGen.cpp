@@ -896,6 +896,45 @@ llvm::Value* IRGen::resolveMethodReceiverAddress(LuxParser::ExpressionContext* e
                                          field->IDENTIFIER()->getText() + "_recvptr");
     }
 
+    if (auto* arrow = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
+        auto* baseExpr = arrow->expression();
+        auto* basePtr = resolveMethodReceiverAddress(baseExpr);
+        if (!basePtr)
+            basePtr = castValue(visit(baseExpr));
+        if (!basePtr)
+            return nullptr;
+
+        auto* baseTI = resolveExprTypeInfo(baseExpr);
+        if (!baseTI)
+            return nullptr;
+        if (baseTI->kind == TypeKind::Pointer && baseTI->pointeeType)
+            baseTI = baseTI->pointeeType;
+        if (!baseTI || (baseTI->kind != TypeKind::Struct && baseTI->kind != TypeKind::Union))
+            return nullptr;
+
+        int fieldIdx = -1;
+        for (size_t i = 0; i < baseTI->fields.size(); i++) {
+            if (baseTI->fields[i].name == arrow->IDENTIFIER()->getText()) {
+                fieldIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        if (fieldIdx < 0)
+            return nullptr;
+
+        auto* structTy = llvm::dyn_cast<llvm::StructType>(
+            baseTI->toLLVMType(*context_, module_->getDataLayout()));
+        if (!structTy)
+            return nullptr;
+
+        if (baseTI->kind == TypeKind::Union)
+            return basePtr;
+
+        return builder_->CreateStructGEP(structTy, basePtr,
+                                         static_cast<unsigned>(fieldIdx),
+                                         arrow->IDENTIFIER()->getText() + "_recvptr");
+    }
+
     return nullptr;
 }
 
@@ -5147,7 +5186,9 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
             locals_.erase(varName);
 
             builder_->SetInsertPoint(endBB);
-        } else if (iterableTI && iterableTI->kind == TypeKind::Integer && iterableDims == 0) {
+        } else if ((iterableTI && iterableTI->kind == TypeKind::Integer && iterableDims == 0) ||
+                   (!iterableTI && resolveExprTypeInfo(iterExpr) &&
+                    resolveExprTypeInfo(iterExpr)->kind == TypeKind::Integer)) {
             // Integer iteration: for TYPE i in N  =>  iterate 0..N-1
             auto* nVal = castValue(visit(iterExpr));
             auto* i64Ty = llvm::Type::getInt64Ty(*context_);
@@ -6110,7 +6151,11 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
                 auto structVar = innerIdent->IDENTIFIER()->getText();
                 auto lit = locals_.find(structVar);
                 if (lit != locals_.end() && lit->second.typeInfo) {
-                    auto* structTI = lit->second.typeInfo;
+                    auto* baseTI = lit->second.typeInfo;
+                    // Auto-dereference pointer: *Buffer → Buffer
+                    if (baseTI->kind == TypeKind::Pointer && baseTI->pointeeType)
+                        baseTI = baseTI->pointeeType;
+                    auto* structTI = baseTI;
                     int fieldIdx = -1;
                     const TypeInfo* fieldTI = nullptr;
                     for (size_t f = 0; f < structTI->fields.size(); f++) {
@@ -6121,7 +6166,23 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
                         }
                     }
                     if (fieldIdx >= 0 && fieldTI) {
+                        // Compute base pointer: load if variable is a pointer to struct
+                        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                        auto* baseAlloca = lit->second.alloca;
+                        auto* baseAllocatedTy = baseAlloca->getAllocatedType();
+                        llvm::Value* basePtr = baseAlloca;
+                        if (lit->second.typeInfo->kind == TypeKind::Pointer &&
+                            lit->second.typeInfo->pointeeType) {
+                            auto* loadedPtr = builder_->CreateLoad(ptrTy, baseAlloca, structVar + "_ptr");
+                            basePtr = loadedPtr;
+                            baseAllocatedTy = structTI->toLLVMType(*context_, module_->getDataLayout());
+                        }
+
+                        auto* fieldGep = builder_->CreateStructGEP(
+                            baseAllocatedTy, basePtr, fieldIdx,
+                            structVar + "_" + fieldName + "_ptr");
                         const auto& fi = structTI->fields[fieldIdx];
+
                         // Build the LLVM array type from FieldInfo (handles [N]T fields)
                         llvm::Type* arrTy = nullptr;
                         if (fi.arrayDims > 0 && !fi.arraySizes.empty()) {
@@ -6129,14 +6190,9 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
                             for (auto it = fi.arraySizes.rbegin(); it != fi.arraySizes.rend(); ++it)
                                 arrTy = llvm::ArrayType::get(arrTy, *it);
                         } else if (fieldTI->arraySize > 0 && fieldTI->elementType) {
-                            // TypeInfo itself represents a [N]T alias
                             arrTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
                         }
                         if (arrTy && llvm::isa<llvm::ArrayType>(arrTy)) {
-                            auto* structTy = lit->second.alloca->getAllocatedType();
-                            auto* fieldGep = builder_->CreateStructGEP(
-                                structTy, lit->second.alloca, fieldIdx,
-                                structVar + "_" + fieldName + "_ptr");
                             auto* i64Ty = llvm::Type::getInt64Ty(*context_);
                             auto* idx = castValue(visit(indexExprs[0]));
                             if (idx->getType() != i64Ty)
@@ -6148,6 +6204,37 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
                             auto* elemTy = llvm::cast<llvm::ArrayType>(arrTy)->getElementType();
                             return static_cast<llvm::Value*>(
                                 builder_->CreateLoad(elemTy, elemGep, fieldName + "_val"));
+                        }
+
+                        // Vec<T>/Set<T>/Map<K,V> field: buf.data[i]
+                        if (fieldTI && fieldTI->kind == TypeKind::Extended) {
+                            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                            auto* idx = castValue(visit(indexExprs[0]));
+                            if (idx->getType() != usizeTy)
+                                idx = builder_->CreateIntCast(idx, usizeTy, false);
+
+                            if (fieldTI->extendedKind == "Map") {
+                                auto* keyLLTy = fieldTI->keyType->toLLVMType(*context_, module_->getDataLayout());
+                                auto* valLLTy = fieldTI->valueType->toLLVMType(*context_, module_->getDataLayout());
+                                auto suffix = fieldTI->builtinSuffix;
+                                auto callee = declareBuiltin("lux_map_get_" + suffix, valLLTy, {ptrTy, keyLLTy});
+                                auto* result = builder_->CreateCall(callee, {fieldGep, idx}, "map_get");
+                                return static_cast<llvm::Value*>(result);
+                            }
+
+                            auto* elemLLTy = fieldTI->elementType->toLLVMType(*context_, module_->getDataLayout());
+                            auto suffix = getVecSuffix(fieldTI->elementType);
+                            if (suffix == "raw") {
+                                auto& dl = module_->getDataLayout();
+                                auto elemSz = dl.getTypeAllocSize(elemLLTy);
+                                auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+                                auto ptrFn = declareBuiltin("lux_vec_ptr_raw", ptrTy, {ptrTy, usizeTy, usizeTy});
+                                auto* elemPtr = builder_->CreateCall(ptrFn, {fieldGep, idx, elemSzVal}, "vec_elem_ptr");
+                                return static_cast<llvm::Value*>(builder_->CreateLoad(elemLLTy, elemPtr, "vec_at"));
+                            }
+                            auto callee = declareBuiltin("lux_vec_at_" + suffix, elemLLTy, {ptrTy, usizeTy});
+                            auto* result = builder_->CreateCall(callee, {fieldGep, idx}, "vec_at");
+                            return static_cast<llvm::Value*>(result);
                         }
                     }
                 }
@@ -6204,6 +6291,43 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
                             auto* elemTy = llvm::cast<llvm::ArrayType>(arrTy)->getElementType();
                             return static_cast<llvm::Value*>(
                                 builder_->CreateLoad(elemTy, elemGep, fieldName + "_val"));
+                        }
+
+                        // Vec<T>/Set<T>/Map<K,V> field: ts->buf[i]
+                        if (fieldTI && fieldTI->kind == TypeKind::Extended) {
+                            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                            auto* structTy = structTI->toLLVMType(*context_, module_->getDataLayout());
+                            auto* ptrVal = builder_->CreateLoad(ptrTy, pit->second.alloca, ptrVar + "_ptr");
+                            auto* fieldGep = builder_->CreateStructGEP(
+                                structTy, ptrVal, fieldIdx,
+                                ptrVar + "_" + fieldName + "_ptr");
+                            auto* idx = castValue(visit(indexExprs[0]));
+                            if (idx->getType() != usizeTy)
+                                idx = builder_->CreateIntCast(idx, usizeTy, false);
+
+                            if (fieldTI->extendedKind == "Map") {
+                                auto* keyLLTy = fieldTI->keyType->toLLVMType(*context_, module_->getDataLayout());
+                                auto* valLLTy = fieldTI->valueType->toLLVMType(*context_, module_->getDataLayout());
+                                auto suffix = fieldTI->builtinSuffix;
+                                auto callee = declareBuiltin("lux_map_get_" + suffix, valLLTy, {ptrTy, keyLLTy});
+                                auto* result = builder_->CreateCall(callee, {fieldGep, idx}, "map_get");
+                                return static_cast<llvm::Value*>(result);
+                            }
+
+                            auto* elemLLTy = fieldTI->elementType->toLLVMType(*context_, module_->getDataLayout());
+                            auto suffix = getVecSuffix(fieldTI->elementType);
+                            if (suffix == "raw") {
+                                auto& dl = module_->getDataLayout();
+                                auto elemSz = dl.getTypeAllocSize(elemLLTy);
+                                auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+                                auto ptrFn = declareBuiltin("lux_vec_ptr_raw", ptrTy, {ptrTy, usizeTy, usizeTy});
+                                auto* elemPtr = builder_->CreateCall(ptrFn, {fieldGep, idx, elemSzVal}, "vec_elem_ptr");
+                                return static_cast<llvm::Value*>(builder_->CreateLoad(elemLLTy, elemPtr, "vec_at"));
+                            }
+                            auto callee = declareBuiltin("lux_vec_at_" + suffix, elemLLTy, {ptrTy, usizeTy});
+                            auto* result = builder_->CreateCall(callee, {fieldGep, idx}, "vec_at");
+                            return static_cast<llvm::Value*>(result);
                         }
                     }
                 }
@@ -6936,10 +7060,44 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
         }
     }
 
-    // ── General fallback: any expression returning a struct (e.g. method call) ──
+    // ── General fallback: any expression returning a struct or pointer (e.g. method call, chained field) ──
     {
         auto* baseVal = castValue(visit(baseExpr));
-        if (baseVal && baseVal->getType()->isStructTy()) {
+        if (!baseVal) {
+            std::cerr << "lux: null base value for field access\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        // Pointer to struct: e.g. a.field which is *Struct → access field through pointer
+        if (baseVal->getType()->isPointerTy()) {
+            auto* baseTI = resolveExprTypeInfo(baseExpr);
+            if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType &&
+                (baseTI->pointeeType->kind == TypeKind::Struct ||
+                 baseTI->pointeeType->kind == TypeKind::Union)) {
+                auto* structTI = baseTI->pointeeType;
+                int fieldIdx = -1;
+                const TypeInfo* fieldTI = nullptr;
+                for (size_t f = 0; f < structTI->fields.size(); f++) {
+                    if (structTI->fields[f].name == fieldName) {
+                        fieldIdx = static_cast<int>(f);
+                        fieldTI = structTI->fields[f].typeInfo;
+                        break;
+                    }
+                }
+                if (fieldIdx >= 0) {
+                    auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                    auto* structLLTy = llvm::StructType::getTypeByName(*context_, structTI->name);
+                    if (!structLLTy)
+                        structLLTy = static_cast<llvm::StructType*>(
+                            structTI->toLLVMType(*context_, module_->getDataLayout()));
+                    auto* gep = builder_->CreateStructGEP(structLLTy, baseVal, fieldIdx, fieldName + "_ptr");
+                    return static_cast<llvm::Value*>(builder_->CreateLoad(fieldLLTy, gep, fieldName));
+                }
+            }
+        }
+
+        if (baseVal->getType()->isStructTy()) {
             auto* baseTI = resolveExprTypeInfo(baseExpr);
 
             // .len / .length on string expression
@@ -18207,6 +18365,45 @@ const TypeInfo* IRGen::resolveTypeInfoWithSubst(
         auto enumIt = genericEnumTemplates_.find(innerBaseName);
         if (enumIt != genericEnumTemplates_.end()) {
             return instantiateGenericEnum(innerBaseName, enumIt->second, resolvedArgs);
+        }
+
+        // Built-in collection types: Vec<T>, Map<K,V>, Set<T>
+        if (resolvedArgs.size() == 1) {
+            auto* elemTI = resolvedArgs[0];
+            if (!elemTI) elemTI = typeRegistry_.lookup("int32");
+            auto fullName = innerBaseName + "<" + elemTI->name + ">";
+            if (auto* existing = typeRegistry_.lookup(fullName))
+                return existing;
+            TypeInfo ti;
+            ti.name = fullName;
+            ti.kind = TypeKind::Extended;
+            ti.bitWidth = 0;
+            ti.isSigned = false;
+            ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
+            ti.elementType = elemTI;
+            ti.extendedKind = innerBaseName;
+            typeRegistry_.registerType(std::move(ti));
+            return typeRegistry_.lookup(fullName);
+        } else if (resolvedArgs.size() == 2) {
+            auto* keyTI = resolvedArgs[0];
+            auto* valTI = resolvedArgs[1];
+            if (!keyTI) keyTI = typeRegistry_.lookup("int32");
+            if (!valTI) valTI = typeRegistry_.lookup("int32");
+            auto fullName = innerBaseName + "<" + keyTI->name + ", " + valTI->name + ">";
+            if (auto* existing = typeRegistry_.lookup(fullName))
+                return existing;
+            TypeInfo ti;
+            ti.name = fullName;
+            ti.kind = TypeKind::Extended;
+            ti.bitWidth = 0;
+            ti.isSigned = false;
+            auto valSuffix = valTI->builtinSuffix.empty() ? "raw" : valTI->builtinSuffix;
+            ti.builtinSuffix = keyTI->builtinSuffix + "_" + valSuffix;
+            ti.keyType = keyTI;
+            ti.valueType = valTI;
+            ti.extendedKind = innerBaseName;
+            typeRegistry_.registerType(std::move(ti));
+            return typeRegistry_.lookup(fullName);
         }
     }
 

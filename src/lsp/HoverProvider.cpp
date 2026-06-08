@@ -560,7 +560,8 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             std::string dims;
             for (unsigned i = 0; i < it->second.arrayDims; i++)
                 dims += "[]";
-            std::string md = formatTypedHover("variable",
+            std::string kind = it->second.isParameter ? "parameter" : "variable";
+            std::string md = formatTypedHover(kind,
                                               dims + it->second.typeName,
                                               name,
                                               bindings);
@@ -3026,11 +3027,16 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
 
     // ── Step 2: Determine receiver category ──
     // Check if this is an extended/collection type (vec<T>, map<K,V>, set<T>)
+    // Strip pointer indirection (e.g. *vec<T> → vec<T>)
+    std::string strippedReceiver = receiverTypeName;
+    while (!strippedReceiver.empty() && strippedReceiver[0] == '*')
+        strippedReceiver = strippedReceiver.substr(1);
+
     std::string extBaseName;
-    if (!receiverTypeName.empty()) {
-        auto ltPos = receiverTypeName.find('<');
+    if (!strippedReceiver.empty()) {
+        auto ltPos = strippedReceiver.find('<');
         if (ltPos != std::string::npos) {
-            std::string raw = receiverTypeName.substr(0, ltPos);
+            std::string raw = strippedReceiver.substr(0, ltPos);
             std::string normalized = normalizeExtBaseName(raw);
             if (normalized == "Vec" || normalized == "Map" ||
                 normalized == "Set" || normalized == "Task")
@@ -3060,11 +3066,11 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
     // 3a) Extended/collection type methods (vec.push, map.get, etc.)
     if (!extBaseName.empty()) {
         // Parse generic type args for placeholder substitution
-        auto ltPos = receiverTypeName.find('<');
-        auto gtPos = receiverTypeName.rfind('>');
+        auto ltPos = strippedReceiver.find('<');
+        auto gtPos = strippedReceiver.rfind('>');
         std::vector<std::string> typeArgs;
         if (ltPos != std::string::npos && gtPos != std::string::npos) {
-            std::string inner = receiverTypeName.substr(ltPos + 1, gtPos - ltPos - 1);
+            std::string inner = strippedReceiver.substr(ltPos + 1, gtPos - ltPos - 1);
             int depth = 0;
             size_t start = 0;
             for (size_t i = 0; i < inner.size(); i++) {
@@ -3088,7 +3094,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
 
         auto substituteGeneric = [&](const std::string& placeholder) -> std::string {
             if (placeholder.empty() || placeholder[0] != '_') return placeholder;
-            if (placeholder == "_self")  return receiverTypeName;
+            if (placeholder == "_self")  return strippedReceiver;
             if (placeholder == "_elem" && !typeArgs.empty()) return typeArgs[0];
             if (placeholder == "_key"  && !typeArgs.empty()) return typeArgs[0];
             if (placeholder == "_val"  && typeArgs.size() >= 2) return typeArgs[1];
@@ -3307,11 +3313,16 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         receiverTypeName = inferExprTypeName(receiver, locals, &flc);
     }
 
-    std::string lookupReceiverType = receiverTypeName;
+    // Auto-dereference pointer for field access (e.g. n2.next.value)
+    std::string derefedType = receiverTypeName;
+    while (!derefedType.empty() && derefedType[0] == '*')
+        derefedType = derefedType.substr(1);
+
+    std::string lookupReceiverType = derefedType;
     std::unordered_map<std::string, std::string> subst;
     std::string receiverBase;
     std::vector<std::string> receiverArgs;
-    if (parseGenericInstance(receiverTypeName, receiverBase, receiverArgs)) {
+    if (parseGenericInstance(derefedType, receiverBase, receiverArgs)) {
         lookupReceiverType = receiverBase;
     }
 
@@ -4076,6 +4087,9 @@ static std::string inferExprTypeName(
     if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
         auto baseType = inferExprTypeName(fa->expression(), locals, flc);
         if (baseType.empty()) return "";
+        // Auto-dereference pointer for field access (e.g. n2.next.value)
+        while (!baseType.empty() && baseType[0] == '*')
+            baseType = baseType.substr(1);
         return resolveFieldType(baseType, safeText(fa->IDENTIFIER()));
     }
 
@@ -4920,7 +4934,7 @@ HoverProvider::collectLocals(LuxParser::FunctionDeclContext* func,
             if (!p->typeSpec() || !p->IDENTIFIER()) continue;
             std::string typeName = safeText(p->typeSpec());
             std::string paramName = safeText(p->IDENTIFIER());
-            result[paramName] = {typeName, 0};
+            result[paramName] = {typeName, 0, true};
         }
     }
 

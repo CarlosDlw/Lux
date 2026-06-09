@@ -4077,6 +4077,82 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return nullptr;
     }
 
+    // ── Qualified generic call: lux::unsafe::va_arg<int32>(ptr) ──────
+    if (auto* gqfc = dynamic_cast<LuxParser::GenericQualifiedFnCallExprContext*>(expr)) {
+        auto ids = gqfc->IDENTIFIER();
+        if (ids.size() < 2) {
+            error(expr, "invalid qualified generic call");
+            return nullptr;
+        }
+
+        // Resolve type arguments
+        auto typeParamSpecs = gqfc->typeSpec();
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : typeParamSpecs) {
+            unsigned dims = 0;
+            auto* argTI = resolveTypeSpecInContext(ts, dims);
+            if (!argTI) return nullptr;
+            typeArgs.push_back(argTI);
+        }
+
+        // ── Intrinsic check: lux::unsafe::va_arg<T>(ptr) ─────────
+        if (IntrinsicRegistry::isIntrinsicPrefix(ids[0]->getText())) {
+            // Build path: all identifiers except the last = namespace path
+            std::vector<std::string> idTexts;
+            for (auto* id : ids) idTexts.push_back(id->getText());
+
+            std::string ns, funcName;
+            if (!IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+                error(expr, "invalid intrinsic qualified call");
+                if (auto* argList = gqfc->argList())
+                    for (auto* a : argList->expression()) resolveExprType(a);
+                return nullptr;
+            }
+
+            // Only va_arg is supported as a generic intrinsic
+            if (ns != "unsafe" || funcName != "va_arg") {
+                error(expr, "unknown generic intrinsic '" + ns + "::" + funcName + "'");
+                if (auto* argList = gqfc->argList())
+                    for (auto* a : argList->expression()) resolveExprType(a);
+                return nullptr;
+            }
+
+            if (typeArgs.size() != 1) {
+                error(expr, "lux::unsafe::va_arg<T> expects exactly 1 type argument, got " +
+                      std::to_string(typeArgs.size()));
+                if (auto* argList = gqfc->argList())
+                    for (auto* a : argList->expression()) resolveExprType(a);
+                return nullptr;
+            }
+
+            // Validate arguments: must have exactly 1 argument of type *void
+            auto argExprs = gqfc->argList()
+                ? gqfc->argList()->expression()
+                : std::vector<LuxParser::ExpressionContext*>{};
+
+            if (argExprs.size() != 1) {
+                error(expr, "lux::unsafe::va_arg<T> expects exactly 1 argument (va: *void), got " +
+                      std::to_string(argExprs.size()));
+                return nullptr;
+            }
+
+            auto* argType = resolveExprType(argExprs[0]);
+            if (argType && argType->name != "*void" && argType->kind != TypeKind::Pointer) {
+                error(argExprs[0], "lux::unsafe::va_arg<T> argument must be *void, got '" +
+                      argType->name + "'");
+            }
+
+            // Return the type argument as the result type
+            return typeArgs[0];
+        }
+
+        // Not an intrinsic — fall through to generic struct lookup
+        error(expr, "qualified generic call is only supported for intrinsics");
+        if (auto* argList = gqfc->argList())
+            for (auto* a : argList->expression()) resolveExprType(a);
+        return nullptr;
+    }
+
     // ── Generic struct literal: Node<int32> { value: 42, next: null } ─
     if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
         auto baseName = gsl->IDENTIFIER(0)->getText();
@@ -5253,7 +5329,7 @@ bool Checker::blockAlwaysReturns(LuxParser::BlockContext* block) {
                 for (auto* id : ids) idTexts.push_back(id->getText());
                 std::string ns, funcName;
                 if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
-                    if (intrinsicRegistry_.lookup(ns, funcName))
+                    if (ns == "core" && funcName == "trap")
                         return true;
                 }
             }
@@ -5348,7 +5424,7 @@ bool Checker::isTerminatorStmt(LuxParser::StatementContext* stmt) {
             for (auto* id : ids) idTexts.push_back(id->getText());
             std::string ns, funcName;
             if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
-                if (intrinsicRegistry_.lookup(ns, funcName))
+                if (ns == "core" && funcName == "trap")
                     return true;
             }
         }

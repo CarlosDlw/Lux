@@ -266,6 +266,8 @@ std::unique_ptr<IRModule> IRGen::generate(LuxParser::ProgramContext* tree,
     llvm::raw_string_ostream errStream(verifyErr);
     if (llvm::verifyModule(*module_, &errStream)) {
         std::cerr << "lux: IR verification failed:\n" << errStream.str() << "\n";
+        // Dump IR for debugging
+        llvm::errs() << *module_;
         context_ = nullptr;
         module_  = nullptr;
         builder_ = nullptr;
@@ -7908,6 +7910,7 @@ std::any IRGen::visitStaticMethodCallExpr(
                 else if (argType->isIntegerTy(128))    suffix = "i128";
                 else if (argType->isFloatTy())         suffix = "f32";
                 else if (argType->isDoubleTy())        suffix = "f64";
+                else if (argType->isPointerTy())       suffix = "ptr";
                 else                                   suffix = "i32";
 
                 auto cFuncName = moduleResolver.resolve(methodName, suffix);
@@ -19225,6 +19228,96 @@ std::any IRGen::visitGenericStaticMethodCallExpr(
     }
     return static_cast<llvm::Value*>(
         builder_->CreateCall(fn, callArgs, "generic_static_call"));
+}
+
+std::any IRGen::visitGenericQualifiedFnCallExpr(
+    LuxParser::GenericQualifiedFnCallExprContext* ctx) {
+    auto ids = ctx->IDENTIFIER();
+    if (ids.size() < 2) {
+        std::cerr << "lux: invalid qualified generic call\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    // Resolve type arguments
+    std::vector<const TypeInfo*> typeArgs;
+    for (auto* ts : ctx->typeSpec()) {
+        auto* argTI = resolveTypeInfo(ts);
+        if (!argTI) argTI = typeRegistry_.lookup("int32");
+        typeArgs.push_back(argTI);
+    }
+
+    // Check for intrinsic: lux::unsafe::va_arg<T>(ptr)
+    std::vector<std::string> idTexts;
+    for (auto* id : ids)
+        idTexts.push_back(id->getText());
+
+    if (IntrinsicRegistry::isIntrinsicPrefix(idTexts[0])) {
+        std::string ns, funcName;
+        if (!IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+            std::cerr << "lux: invalid intrinsic qualified generic call\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        if (ns == "unsafe" && funcName == "va_arg") {
+            if (typeArgs.size() != 1) {
+                std::cerr << "lux: va_arg<T> expects 1 type argument\n";
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+
+            // Collect arguments
+            std::vector<llvm::Value*> args;
+            if (auto* argList = ctx->argList()) {
+                for (auto* argExpr : argList->expression())
+                    args.push_back(castValue(visit(argExpr)));
+            }
+            if (args.size() != 1) {
+                std::cerr << "lux: va_arg<T> expects 1 argument\n";
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+
+            auto* vaArg = args[0];
+            auto* ptrTy = llvm::PointerType::get(*context_, 0);
+
+            // Get the LLVM type for T
+            auto* valueTI = typeArgs[0];
+            auto& dl = module_->getDataLayout();
+            auto* valueTy = valueTI->toLLVMType(*context_, dl);
+            auto valueSize = dl.getTypeAllocSize(valueTy);
+
+            // Load cursor from va buffer
+            auto* cursor = builder_->CreateLoad(ptrTy, vaArg, "va_cursor");
+            // Load value of type T from cursor
+            auto* val = builder_->CreateLoad(valueTy, cursor, "va_arg");
+            // Advance cursor by the size of T
+            auto* next = builder_->CreateGEP(
+                llvm::Type::getInt8Ty(*context_), cursor,
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_),
+                                       valueSize), "va_next");
+            // Store advanced cursor back
+            builder_->CreateStore(next, vaArg);
+
+            // Consume owned arguments
+            if (auto* argList = ctx->argList()) {
+                for (auto* argExpr : argList->expression())
+                    consumeExprIfOwnedLocal(argExpr);
+            }
+
+            return static_cast<llvm::Value*>(val);
+        }
+
+        std::cerr << "lux: unknown generic intrinsic '" << ns << "::"
+                  << funcName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    std::cerr << "lux: qualified generic call is not supported for non-intrinsics\n";
+    return static_cast<llvm::Value*>(
+        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
 }
 
 std::any IRGen::visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext* ctx) {

@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -266,6 +266,8 @@ public:
     virtual std::any visitRangeInclExpr(LuxParser::RangeInclExprContext *context) = 0;
 
     virtual std::any visitTupleArrowIndexExpr(LuxParser::TupleArrowIndexExprContext *context) = 0;
+
+    virtual std::any visitGenericQualifiedFnCallExpr(LuxParser::GenericQualifiedFnCallExprContext *context) = 0;
 
     virtual std::any visitLogicalAndExpr(LuxParser::LogicalAndExprContext *context) = 0;
 

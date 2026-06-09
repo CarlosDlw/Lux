@@ -87,7 +87,7 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
             "Reads the next `int32` value from the variadic argument cursor "
             "and advances the cursor past it.\n\n"
             "```lux\n"
-            "let val: int32 = lux::unsafe::va_arg_int32(args);\n"
+            "int32 val = lux::unsafe::va_arg_int32(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -125,7 +125,7 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
             "Reads the next `int64` value from the variadic argument cursor "
             "and advances the cursor past it.\n\n"
             "```lux\n"
-            "let val: int64 = lux::unsafe::va_arg_int64(args);\n"
+            "int64 val = lux::unsafe::va_arg_int64(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -159,7 +159,7 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
             "Reads the next `float32` value from the variadic argument cursor "
             "and advances the cursor past it.\n\n"
             "```lux\n"
-            "let val: float32 = lux::unsafe::va_arg_float32(args);\n"
+            "float32 val = lux::unsafe::va_arg_float32(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -193,7 +193,7 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
             "Reads the next `float64` value from the variadic argument cursor "
             "and advances the cursor past it.\n\n"
             "```lux\n"
-            "let val: float64 = lux::unsafe::va_arg_float64(args);\n"
+            "float64 val = lux::unsafe::va_arg_float64(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;

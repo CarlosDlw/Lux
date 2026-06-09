@@ -164,6 +164,7 @@ public:
     // Generic expression visitors
     std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext* ctx) override;
     std::any visitGenericStaticMethodCallExpr(LuxParser::GenericStaticMethodCallExprContext* ctx) override;
+    std::any visitGenericQualifiedFnCallExpr(LuxParser::GenericQualifiedFnCallExprContext* ctx) override;
     std::any visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext* ctx) override;
     std::any visitGenericStructPosInitExpr(LuxParser::GenericStructPosInitExprContext* ctx) override;
 

@@ -17,6 +17,7 @@ void lux_println_bool(int val);
 void lux_println_char(char val);
 void lux_println_str(const char* data, unsigned long len);
 void lux_println_cstr(const char* str);  // C string (null-terminated)
+void lux_println_ptr(const void* val);   // pointer
 
 void lux_print_i1(int val);
 void lux_print_i8(signed char val);
@@ -30,6 +31,7 @@ void lux_print_bool(int val);
 void lux_print_char(char val);
 void lux_print_str(const char* data, unsigned long len);
 void lux_print_cstr(const char* str);  // C string (null-terminated)
+void lux_print_ptr(const void* val);   // pointer
 
 // std::log builtins — unsigned
 void lux_println_u1(int val);

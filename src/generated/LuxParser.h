@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -2135,6 +2135,27 @@ public:
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *ARROW();
     antlr4::tree::TerminalNode *INT_LIT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  GenericQualifiedFnCallExprContext : public ExpressionContext {
+  public:
+    GenericQualifiedFnCallExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    std::vector<antlr4::tree::TerminalNode *> SCOPE();
+    antlr4::tree::TerminalNode* SCOPE(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+    ArgListContext *argList();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

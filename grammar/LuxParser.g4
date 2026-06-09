@@ -402,7 +402,9 @@ expression
     // Postfix (highest precedence)
     : expression DOT IDENTIFIER LPAREN argList? RPAREN         # methodCallExpr
     | expression LPAREN argList? RPAREN                        # fnCallExpr    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LPAREN argList? RPAREN  # genericFnCallExpr
-    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER LPAREN argList? RPAREN  # genericStaticMethodCallExpr    | expression DOT IDENTIFIER                               # fieldAccessExpr
+    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER LPAREN argList? RPAREN  # genericStaticMethodCallExpr
+    | IDENTIFIER (SCOPE IDENTIFIER)+ LT typeSpec (COMMA typeSpec)* GT LPAREN argList? RPAREN  # genericQualifiedFnCallExpr
+    | expression DOT IDENTIFIER                               # fieldAccessExpr
     | expression DOT INT_LIT                                   # tupleIndexExpr
     | expression DOT FLOAT_LIT                                 # chainedTupleIndexExpr
     | expression ARROW IDENTIFIER LPAREN argList? RPAREN       # arrowMethodCallExpr

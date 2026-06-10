@@ -2,6 +2,7 @@
 #include "types/TypeInfo.h"
 #include "types/TypeRegistry.h"
 
+#include <functional>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
@@ -10,6 +11,42 @@
 #include <llvm/IR/Intrinsics.h>
 
 void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
+
+    // Helper to build a typed va_arg intrinsic.
+    // Types are created inside the lambda when the LLVMContext is available.
+    auto makeTypedVaArg = [](const std::string& name,
+                              const std::string& returnType,
+                              std::function<llvm::Type*(llvm::LLVMContext&)> typeFn,
+                              bool truncToBool = false) {
+        IntrinsicFunction f;
+        f.name = name;
+        f.returnType = returnType;
+        f.params.push_back({"va_list", false});
+        f.description =
+            "Reads the next " + returnType +
+            " value from the variadic argument list and advances the handle.\n\n"
+            "```lux\n" + returnType +
+            " val = lux::unsafe::" + name + "(args);\n"
+            "```";
+
+        f.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        f.lowering.emitIR = [typeFn, truncToBool, name](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* llvmTy = typeFn(context);
+            llvm::Value* val = builder.CreateVAArg(args[0], llvmTy, name.c_str());
+            if (truncToBool)
+                val = builder.CreateTrunc(val, llvm::Type::getInt1Ty(context), "tobool");
+            return val;
+        };
+        return f;
+    };
+
     // Register the underlying VAList structure type
     {
         TypeInfo tag;
@@ -137,6 +174,24 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
 
         unsafe.functions.push_back(std::move(fn));
     }
+
+    // ── Typed va_arg helpers ───────────────────────────────────────
+    // These use only types that LLVM 22's X86 backend can lower for
+    // va_arg (i32, i64, float, double, ptr).  va_arg_bool reads i32
+    // (C default promotion) then truncates to i1.
+
+    unsafe.functions.push_back(
+        makeTypedVaArg("va_arg_int32",  "int32",   [](auto& ctx){ return llvm::Type::getInt32Ty(ctx); }));
+    unsafe.functions.push_back(
+        makeTypedVaArg("va_arg_int64",  "int64",   [](auto& ctx){ return llvm::Type::getInt64Ty(ctx); }));
+    unsafe.functions.push_back(
+        makeTypedVaArg("va_arg_float32","float32", [](auto& ctx){ return llvm::Type::getFloatTy(ctx); }));
+    unsafe.functions.push_back(
+        makeTypedVaArg("va_arg_float64","float64", [](auto& ctx){ return llvm::Type::getDoubleTy(ctx); }));
+    unsafe.functions.push_back(
+        makeTypedVaArg("va_arg_ptr",    "*void",   [](auto& ctx){ return llvm::PointerType::getUnqual(ctx); }));
+    unsafe.functions.push_back(
+        makeTypedVaArg("va_arg_bool",   "bool",    [](auto& ctx){ return llvm::Type::getInt32Ty(ctx); }, true));
 
     // ── va_end(va) ─────────────────────────────────────────────────
     {

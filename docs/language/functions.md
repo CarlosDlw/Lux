@@ -195,7 +195,7 @@ void sum(int32 count, ...) {
     lux::unsafe::va_start(va);
 
     for int32 _ in 0..count {
-        total += lux::unsafe::va_arg<int32>(va);
+        total += lux::unsafe::va_arg_int32(va);
     }
 
     lux::unsafe::va_end(va);
@@ -206,6 +206,30 @@ void sum(int32 count, ...) {
 int32 main() {
     sum(3, 10, 20, 30);   // 60
     sum(2, 42, 100);       // 142
+    ret 0;
+}
+```
+
+When arguments of different types are needed, use the corresponding typed helper for each:
+
+```t
+void print_mixed(int32 count, ...) {
+    va_list va = lux::unsafe::va_list();
+    lux::unsafe::va_start(va);
+
+    int32   i = lux::unsafe::va_arg_int32(va);
+    float64 f = lux::unsafe::va_arg_float64(va);
+    bool    b = lux::unsafe::va_arg_bool(va);
+
+    println(i);
+    println(f);
+    println(b);
+
+    lux::unsafe::va_end(va);
+}
+
+int32 main() {
+    print_mixed(3, 42, 3.14, true);
     ret 0;
 }
 ```

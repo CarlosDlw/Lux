@@ -20,7 +20,7 @@ void log_values(int32 count, ...) {
     lux::unsafe::va_start(va);
 
     for int32 i in 0..count {
-        int32 val = lux::unsafe::va_arg<int32>(va);
+        int32 val = lux::unsafe::va_arg_int32(va);
         print(val);
         if i < count - 1 { print(", "); }
     }
@@ -33,7 +33,7 @@ The typical lifecycle is:
 
 1. **Allocate** a `va_list` with `va_list()`.
 2. **Initialize** it with `va_start(va)` to point at the first variadic argument.
-3. **Read** each argument in order with `va_arg<T>(va)`, specifying the expected type.
+3. **Read** each argument in order with a `va_arg_*` helper, selecting the one that matches the expected type.
 4. **Clean up** with `va_end(va)`.
 
 ---
@@ -68,7 +68,33 @@ let value = lux::unsafe::va_arg<int32>(args);
 
 Reads the next argument of type `T` from the variadic list and advances the cursor. This intrinsic uses the native LLVM `va_arg` instruction, ensuring correct handling of the platform's ABI (including promotion and register-to-stack transitions).
 
-> **Warning**: The type `T` passed to `va_arg<T>` must match the actual type of the argument at the call site. Passing the wrong type results in undefined behaviour (misaligned reads, wrong register selection, or data corruption).
+> **Warning**: The generic `va_arg<T>` may crash the compiler backend (LLVM X86) for types like `bool`, `string`, or user-defined structs. Prefer the typed helpers below for those cases.
+
+#### Typed `va_arg` Helpers
+
+For common types, Lux provides dedicated helpers that avoid LLVM backend limitations. These use only types that the X86 backend can safely lower for `va_arg`:
+
+| Helper | Reads as | Returns |
+|--------|----------|---------|
+| `va_arg_int32(va)` | `int32` | `int32` |
+| `va_arg_int64(va)` | `int64` | `int64` |
+| `va_arg_float32(va)` | `float32` | `float32` |
+| `va_arg_float64(va)` | `float64` | `float64` |
+| `va_arg_ptr(va)` | pointer | `*void` |
+| `va_arg_bool(va)` | `int32` (promoted) | `bool` |
+
+```lux
+int32   i = lux::unsafe::va_arg_int32(va);
+int64   l = lux::unsafe::va_arg_int64(va);
+float32 f = lux::unsafe::va_arg_float32(va);
+float64 d = lux::unsafe::va_arg_float64(va);
+void*   p = lux::unsafe::va_arg_ptr(va);
+bool    b = lux::unsafe::va_arg_bool(va);
+```
+
+`va_arg_bool` reads a promoted `int32` from the argument list (C variadic promotes `bool` to `int`), then truncates the result to a 1-bit `bool`. This avoids LLVM crashing on a raw `va_arg` with `i1` type.
+
+> **Tip**: When writing variadic helpers that handle multiple types (like a custom `printf`), always use the typed helpers. They are guaranteed to work across all supported targets.
 
 #### `va_end(va: va_list)`
 
@@ -80,28 +106,26 @@ Cleans up the variadic argument list state. Every `va_start` should have a corre
 
 ### Mixed-Type Example
 
-Because untyped variadics accept any argument, you can pass values of different types by reading them with the correct `va_arg<T>` instantiation:
+Because untyped variadics accept any argument, you can pass values of different types by reading them with the appropriate typed helper:
 
 ```t
 void print_mixed(int32 count, ...) {
     va_list va = lux::unsafe::va_list();
     lux::unsafe::va_start(va);
 
-    // Read a string, an integer, and a float
-    string s = lux::unsafe::va_arg<string>(va);
-    int32  i = lux::unsafe::va_arg<int32>(va);
-    float64 f = lux::unsafe::va_arg<float64>(va);
+    int32   i = lux::unsafe::va_arg_int32(va);
+    float64 f = lux::unsafe::va_arg_float64(va);
+    bool    b = lux::unsafe::va_arg_bool(va);
 
-    println(s);
     println(i);
     println(f);
+    println(b);
 
     lux::unsafe::va_end(va);
 }
 
 int32 main() {
-    // All three arguments have different types
-    print_mixed(3, c"hello", 42, 3.14);
+    print_mixed(3, 42, 3.14, true);
     ret 0;
 }
 ```

@@ -369,6 +369,11 @@ SignatureInfo SignatureHelpProvider::buildFromIntrinsic(const IntrinsicFunction&
         sig.parameters.push_back({paramLabel});
     }
 
+    if (intrinsic.isVariadic) {
+        if (!intrinsic.params.empty()) label << ", ";
+        label << "...";
+    }
+
     label << ")";
     sig.label = label.str();
 

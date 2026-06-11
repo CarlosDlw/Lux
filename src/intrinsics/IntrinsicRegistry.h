@@ -18,6 +18,7 @@ struct IntrinsicFunction {
     std::string name;
     std::string returnType;
     std::vector<IntrinsicParam> params;
+    bool isVariadic = false;  // accepts extra untyped args beyond params
     bool returnsOwned = false;
     std::vector<size_t> consumingArgs;
     std::vector<size_t> borrowedArgs;

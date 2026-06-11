@@ -3483,15 +3483,23 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                     ? smc->argList()->expression()
                     : std::vector<LuxParser::ExpressionContext*>{};
 
-                if (argExprs.size() != intrinsic->params.size()) {
+                size_t fixedCount = intrinsic->params.size();
+                if (intrinsic->isVariadic) {
+                    if (argExprs.size() < fixedCount) {
+                        error(expr, "intrinsic '" + ns + "::" + funcName +
+                              "' expects at least " + std::to_string(fixedCount) +
+                              " argument(s), got " + std::to_string(argExprs.size()));
+                        return nullptr;
+                    }
+                } else if (argExprs.size() != fixedCount) {
                     error(expr, "intrinsic '" + ns + "::" + funcName + "' expects " +
-                          std::to_string(intrinsic->params.size()) + " argument(s), got " +
+                          std::to_string(fixedCount) + " argument(s), got " +
                           std::to_string(argExprs.size()));
                     return nullptr;
                 }
 
-                // Validate argument types
-                for (size_t i = 0; i < argExprs.size(); i++) {
+                // Validate argument types (fixed params only for variadic)
+                for (size_t i = 0; i < std::min(argExprs.size(), fixedCount); i++) {
                     auto* argType = resolveExprType(argExprs[i]);
                     auto& expected = intrinsic->params[i].type;
                     if (expected != "_any" && argType && argType->name != expected) {

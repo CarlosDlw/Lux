@@ -24,5 +24,36 @@ void registerCoreNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         core.functions.push_back(std::move(trap));
     }
 
+    // ── sum(...) ───────────────────────────────────────────────────
+    {
+        IntrinsicFunction sum;
+        sum.name = "sum";
+        sum.returnType = "int32";
+        sum.isVariadic = true;
+        sum.description =
+            "Sums all variadic arguments and returns the total.\n\n"
+            "```lux\n"
+            "int32 total = lux::core::sum(1, 2, 3);  // 6\n"
+            "```";
+
+        sum.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        sum.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+            llvm::Value* sum = llvm::ConstantInt::get(i32Ty, 0);
+            for (auto* arg : args)
+                sum = builder.CreateAdd(sum, arg, "sum");
+            return sum;
+        };
+
+        core.functions.push_back(std::move(sum));
+    }
+
     reg.registerNamespace(std::move(core));
 }

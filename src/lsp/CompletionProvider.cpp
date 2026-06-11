@@ -4227,12 +4227,25 @@ void CompletionProvider::addIntrinsics(std::vector<CompletionItem> &items,
         if (i > 0) params += ", ";
         params += func->params[i].type;
       }
+      if (func->isVariadic) {
+        if (!params.empty()) params += ", ";
+        params += "...";
+      }
 
       CompletionItem ci;
       ci.label = func->name;
       ci.kind = CompletionKind::Function;
       ci.detail = "(" + params + ") -> " + func->returnType;
-      ci.documentation = "```lux\nfn " + func->name + "(" + params + ") -> " +
+      std::string sigParams;
+      for (size_t i = 0; i < func->params.size(); i++) {
+        if (i > 0) sigParams += ", ";
+        sigParams += func->params[i].type;
+      }
+      if (func->isVariadic) {
+        if (!sigParams.empty()) sigParams += ", ";
+        sigParams += "...";
+      }
+      ci.documentation = "```lux\nfn " + func->name + "(" + sigParams + ") -> " +
                          func->returnType + "\n```\n\n" + func->description +
                          "\n\n*Intrinsic*";
       ci.insertText = func->name + "()";

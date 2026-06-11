@@ -3667,6 +3667,10 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
                     if (i > 0) ss << ", ";
                     ss << intrinsic->params[i].type;
                 }
+                if (intrinsic->isVariadic) {
+                    if (!intrinsic->params.empty()) ss << ", ";
+                    ss << "...";
+                }
                 ss << ")\n```\n\n" << intrinsic->description;
                 return makeResult(token, ss.str());
             }

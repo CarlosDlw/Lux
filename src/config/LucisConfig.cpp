@@ -121,6 +121,8 @@ bool LucisConfig::createDefault(const std::string& dir, const std::string& name)
     cfg.binary      = name;
     cfg.outDir      = "build";
     cfg.sourcePaths = {"src/"};
+    cfg.excludePatterns = {};
+    cfg.includes        = {};
 
     cfg.build.optLevel   = "O2";
     cfg.build.lto        = false;
@@ -128,15 +130,23 @@ bool LucisConfig::createDefault(const std::string& dir, const std::string& name)
     cfg.build.shared     = false;
     cfg.build.fpic       = true;
     cfg.build.quiet      = false;
-    // emits default empty (none enabled)
+
+    // All emit types with defaults
+    cfg.build.emits["llvm"] = {false, ""};
+    cfg.build.emits["asm"]  = {false, ""};
+    cfg.build.emits["bc"]   = {false, ""};
+    cfg.build.emits["obj"]  = {false, ""};
 
     cfg.run.optLevel = "O0";
     cfg.run.lto      = false;
     cfg.run.quiet    = false;
     cfg.run.clean    = false;
+    cfg.run.args     = {};
 
-    cfg.linker.rpath = "";
-    cfg.includes     = {};
+    cfg.linker.flags    = {};
+    cfg.linker.rpath    = "";
+    cfg.linker.libs     = {};
+    cfg.linker.libPaths = {};
 
     return cfg.save((fs::path(dir) / "lucis.yaml").string());
 }
@@ -153,8 +163,14 @@ bool LucisConfig::save(const std::string& yamlPath) const {
 
         for (const auto& s : sourcePaths)
             root["source"].push_back(s);
-        for (const auto& e : excludePatterns)
-            root["exclude"].push_back(e);
+
+        // Always write exclude (emit empty array if none)
+        if (excludePatterns.empty()) {
+            root["exclude"] = YAML::Node(YAML::NodeType::Sequence);
+        } else {
+            for (const auto& e : excludePatterns)
+                root["exclude"].push_back(e);
+        }
 
         root["build"]["opt_level"]   = build.optLevel;
         root["build"]["lto"]         = build.lto;
@@ -163,31 +179,48 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         root["build"]["fpic"]        = build.fpic;
         root["build"]["quiet"]       = build.quiet;
 
-        // Save structured emits
-        if (!build.emits.empty()) {
-            for (const auto& [key, ec] : build.emits) {
-                root["build"]["emits"][key]["enabled"] = ec.enabled;
-                root["build"]["emits"][key]["file"]    = ec.file;
-            }
+        // Save structured emits (always write all four types)
+        for (const auto& [key, ec] : build.emits) {
+            root["build"]["emits"][key]["enabled"] = ec.enabled;
+            root["build"]["emits"][key]["file"]    = ec.file;
         }
 
         root["run"]["opt_level"] = run.optLevel;
         root["run"]["lto"]       = run.lto;
         root["run"]["quiet"]     = run.quiet;
         root["run"]["clean"]     = run.clean;
-        for (const auto& a : run.args)
-            root["run"]["args"].push_back(a);
+
+        // Always write run.args
+        if (run.args.empty()) {
+            root["run"]["args"] = YAML::Node(YAML::NodeType::Sequence);
+        } else {
+            for (const auto& a : run.args)
+                root["run"]["args"].push_back(a);
+        }
 
         root["linker"]["rpath"] = linker.rpath;
-        for (const auto& f : linker.flags)
-            root["linker"]["flags"].push_back(f);
-        for (const auto& l : linker.libs)
-            root["linker"]["libs"].push_back(l);
-        for (const auto& p : linker.libPaths)
-            root["linker"]["lib_paths"].push_back(p);
 
-        for (const auto& i : includes)
-            root["includes"].push_back(i);
+        // Always write linker arrays
+        auto writeSeq = [&](YAML::Node parent, const std::string& key,
+                             const std::vector<std::string>& vals) {
+            if (vals.empty()) {
+                parent[key] = YAML::Node(YAML::NodeType::Sequence);
+            } else {
+                for (const auto& v : vals)
+                    parent[key].push_back(v);
+            }
+        };
+        writeSeq(root["linker"], "flags", linker.flags);
+        writeSeq(root["linker"], "libs", linker.libs);
+        writeSeq(root["linker"], "lib_paths", linker.libPaths);
+
+        // Always write includes
+        if (includes.empty()) {
+            root["includes"] = YAML::Node(YAML::NodeType::Sequence);
+        } else {
+            for (const auto& i : includes)
+                root["includes"].push_back(i);
+        }
 
         std::ofstream ofs(yamlPath);
         if (!ofs) return false;

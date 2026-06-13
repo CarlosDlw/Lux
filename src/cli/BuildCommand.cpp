@@ -127,20 +127,65 @@ int BuildCommand::run(const ArgParser& parser) {
     }
 
     std::string outputFile = parser.get("output");
-    bool emitLLVM     = parser.has("emit-llvm") ? true : config.build.emitLlvm;
-    bool emitAsm      = parser.has("emit-asm") ? true : config.build.emitAsm;
-    bool emitBc       = parser.has("emit-bc") ? true : config.build.emitBc;
-    bool emitObj      = parser.has("emit-obj") ? true : config.build.emitObj;
     bool useLTO       = parser.has("lto") ? true : config.build.lto;
     bool useStatic    = parser.has("static") ? true : config.build.staticLink;
     bool useShared    = parser.has("shared") ? true : config.build.shared;
-    bool isEmitMode   = emitLLVM || emitAsm || emitBc || emitObj;
-    
-    // Intelligent PIC inference:
-    // 1. Explicit --fPIC flag always wins.
-    // 2. --shared libraries MUST be PIC.
-    // 3. --static binaries SHOULD NOT be PIC.
-    // 4. Default for executables on modern Linux is PIE, so objects must be PIC.
+
+    // ── Resolve emit tasks from config + CLI overrides ──────────────────────
+    struct EmitTask {
+        enum Type { LLVM, ASM, BC, OBJ };
+        Type type;
+        std::string outPath; // resolved full path, empty = stdout for text emits
+    };
+    std::vector<EmitTask> tasks;
+    bool emitObjEnabled = false;
+    bool hasTextEmits = false;
+
+    auto addEmitTask = [&](const std::string& key, EmitTask::Type etype) {
+        bool fromConfig = false;
+        std::string cfgFile;
+        auto it = config.build.emits.find(key);
+        if (it != config.build.emits.end()) {
+            fromConfig = it->second.enabled;
+            cfgFile    = it->second.file;
+        }
+        bool enabled = parser.has("emit-" + key) || fromConfig;
+        if (!enabled) return;
+
+        EmitTask t;
+        t.type = etype;
+        if (etype == EmitTask::OBJ) emitObjEnabled = true;
+        else hasTextEmits = true;
+
+        // Resolve output path
+        if (!cfgFile.empty()) {
+            t.outPath = cfgFile;
+        } else if (!outputFile.empty()) {
+            t.outPath = outputFile;
+        }
+        // else: text emits go to stdout (outPath stays empty)
+
+        tasks.push_back(t);
+    };
+
+    addEmitTask("llvm", EmitTask::LLVM);
+    addEmitTask("asm",  EmitTask::ASM);
+    addEmitTask("bc",   EmitTask::BC);
+    addEmitTask("obj",  EmitTask::OBJ);
+
+    // If there are multiple emits writing to the same path, error out
+    for (size_t i = 0; i < tasks.size(); ++i) {
+        for (size_t j = i + 1; j < tasks.size(); ++j) {
+            if (tasks[i].outPath.empty() || tasks[j].outPath.empty()) continue;
+            if (tasks[i].outPath == tasks[j].outPath) {
+                std::cerr << "lucis: emit path conflict — '" << tasks[i].outPath
+                          << "' is used by multiple emit targets\n";
+                return 1;
+            }
+        }
+    }
+
+    // Intelligent PIC inference
     bool usePIC;
     if (parser.has("fPIC")) {
         usePIC = true;
@@ -154,6 +199,16 @@ int BuildCommand::run(const ArgParser& parser) {
 
     auto pipeline = LucisPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
+
+    // Prepend out_dir to emit file paths (need projectRoot from pipeline)
+    if (!config.outDir.empty()) {
+        auto outDirPath = fs::path(pipeline->projectRoot) / config.outDir;
+        fs::create_directories(outDirPath);
+        for (auto& t : tasks) {
+            if (!t.outPath.empty() && fs::path(t.outPath).is_relative())
+                t.outPath = (outDirPath / t.outPath).string();
+        }
+    }
 
     // ── Compile C sources ──────────────────────────────────────────────────
     std::vector<std::string> cObjectFiles;
@@ -173,10 +228,124 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
-    // ── Generate IR, optimize, emit objects ────────────────────────────────
+    // ── Generate IR for all units ──────────────────────────────────────────
+    struct UnitIR {
+        std::string filePath;
+        std::unique_ptr<IRModule> mod;
+    };
+    std::vector<UnitIR> unitIRs;
+    bool anyIRError = false;
+
+    for (size_t idx = 0; idx < pipeline->units.size(); ++idx) {
+        auto& unit = pipeline->units[idx];
+        if (!pipeOpts.quiet)
+            std::cerr << "lucis: [build ir " << (idx + 1) << "/" << pipeline->units.size()
+                      << "] " << unit.filePath << "\n";
+
+        IRGen irGen;
+        irGen.setNamespaceContext(pipeline->registry.get(), unit.namespaceName, unit.filePath);
+        irGen.setCBindings(pipeline->cBindings.get());
+        auto irMod = irGen.generate(unit.parseResult.tree, unit.filePath);
+        if (!irMod) {
+            std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";
+            anyIRError = true;
+            continue;
+        }
+        if (lucisOptLevel != OptimizationLevel::O0)
+            Optimizer::optimize(*irMod, lucisOptLevel);
+        unitIRs.push_back({unit.filePath, std::move(irMod)});
+    }
+    if (anyIRError) return 1;
+
+    // Locate the main unit's module
+    auto mainPath = fs::canonical(fs::path(pipeOpts.inputFile)).string();
+    llvm::Module* mainMod = nullptr;
+    for (auto& uir : unitIRs) {
+        if (fs::canonical(fs::path(uir.filePath)).string() == mainPath) {
+            mainMod = uir.mod->module();
+            break;
+        }
+    }
+
+    // ── Execute emit tasks on the main module ───────────────────────────────
+    if (!tasks.empty()) {
+        bool anyEmitError = false;
+        for (auto& t : tasks) {
+            if (t.type == EmitTask::LLVM) {
+                if (!mainMod) { std::cerr << "lucis: no main module for LLVM emit\n"; anyEmitError = true; break; }
+                if (!t.outPath.empty()) {
+                    std::error_code ec;
+                    llvm::raw_fd_ostream dest(t.outPath, ec, llvm::sys::fs::OF_None);
+                    if (ec) {
+                        std::cerr << "lucis: could not open '" << t.outPath << "': " << ec.message() << "\n";
+                        anyEmitError = true;
+                    } else {
+                        mainMod->print(dest, nullptr);
+                        if (!pipeOpts.quiet)
+                            std::cout << "lucis: LLVM IR written to '" << t.outPath << "'\n";
+                    }
+                } else {
+                    mainMod->print(llvm::outs(), nullptr);
+                }
+            } else if (t.type == EmitTask::ASM) {
+                if (!mainMod) { std::cerr << "lucis: no main module for ASM emit\n"; anyEmitError = true; break; }
+                if (!t.outPath.empty()) {
+                    if (CodeGen::emitAssembly(mainMod, t.outPath)) {
+                        if (!pipeOpts.quiet)
+                            std::cout << "lucis: assembly written to '" << t.outPath << "'\n";
+                    } else anyEmitError = true;
+                } else {
+                    char tmpAsm[] = "/tmp/lucis-asm-XXXXXX.s";
+                    int fd = mkstemps(tmpAsm, 2);
+                    if (fd != -1) {
+                        ::close(fd);
+                        if (CodeGen::emitAssembly(mainMod, tmpAsm)) {
+                            std::ifstream in(tmpAsm);
+                            std::cout << in.rdbuf();
+                            fs::remove(tmpAsm);
+                        } else anyEmitError = true;
+                    } else anyEmitError = true;
+                }
+            } else if (t.type == EmitTask::BC) {
+                if (!mainMod) { std::cerr << "lucis: no main module for BC emit\n"; anyEmitError = true; break; }
+                if (!t.outPath.empty()) {
+                    if (CodeGen::emitBitcode(mainMod, t.outPath)) {
+                        if (!pipeOpts.quiet)
+                            std::cout << "lucis: bitcode written to '" << t.outPath << "'\n";
+                    } else anyEmitError = true;
+                } else {
+                    llvm::WriteBitcodeToFile(*mainMod, llvm::outs());
+                }
+            }
+        }
+        if (anyEmitError) return 1;
+
+        // If emit-obj is enabled, generate object file from main module and exit
+        if (emitObjEnabled) {
+            std::string objEmitPath = pipeline->buildDir + "/" + fs::path(pipeOpts.inputFile).stem().string() + ".o";
+            for (auto& t : tasks) {
+                if (t.type == EmitTask::OBJ && !t.outPath.empty()) {
+                    objEmitPath = t.outPath;
+                    break;
+                }
+            }
+            if (!mainMod) { std::cerr << "lucis: no main module for OBJ emit\n"; return 1; }
+            if (!CodeGen::emitObjectFile(mainMod, objEmitPath, usePIC)) {
+                std::cerr << "lucis: failed to emit object file\n";
+                return 1;
+            }
+            if (!pipeOpts.quiet)
+                std::cout << "lucis: object file written to '" << objEmitPath << "'\n";
+            return 0;
+        }
+
+        // If text emits are present, stop (no binary linking)
+        if (hasTextEmits) return 0;
+    }
+
+    // ── Generate object files for linking ───────────────────────────────────
     std::vector<std::string> objectFiles;
-    
-    // Add positional .o files
+
     for (auto& arg : parser.remaining()) {
         if (fs::path(arg).extension() == ".o") {
             objectFiles.push_back(fs::canonical(arg).string());
@@ -186,106 +355,23 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
-    bool anyIRError = false;
-    size_t irIdx = 0;
-
-    auto mainPath = fs::canonical(fs::path(pipeOpts.inputFile)).string();
-
-    for (auto& unit : pipeline->units) {
-        ++irIdx;
-        if (!pipeOpts.quiet)
-            std::cerr << "lucis: [build ir " << irIdx << "/" << pipeline->units.size()
-                      << "] " << unit.filePath << "\n";
-
-        IRGen irGen;
-        irGen.setNamespaceContext(pipeline->registry.get(), unit.namespaceName, unit.filePath);
-        irGen.setCBindings(pipeline->cBindings.get());
-        auto irModule = irGen.generate(unit.parseResult.tree, unit.filePath);
-        if (!irModule) {
-            std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";
-            anyIRError = true;
-            continue;
-        }
-
-        // Optimize
-        if (lucisOptLevel != OptimizationLevel::O0)
-            Optimizer::optimize(*irModule, lucisOptLevel);
-
-        // Handle Emit modes (LLVM, ASM, BC) - only for the main file
-        if (isEmitMode && unit.filePath == mainPath) {
-            if (emitLLVM) {
-                if (!outputFile.empty()) {
-                    std::error_code ec;
-                    llvm::raw_fd_ostream dest(outputFile, ec, llvm::sys::fs::OF_None);
-                    if (ec) {
-                        std::cerr << "lucis: could not open '" << outputFile << "': " << ec.message() << "\n";
-                        anyIRError = true;
-                    } else {
-                        irModule->module()->print(dest, nullptr);
-                        if (!pipeOpts.quiet) std::cout << "lucis: LLVM IR written to '" << outputFile << "'\n";
-                    }
-                } else {
-                    irModule->print();
-                }
-            } else if (emitAsm) {
-                if (!outputFile.empty()) {
-                    if (CodeGen::emitAssembly(irModule->module(), outputFile)) {
-                        if (!pipeOpts.quiet) std::cout << "lucis: assembly written to '" << outputFile << "'\n";
-                    } else anyIRError = true;
-                } else {
-                    // To stdout
-                    char tmpAsm[] = "/tmp/lucis-asm-XXXXXX.s";
-                    int fd = mkstemps(tmpAsm, 2);
-                    if (fd != -1) {
-                        ::close(fd);
-                        if (CodeGen::emitAssembly(irModule->module(), tmpAsm)) {
-                            std::ifstream in(tmpAsm);
-                            std::cout << in.rdbuf();
-                            fs::remove(tmpAsm);
-                        } else anyIRError = true;
-                    } else anyIRError = true;
-                }
-            } else if (emitBc) {
-                if (!outputFile.empty()) {
-                    if (CodeGen::emitBitcode(irModule->module(), outputFile)) {
-                        if (!pipeOpts.quiet) std::cout << "lucis: bitcode written to '" << outputFile << "'\n";
-                    } else anyIRError = true;
-                } else {
-                    // Bitcode to stdout
-                    llvm::WriteBitcodeToFile(*irModule->module(), llvm::outs());
-                }
-            } else if (emitObj) {
-                // If emitObj, we just need to continue and the normal object emit will handle it, 
-                // but we need to stop before linking.
+    for (auto& uir : unitIRs) {
+        std::string stem;
+        for (auto& unit : pipeline->units) {
+            if (unit.filePath == uir.filePath) {
+                stem = unit.namespaceName + "__" + fs::path(uir.filePath).stem().string();
+                break;
             }
-
-            if (anyIRError) continue;
-            if (!emitObj) continue; // Skip object generation if not emitObj
         }
+        if (stem.empty()) stem = fs::path(uir.filePath).stem().string();
 
-        // Emit object file (normal path or --emit-obj)
-        auto stem = unit.namespaceName + "__" + fs::path(unit.filePath).stem().string();
-        auto objPath = (emitObj && unit.filePath == mainPath && !outputFile.empty()) 
-                       ? outputFile 
-                       : pipeline->buildDir + "/" + stem + ".o";
-
-        if (!CodeGen::emitObjectFile(irModule->module(), objPath, usePIC)) {
-            std::cerr << "lucis: failed to emit object for '" << unit.filePath << "'\n";
-            anyIRError = true;
-            continue;
+        auto objPath = pipeline->buildDir + "/" + stem + ".o";
+        if (!CodeGen::emitObjectFile(uir.mod->module(), objPath, usePIC)) {
+            std::cerr << "lucis: failed to emit object for '" << uir.filePath << "'\n";
+            return 1;
         }
-
-        if (emitObj && unit.filePath == mainPath) {
-            if (!pipeOpts.quiet) std::cout << "lucis: object file written to '" << objPath << "'\n";
-            continue; 
-        }
-
         objectFiles.push_back(objPath);
     }
-
-    if (anyIRError) return 1;
-    if (isEmitMode && !emitObj) return 0;
-    if (emitObj) return 0;
 
     // Append C objects
     objectFiles.insert(objectFiles.end(), cObjectFiles.begin(), cObjectFiles.end());
@@ -299,7 +385,6 @@ int BuildCommand::run(const ArgParser& parser) {
             outputFile = inPath.stem().string() + ".out";
         }
 
-        // Prepend out_dir from config (relative to project root).
         if (!config.outDir.empty()) {
             auto outDirPath = fs::path(pipeline->projectRoot) / config.outDir;
             fs::create_directories(outDirPath);
@@ -313,28 +398,19 @@ int BuildCommand::run(const ArgParser& parser) {
         std::cerr << "\nlucis: [build] --- linker output ---\n\n";
 
     std::vector<std::string> finalLinkerFlags = pipeline->linkerFlags;
-    if (useLTO) {
-        finalLinkerFlags.push_back("-flto");
-    }
-    if (useStatic) {
-        finalLinkerFlags.push_back("-static");
-    }
-    if (useShared) {
-        finalLinkerFlags.push_back("-shared");
-    }
-    
-    // Apply config linker flags, then CLI overrides
+    if (useLTO)         finalLinkerFlags.push_back("-flto");
+    if (useStatic)      finalLinkerFlags.push_back("-static");
+    if (useShared)      finalLinkerFlags.push_back("-shared");
+
     for (const auto& f : config.linker.flags)
         finalLinkerFlags.push_back(f);
-    for (auto& arg : parser.getAll("link-arg")) {
+    for (auto& arg : parser.getAll("link-arg"))
         finalLinkerFlags.push_back(arg);
-    }
 
-    if (parser.has("rpath")) {
+    if (parser.has("rpath"))
         finalLinkerFlags.push_back("-Wl,-rpath," + parser.get("rpath"));
-    } else if (!config.linker.rpath.empty()) {
+    else if (!config.linker.rpath.empty())
         finalLinkerFlags.push_back("-Wl,-rpath," + config.linker.rpath);
-    }
 
     auto libPaths = parser.has("lib-path") ? parser.getAll("lib-path") : config.linker.libPaths;
 

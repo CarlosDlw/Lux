@@ -76,10 +76,10 @@ applied as defaults and can be overridden by CLI flags.
 | `-o, --output <FILE>` | Output file path (binary, IR, asm, bitcode, or object) |
 | `-O, --opt <LEVEL>` | Optimization level: `0`, `1`, `2`, `3`, `s`, `z`, or `fast` (default: `0`) |
 | `--lto` | Enable Link Time Optimization (LTO) |
-| `--emit-llvm` | Emit LLVM IR (`.ll`) |
-| `--emit-asm` | Emit assembly (`.s`) |
-| `--emit-bc` | Emit LLVM bitcode (`.bc`) |
-| `--emit-obj` | Emit object file (`.o`) |
+| `--emit-llvm` | Emit LLVM IR (`.ll`) — overrides `build.emits.llvm.enabled` |
+| `--emit-asm` | Emit assembly (`.s`) — overrides `build.emits.asm.enabled` |
+| `--emit-bc` | Emit LLVM bitcode (`.bc`) — overrides `build.emits.bc.enabled` |
+| `--emit-obj` | Emit object file (`.o`) — overrides `build.emits.obj.enabled` |
 | `--static` | Produce a statically linked executable |
 | `--shared` | Produce a shared library (`.so`, `.dll`) |
 | `--fPIC` | Generate position-independent code (PIC) |
@@ -113,8 +113,22 @@ lucis build main.lc --static -o main_static
 - `--fPIC`: Generate position-independent code (PIC). Automatically enabled with `--shared`.
 
 **Emit Modes:**
-By default, `--emit-llvm` and `--emit-asm` print to **stdout**. If `-o` is provided, the output is redirected to the specified file.
-`--emit-obj` requires `-o` to specify the object file path; otherwise, it writes to the build directory.
+Emit modes can be configured in `lucis.yaml` under `build.emits`, with individual
+`enabled` (bool) and `file` (output filename) fields. CLI flags like `--emit-llvm`
+override the `enabled` status.
+
+When multiple emits are enabled, all specified outputs are generated. If the same
+output path is used by multiple emits, the build fails with a conflict error.
+
+If at least one text emit (LLVM, ASM, BC) is active, the build stops before
+linking (no binary is produced). If `emit_obj` is the only active emit, the build
+generates the object file and stops. With no emits active, a normal binary is
+produced.
+
+By default (CLI only, no config), `--emit-llvm` and `--emit-asm` print to
+**stdout**. If `-o` is provided, the output is redirected to the specified file.
+`--emit-obj` requires `-o` to specify the object file path; otherwise, it writes
+to the build directory.
 
 ```bash
 # Standard build
@@ -250,10 +264,19 @@ build:
   shared: false                 # Shared library
   fpic: true                    # Position-independent code
   quiet: false                  # Suppress logs
-  emit_llvm: false              # Emit .ll files instead of binary
-  emit_asm: false               # Emit .s files
-  emit_bc: false                # Emit .bc files
-  emit_obj: false               # Emit .o files
+  emits:                        # Structured emit targets (opt-in)
+    llvm:
+      enabled: false            # Emit LLVM IR (--emit-llvm)
+      file: ""                  # Output filename (empty = stdout)
+    asm:
+      enabled: false            # Emit assembly (--emit-asm)
+      file: ""
+    bc:
+      enabled: false            # Emit LLVM bitcode (--emit-bc)
+      file: ""
+    obj:
+      enabled: false            # Emit object file (--emit-obj)
+      file: ""                  # Output filename (required)
 
 # Run defaults (used by `lucis run`)
 run:

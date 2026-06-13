@@ -52,10 +52,19 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
             cfg.build.shared    = boolOrDefault(b, "shared", false);
             cfg.build.fpic      = boolOrDefault(b, "fpic", true);
             cfg.build.quiet     = boolOrDefault(b, "quiet", false);
-            cfg.build.emitLlvm  = boolOrDefault(b, "emit_llvm", false);
-            cfg.build.emitAsm   = boolOrDefault(b, "emit_asm", false);
-            cfg.build.emitBc    = boolOrDefault(b, "emit_bc", false);
-            cfg.build.emitObj   = boolOrDefault(b, "emit_obj", false);
+
+            // Parse structured emits
+            auto emitsNode = b["emits"];
+            if (emitsNode.IsDefined() && emitsNode.IsMap()) {
+                for (const auto& entry : emitsNode) {
+                    auto key = entry.first.Scalar();
+                    auto val = entry.second;
+                    LucisConfig::EmitConfig ec;
+                    ec.enabled = boolOrDefault(val, "enabled", false);
+                    ec.file    = optOrDefault(val, "file", "");
+                    cfg.build.emits[key] = ec;
+                }
+            }
         }
         {
             auto r = root["run"];
@@ -119,10 +128,7 @@ bool LucisConfig::createDefault(const std::string& dir, const std::string& name)
     cfg.build.shared     = false;
     cfg.build.fpic       = true;
     cfg.build.quiet      = false;
-    cfg.build.emitLlvm   = false;
-    cfg.build.emitAsm    = false;
-    cfg.build.emitBc     = false;
-    cfg.build.emitObj    = false;
+    // emits default empty (none enabled)
 
     cfg.run.optLevel = "O0";
     cfg.run.lto      = false;
@@ -156,10 +162,14 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         root["build"]["shared"]      = build.shared;
         root["build"]["fpic"]        = build.fpic;
         root["build"]["quiet"]       = build.quiet;
-        root["build"]["emit_llvm"]   = build.emitLlvm;
-        root["build"]["emit_asm"]    = build.emitAsm;
-        root["build"]["emit_bc"]     = build.emitBc;
-        root["build"]["emit_obj"]    = build.emitObj;
+
+        // Save structured emits
+        if (!build.emits.empty()) {
+            for (const auto& [key, ec] : build.emits) {
+                root["build"]["emits"][key]["enabled"] = ec.enabled;
+                root["build"]["emits"][key]["file"]    = ec.file;
+            }
+        }
 
         root["run"]["opt_level"] = run.optLevel;
         root["run"]["lto"]       = run.lto;

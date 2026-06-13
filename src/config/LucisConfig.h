@@ -2,9 +2,15 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <optional>
 
 struct LucisConfig {
+    struct EmitConfig {
+        bool enabled = false;
+        std::string file;
+    };
+
     std::string name;
     std::string version;
     std::string description;
@@ -22,10 +28,7 @@ struct LucisConfig {
         bool shared;
         bool fpic;
         bool quiet;
-        bool emitLlvm;
-        bool emitAsm;
-        bool emitBc;
-        bool emitObj;
+        std::map<std::string, EmitConfig> emits;
     } build;
 
     struct RunSettings {

@@ -52,9 +52,18 @@ void printErrorLine(const std::string& msg) {
 // ── Static helpers ────────────────────────────────────────────────────────────
 
 std::string LucisPipeline::getProjectRoot(const std::string& inputFile) {
-    auto parent = fs::path(inputFile).parent_path();
-    if (parent.empty()) parent = ".";
-    return fs::canonical(parent).string();
+    // Walk up from the input file's directory looking for lucis.yaml.
+    auto dir = fs::path(inputFile).parent_path();
+    if (dir.empty()) dir = ".";
+    dir = fs::canonical(dir);
+
+    for (auto ancestor = dir; ancestor >= fs::path("/"); ancestor = ancestor.parent_path()) {
+        if (fs::exists(ancestor / "lucis.yaml"))
+            return ancestor.string();
+    }
+
+    // Fallback: the input file's parent directory.
+    return dir.string();
 }
 
 std::string LucisPipeline::extractNamespace(LucisParser::ProgramContext* tree) {
@@ -77,7 +86,10 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     // ── Step 1: project root & build dir ────────────────────────────────────
     progress(1, 5, "resolving project root");
     result->projectRoot = getProjectRoot(opts.inputFile);
-    result->buildDir    = result->projectRoot + "/.lucis/build";
+
+    // Build artifacts (object files, cache) always go to .lucis/build.
+    // The config's out_dir controls where the final binary is placed.
+    result->buildDir = result->projectRoot + "/.lucis/build";
     fs::create_directories(result->buildDir);
     auto buildProgress = [&, step = 1]() mutable { progress(++step, 5, "scanning .lc files"); };
     buildProgress();

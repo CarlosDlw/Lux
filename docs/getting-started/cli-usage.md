@@ -64,7 +64,12 @@ lucis build [<file>] [-o <output>] [-O <level>] [--lto]
 Compiles the project to a native binary. If `<file>` is omitted, the compiler
 looks for a `lucis.yaml` in the current directory and auto-resolves the
 entrypoint from the configured source paths. Without `-o`, the output defaults
-to `<input-stem>.out`.
+to `<input-stem>.out`. If `binary` is set in `lucis.yaml`, that name is used
+verbatim (no `.out` appended). If `out_dir` is set, the binary is placed in
+that directory (relative to the project root).
+
+Config values from `lucis.yaml` (`binary`, `out_dir`, linker flags, etc.) are
+applied as defaults and can be overridden by CLI flags.
 
 | Flag | Description |
 |------|-------------|

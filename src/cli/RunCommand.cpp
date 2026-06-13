@@ -83,6 +83,8 @@ int RunCommand::run(const ArgParser& parser) {
     pipeOpts.quiet            = parser.has("quiet") ? true : config.run.quiet;
     pipeOpts.includePaths     = parser.has("include") ? parser.getAll("include") : config.includes;
     pipeOpts.userLinkerFlags  = parser.has("link") ? parser.getAll("link") : config.linker.libs;
+    pipeOpts.binaryName       = config.binary;
+    pipeOpts.outDir           = config.outDir;
 
     OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
 

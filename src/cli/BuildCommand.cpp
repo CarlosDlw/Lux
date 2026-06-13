@@ -22,6 +22,7 @@ namespace fs = std::filesystem;
 
 void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lc entrypoint file (auto-resolved from lucis.yaml if omitted)", false);
+    parser.addOption("output", 'o', "FILE", "Output binary path (default: <input>.out, or lucis.yaml binary name verbatim)");
     parser.addFlag("emit-llvm", '\0', "Emit LLVM IR (.ll)");
     parser.addFlag("emit-asm",  '\0', "Emit assembly (.s)");
     parser.addFlag("emit-bc",   '\0', "Emit LLVM bitcode (.bc)");
@@ -85,6 +86,8 @@ int BuildCommand::run(const ArgParser& parser) {
     pipeOpts.quiet            = parser.has("quiet") ? true : config.build.quiet;
     pipeOpts.includePaths     = parser.has("include") ? parser.getAll("include") : config.includes;
     pipeOpts.userLinkerFlags  = parser.has("link") ? parser.getAll("link") : config.linker.libs;
+    pipeOpts.binaryName       = config.binary;
+    pipeOpts.outDir           = config.outDir;
 
     OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
 
@@ -289,8 +292,20 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // ── Link ────────────────────────────────────────────────────────────────
     if (outputFile.empty()) {
-        auto inPath = fs::path(pipeOpts.inputFile);
-        outputFile = inPath.stem().string() + ".out";
+        if (!config.binary.empty()) {
+            outputFile = config.binary;
+        } else {
+            auto inPath = fs::path(pipeOpts.inputFile);
+            outputFile = inPath.stem().string() + ".out";
+        }
+
+        // Prepend out_dir from config (relative to project root).
+        if (!config.outDir.empty()) {
+            auto outDirPath = fs::path(pipeline->projectRoot) / config.outDir;
+            fs::create_directories(outDirPath);
+            outputFile = (outDirPath / outputFile).string();
+        }
+
         if (!pipeOpts.quiet)
             std::cerr << "lucis: [build] no -o given, writing to '" << outputFile << "'\n";
     }

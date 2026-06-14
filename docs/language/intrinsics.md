@@ -14,6 +14,10 @@ Variadic argument handling (`va_list`, `va_start`, `va_arg`, `va_end`), raw memo
 
 Typed memory access (read/write), pointer arithmetic (offset), bit reinterpretation (bitcast), compiler hints (assume/unreachable), volatile access, bit manipulation, overflow detection, stack/frame pointers, memory fences, prefetch, CPU control, and raw system calls.
 
+### [`lucis::io`](intrinsics/io.md) — Low-level file I/O
+
+Unbuffered file descriptor operations: open, read, write, close, lseek. Cross-platform via C wrappers.
+
 ### [`lucis::atomic`](intrinsics/atomic.md) — Atomic operations
 
 Atomic load, store, fetch-and-{add,sub,and,or,xor}, exchange, and compare-and-swap. All operations are sequentially consistent.

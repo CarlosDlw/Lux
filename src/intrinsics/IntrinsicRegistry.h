@@ -84,3 +84,4 @@ void registerDebugNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
 void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
 void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
 void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
+void registerIoNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);

@@ -8,6 +8,7 @@ IntrinsicRegistry::IntrinsicRegistry(TypeRegistry& typeRegistry) {
     registerUnsafeNamespace(*this, typeRegistry);
     registerSysNamespace(*this, typeRegistry);
     registerAtomicNamespace(*this, typeRegistry);
+    registerIoNamespace(*this, typeRegistry);
 }
 
 void IntrinsicRegistry::registerNamespace(IntrinsicNamespace ns) {

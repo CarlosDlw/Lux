@@ -190,6 +190,7 @@ add_library(lucis_builtins STATIC
     src/builtins/collections/set.c
     src/builtins/global/global.c
     src/builtins/io/io.c
+    src/builtins/io/io_file.c
     src/builtins/math/math.c
     src/builtins/string/string.c
     src/builtins/mem/mem.c
@@ -257,6 +258,7 @@ set(SOURCES
     src/intrinsics/namespaces/UnsafeNamespace.cpp
     src/intrinsics/namespaces/SysNamespace.cpp
     src/intrinsics/namespaces/AtomicNamespace.cpp
+    src/intrinsics/namespaces/IoNamespace.cpp
     src/ffi/CBindings.cpp
     src/ffi/CTypeMapper.cpp
     src/ffi/CHeaderResolver.cpp
